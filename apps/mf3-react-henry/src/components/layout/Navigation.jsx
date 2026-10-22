@@ -7,7 +7,25 @@ export function Navigation({ activeTab, onSelectTab }) {
         onClick={() => onSelectTab('consulta')}
       >
         <span>🔍</span>
-        <span>Consultar Historia Clínica</span>
+        <span>Consultar Expediente</span>
+      </button>
+
+      <button
+        type="button"
+        className={`nav-tab-btn ${activeTab === 'crear' ? 'active' : ''}`}
+        onClick={() => onSelectTab('crear')}
+      >
+        <span>➕</span>
+        <span>Nueva Historia Clínica</span>
+      </button>
+
+      <button
+        type="button"
+        className={`nav-tab-btn ${activeTab === 'actualizar' ? 'active' : ''}`}
+        onClick={() => onSelectTab('actualizar')}
+      >
+        <span>✏️</span>
+        <span>Actualizar Antecedentes</span>
       </button>
 
       <button
@@ -16,27 +34,17 @@ export function Navigation({ activeTab, onSelectTab }) {
         onClick={() => onSelectTab('conectividad')}
       >
         <span>⚡</span>
-        <span>Estado de Conectividad</span>
+        <span>Conectividad</span>
       </button>
 
       <button
         type="button"
         className="nav-tab-btn disabled"
         disabled
-        title="Formulario de apertura disponible en Iteración 5B"
+        title="Gestión de alergias, medicamentos y cambios de estado en Iteración 5C"
       >
-        <span>➕</span>
-        <span>Nueva Historia Clínica (Iteración 5B)</span>
-      </button>
-
-      <button
-        type="button"
-        className="nav-tab-btn disabled"
-        disabled
-        title="Formularios de edición disponibles en Iteración 5C"
-      >
-        <span>✏️</span>
-        <span>Actualizar Datos (Iteración 5C)</span>
+        <span>💊</span>
+        <span>Alergias & Fármacos (Iteración 5C)</span>
       </button>
     </nav>
   );

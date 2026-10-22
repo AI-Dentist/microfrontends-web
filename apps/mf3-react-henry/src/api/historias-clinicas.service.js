@@ -48,4 +48,41 @@ export const historiasClinicasService = {
     }
     return result;
   },
+
+  /**
+   * Crea una nueva historia clínica en el sistema.
+   *
+   * @param {object} payload - CrearHistoriaClinicaHttpDto
+   * @param {string} token - Token de autenticación del operador
+   * @param {AbortSignal} [signal]
+   */
+  async create(payload, token, signal) {
+    return httpClient('/historias-clinicas', {
+      method: 'POST',
+      body: payload,
+      token,
+      signal,
+    });
+  },
+
+  /**
+   * Actualiza los antecedentes estructurados de una historia clínica.
+   *
+   * @param {string} id - Identificador de la historia clínica
+   * @param {object} payload - ActualizarAntecedentesHttpDto (versionEsperada, nuevosAntecedentes, camposModificados, descripcion)
+   * @param {string} token - Token de autenticación del operador
+   * @param {AbortSignal} [signal]
+   */
+  async updateAntecedentes(id, payload, token, signal) {
+    if (!id || !id.trim()) {
+      throw new Error('El ID de la historia clínica es requerido.');
+    }
+    return httpClient(`/historias-clinicas/${encodeURIComponent(id.trim())}/antecedentes`, {
+      method: 'PATCH',
+      body: payload,
+      token,
+      signal,
+    });
+  },
 };
+

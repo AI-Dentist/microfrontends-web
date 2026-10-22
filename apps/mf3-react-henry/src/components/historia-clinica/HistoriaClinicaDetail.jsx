@@ -1,11 +1,12 @@
 import { Card } from '../common/Card.jsx';
+import { Button } from '../common/Button.jsx';
 import { EstadoBadge } from './EstadoBadge.jsx';
 import { AntecedentesSection } from './AntecedentesSection.jsx';
 import { AlergiasTable } from './AlergiasTable.jsx';
 import { MedicamentosList } from './MedicamentosList.jsx';
 import { AuditoriaTimeline } from './AuditoriaTimeline.jsx';
 
-export function HistoriaClinicaDetail({ historia }) {
+export function HistoriaClinicaDetail({ historia, onEditarAntecedentes }) {
   if (!historia) return null;
 
   return (
@@ -99,7 +100,20 @@ export function HistoriaClinicaDetail({ historia }) {
       </Card>
 
       {/* Antecedentes Clínicos */}
-      <Card title="1. Antecedentes Médicos y Odontológicos">
+      <Card
+        title="1. Antecedentes Médicos y Odontológicos"
+        action={
+          onEditarAntecedentes ? (
+            <Button
+              variant="secondary"
+              onClick={() => onEditarAntecedentes(historia.id)}
+              style={{ fontSize: '12px', padding: '6px 12px' }}
+            >
+              ✏️ Modificar Antecedentes
+            </Button>
+          ) : null
+        }
+      >
         <AntecedentesSection antecedentes={historia.antecedentes} />
       </Card>
 
