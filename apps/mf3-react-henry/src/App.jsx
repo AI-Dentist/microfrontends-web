@@ -7,6 +7,7 @@ import { ConsultaHistoriaPage } from './pages/ConsultaHistoriaPage.jsx';
 import { CrearHistoriaPage } from './pages/CrearHistoriaPage.jsx';
 import { ActualizarAntecedentesPage } from './pages/ActualizarAntecedentesPage.jsx';
 import { ConectividadPage } from './pages/ConectividadPage.jsx';
+import { GestionClinicaPage } from './pages/GestionClinicaPage.jsx';
 
 import './styles/theme.css';
 import './styles/components.css';
@@ -14,6 +15,8 @@ import './styles/components.css';
 export function AppContent() {
   const [activeTab, setActiveTab] = useState('consulta');
   const [historiaAEditarId, setHistoriaAEditarId] = useState('');
+  const [historiaGestionId, setHistoriaGestionId] = useState('');
+  const [gestionSubtab, setGestionSubtab] = useState('alergias');
 
   const handleEditarAntecedentes = (id) => {
     setHistoriaAEditarId(id);
@@ -25,6 +28,12 @@ export function AppContent() {
     setActiveTab('consulta');
   };
 
+  const handleGestionarClinica = (id, subtab = 'alergias') => {
+    setHistoriaGestionId(id);
+    setGestionSubtab(subtab);
+    setActiveTab('gestion');
+  };
+
   return (
     <div className="app-container">
       <Header />
@@ -32,7 +41,10 @@ export function AppContent() {
         <Navigation activeTab={activeTab} onSelectTab={setActiveTab} />
 
         {activeTab === 'consulta' && (
-          <ConsultaHistoriaPage onEditarAntecedentes={handleEditarAntecedentes} />
+          <ConsultaHistoriaPage
+            onEditarAntecedentes={handleEditarAntecedentes}
+            onGestionarClinica={handleGestionarClinica}
+          />
         )}
 
         {activeTab === 'crear' && (
@@ -41,6 +53,14 @@ export function AppContent() {
 
         {activeTab === 'actualizar' && (
           <ActualizarAntecedentesPage initialHistoriaId={historiaAEditarId} />
+        )}
+
+        {activeTab === 'gestion' && (
+          <GestionClinicaPage
+            key={`${historiaGestionId}-${gestionSubtab}`}
+            initialHistoriaId={historiaGestionId}
+            initialSubtab={gestionSubtab}
+          />
         )}
 
         {activeTab === 'conectividad' && <ConectividadPage />}

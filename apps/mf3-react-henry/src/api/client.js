@@ -1,6 +1,9 @@
 import { parseProblemDetails, ProblemDetailsError } from './problem-details.js';
 
-const BASE_URL = '/api/expediente';
+const BASE_URL =
+  typeof window !== 'undefined'
+    ? '/api/expediente'
+    : (process.env.API_BASE_URL || 'http://localhost/api/expediente');
 
 /**
  * Cliente HTTP modular para interactuar con la API REST de expediente clínico.

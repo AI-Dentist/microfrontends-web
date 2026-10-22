@@ -39,12 +39,11 @@ export function Navigation({ activeTab, onSelectTab }) {
 
       <button
         type="button"
-        className="nav-tab-btn disabled"
-        disabled
-        title="Gestión de alergias, medicamentos y cambios de estado en Iteración 5C"
+        className={`nav-tab-btn ${activeTab === 'gestion' ? 'active' : ''}`}
+        onClick={() => onSelectTab('gestion')}
       >
         <span>💊</span>
-        <span>Alergias & Fármacos (Iteración 5C)</span>
+        <span>Gestión Clínica (Iteración 5C)</span>
       </button>
     </nav>
   );

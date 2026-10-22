@@ -6,13 +6,29 @@ import { AlergiasTable } from './AlergiasTable.jsx';
 import { MedicamentosList } from './MedicamentosList.jsx';
 import { AuditoriaTimeline } from './AuditoriaTimeline.jsx';
 
-export function HistoriaClinicaDetail({ historia, onEditarAntecedentes }) {
+export function HistoriaClinicaDetail({
+  historia,
+  onEditarAntecedentes,
+  onGestionarClinica,
+}) {
   if (!historia) return null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Tarjeta de Encabezado / Resumen */}
-      <Card>
+      <Card
+        action={
+          onGestionarClinica ? (
+            <Button
+              variant="secondary"
+              onClick={() => onGestionarClinica(historia.id, 'estado')}
+              style={{ fontSize: '12px', padding: '6px 12px' }}
+            >
+              🔄 Cambiar Estado
+            </Button>
+          ) : null
+        }
+      >
         <div
           style={{
             display: 'flex',
@@ -120,6 +136,17 @@ export function HistoriaClinicaDetail({ historia, onEditarAntecedentes }) {
       {/* Alergias Registradas */}
       <Card
         title={`2. Alergias y Reacciones Adversas (${historia.alergias?.length || 0})`}
+        action={
+          onGestionarClinica ? (
+            <Button
+              variant="secondary"
+              onClick={() => onGestionarClinica(historia.id, 'alergias')}
+              style={{ fontSize: '12px', padding: '6px 12px' }}
+            >
+              ⚠️ Gestionar Alergias
+            </Button>
+          ) : null
+        }
       >
         <AlergiasTable alergias={historia.alergias} />
       </Card>
@@ -127,6 +154,17 @@ export function HistoriaClinicaDetail({ historia, onEditarAntecedentes }) {
       {/* Medicamentos Actuales */}
       <Card
         title={`3. Medicamentos de Consumo Actual (${historia.medicamentosActuales?.length || 0})`}
+        action={
+          onGestionarClinica ? (
+            <Button
+              variant="secondary"
+              onClick={() => onGestionarClinica(historia.id, 'medicamentos')}
+              style={{ fontSize: '12px', padding: '6px 12px' }}
+            >
+              💊 Gestionar Medicamentos
+            </Button>
+          ) : null
+        }
       >
         <MedicamentosList medicamentos={historia.medicamentosActuales} />
       </Card>
