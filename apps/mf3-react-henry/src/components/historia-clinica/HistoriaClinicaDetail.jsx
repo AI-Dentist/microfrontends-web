@@ -10,23 +10,55 @@ export function HistoriaClinicaDetail({
   historia,
   onEditarAntecedentes,
   onGestionarClinica,
+  onVerConsultas,
+  onAbrirConsulta,
 }) {
   if (!historia) return null;
+
+  const puedeAbrirConsulta = historia.estado === 'ACTIVA';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Tarjeta de Encabezado / Resumen */}
       <Card
         action={
-          onGestionarClinica ? (
-            <Button
-              variant="secondary"
-              onClick={() => onGestionarClinica(historia.id, 'estado')}
-              style={{ fontSize: '12px', padding: '6px 12px' }}
-            >
-              🔄 Cambiar Estado
-            </Button>
-          ) : null
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {onVerConsultas && (
+              <Button
+                variant="secondary"
+                onClick={() => onVerConsultas(historia.id)}
+                style={{ fontSize: '12px', padding: '6px 12px' }}
+              >
+                🦷 Consultas Odontológicas
+              </Button>
+            )}
+
+            {onAbrirConsulta && (
+              <Button
+                variant={puedeAbrirConsulta ? 'primary' : 'secondary'}
+                onClick={() => puedeAbrirConsulta && onAbrirConsulta(historia.id, historia.pacienteId)}
+                disabled={!puedeAbrirConsulta}
+                title={
+                  puedeAbrirConsulta
+                    ? 'Abrir nueva consulta odontológica'
+                    : 'Solo se pueden abrir consultas sobre historias clínicas en estado ACTIVA'
+                }
+                style={{ fontSize: '12px', padding: '6px 12px' }}
+              >
+                ➕ Nueva Consulta
+              </Button>
+            )}
+
+            {onGestionarClinica && (
+              <Button
+                variant="secondary"
+                onClick={() => onGestionarClinica(historia.id, 'estado')}
+                style={{ fontSize: '12px', padding: '6px 12px' }}
+              >
+                🔄 Cambiar Estado
+              </Button>
+            )}
+          </div>
         }
       >
         <div

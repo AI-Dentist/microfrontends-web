@@ -15,7 +15,12 @@ const SUGGESTED_CHIPS = [
   { label: 'Paciente Inexistente (404)', tipo: 'PACIENTE', valor: 'pac_no_existe_en_ms1' },
 ];
 
-export function ConsultaHistoriaPage({ onEditarAntecedentes, onGestionarClinica }) {
+export function ConsultaHistoriaPage({
+  onEditarAntecedentes,
+  onGestionarClinica,
+  onVerConsultas,
+  onAbrirConsulta,
+}) {
   const [tipoBusqueda, setTipoBusqueda] = useState('ID'); // 'ID' | 'PACIENTE'
   const [queryValue, setQueryValue] = useState('');
   const { data, loading, error, buscarPorId, buscarPorPaciente, limpiar } =
@@ -143,6 +148,8 @@ export function ConsultaHistoriaPage({ onEditarAntecedentes, onGestionarClinica 
           historia={data}
           onEditarAntecedentes={onEditarAntecedentes}
           onGestionarClinica={onGestionarClinica}
+          onVerConsultas={onVerConsultas}
+          onAbrirConsulta={onAbrirConsulta}
         />
       )}
 

@@ -8,6 +8,9 @@ import { CrearHistoriaPage } from './pages/CrearHistoriaPage.jsx';
 import { ActualizarAntecedentesPage } from './pages/ActualizarAntecedentesPage.jsx';
 import { ConectividadPage } from './pages/ConectividadPage.jsx';
 import { GestionClinicaPage } from './pages/GestionClinicaPage.jsx';
+import { ListadoConsultasPage } from './pages/ListadoConsultasPage.jsx';
+import { DetalleConsultaPage } from './pages/DetalleConsultaPage.jsx';
+import { AbrirConsultaPage } from './pages/AbrirConsultaPage.jsx';
 
 import './styles/theme.css';
 import './styles/components.css';
@@ -17,6 +20,12 @@ export function AppContent() {
   const [historiaAEditarId, setHistoriaAEditarId] = useState('');
   const [historiaGestionId, setHistoriaGestionId] = useState('');
   const [gestionSubtab, setGestionSubtab] = useState('alergias');
+
+  // Estados de navegación para Consultas Odontológicas
+  const [consultasHistoriaId, setConsultasHistoriaId] = useState('');
+  const [abrirHistoriaId, setAbrirHistoriaId] = useState('');
+  const [abrirPacienteId, setAbrirPacienteId] = useState('');
+  const [detalleConsultaId, setDetalleConsultaId] = useState('');
 
   const handleEditarAntecedentes = (id) => {
     setHistoriaAEditarId(id);
@@ -34,6 +43,28 @@ export function AppContent() {
     setActiveTab('gestion');
   };
 
+  const handleVerConsultasDeHistoria = (hId) => {
+    setConsultasHistoriaId(hId);
+    setActiveTab('consultas');
+  };
+
+  const handleAbrirConsulta = (hId = '', pacId = '') => {
+    setAbrirHistoriaId(hId);
+    setAbrirPacienteId(pacId);
+    setActiveTab('abrir-consulta');
+  };
+
+  const handleVerDetalleConsulta = (consId) => {
+    setDetalleConsultaId(consId);
+    setActiveTab('detalle-consulta');
+  };
+
+  const handleConsultaCreada = (consId, hId) => {
+    setDetalleConsultaId(consId);
+    if (hId) setConsultasHistoriaId(hId);
+    setActiveTab('detalle-consulta');
+  };
+
   return (
     <div className="app-container">
       <Header />
@@ -44,6 +75,8 @@ export function AppContent() {
           <ConsultaHistoriaPage
             onEditarAntecedentes={handleEditarAntecedentes}
             onGestionarClinica={handleGestionarClinica}
+            onVerConsultas={handleVerConsultasDeHistoria}
+            onAbrirConsulta={handleAbrirConsulta}
           />
         )}
 
@@ -60,6 +93,37 @@ export function AppContent() {
             key={`${historiaGestionId}-${gestionSubtab}`}
             initialHistoriaId={historiaGestionId}
             initialSubtab={gestionSubtab}
+          />
+        )}
+
+        {activeTab === 'consultas' && (
+          <ListadoConsultasPage
+            key={consultasHistoriaId || 'consultas-default'}
+            initialHistoriaId={consultasHistoriaId}
+            onVerDetalle={handleVerDetalleConsulta}
+            onAbrirConsulta={handleAbrirConsulta}
+          />
+        )}
+
+        {activeTab === 'detalle-consulta' && (
+          <DetalleConsultaPage
+            key={detalleConsultaId || 'detalle-default'}
+            initialConsultaId={detalleConsultaId}
+            onVolver={() => setActiveTab('consultas')}
+            onVerHistoria={(hId) => {
+              setHistoriaAEditarId(hId);
+              setActiveTab('consulta');
+            }}
+          />
+        )}
+
+        {activeTab === 'abrir-consulta' && (
+          <AbrirConsultaPage
+            key={`${abrirHistoriaId}-${abrirPacienteId}`}
+            initialHistoriaId={abrirHistoriaId}
+            initialPacienteId={abrirPacienteId}
+            onConsultaCreada={handleConsultaCreada}
+            onCancelar={() => setActiveTab('consultas')}
           />
         )}
 

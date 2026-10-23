@@ -45,6 +45,24 @@ export function Navigation({ activeTab, onSelectTab }) {
         <span>💊</span>
         <span>Gestión Clínica (Iteración 5C)</span>
       </button>
+
+      <button
+        type="button"
+        className={`nav-tab-btn ${activeTab === 'consultas' || activeTab === 'detalle-consulta' ? 'active' : ''}`}
+        onClick={() => onSelectTab('consultas')}
+      >
+        <span>🦷</span>
+        <span>Consultas Odontológicas (6F-1)</span>
+      </button>
+
+      <button
+        type="button"
+        className={`nav-tab-btn ${activeTab === 'abrir-consulta' ? 'active' : ''}`}
+        onClick={() => onSelectTab('abrir-consulta')}
+      >
+        <span>➕</span>
+        <span>Abrir Consulta</span>
+      </button>
     </nav>
   );
 }
