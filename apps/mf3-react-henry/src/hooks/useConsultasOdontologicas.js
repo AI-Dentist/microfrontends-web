@@ -190,6 +190,78 @@ export function useConsultasOdontologicas() {
     [token],
   );
 
+  /**
+   * Completa y sella formalmente una consulta odontológica en curso (Iteración 6F-3).
+   * Requiere payload con versionEsperada para control de concurrencia optimista.
+   */
+  const completarConsulta = useCallback(
+    async (consultaId, payload) => {
+      if (!consultaId || !consultaId.trim()) {
+        setError({
+          title: 'Campo requerido',
+          detail: 'El identificador de la consulta es obligatorio para completarla.',
+          status: 400,
+        });
+        return null;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await consultasOdontologicasService.completarConsulta(
+          consultaId,
+          payload,
+          token,
+        );
+        setSelectedConsulta(response);
+        return response;
+      } catch (err) {
+        setError(err);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token],
+  );
+
+  /**
+   * Cancela una consulta odontológica en curso con justificación obligatoria (Iteración 6F-3).
+   * Requiere payload con versionEsperada y motivoCancelacion (mínimo 10 caracteres en dominio).
+   */
+  const cancelarConsulta = useCallback(
+    async (consultaId, payload) => {
+      if (!consultaId || !consultaId.trim()) {
+        setError({
+          title: 'Campo requerido',
+          detail: 'El identificador de la consulta es obligatorio para cancelarla.',
+          status: 400,
+        });
+        return null;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await consultasOdontologicasService.cancelarConsulta(
+          consultaId,
+          payload,
+          token,
+        );
+        setSelectedConsulta(response);
+        return response;
+      } catch (err) {
+        setError(err);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token],
+  );
+
   const limpiar = useCallback(() => {
     setListData({ consultas: [], total: 0, limite: 10, offset: 0 });
     setSelectedConsulta(null);
@@ -207,6 +279,8 @@ export function useConsultasOdontologicas() {
     consultarEstadoServidor,
     abrirConsulta,
     actualizarAtencion,
+    completarConsulta,
+    cancelarConsulta,
     resetError,
     limpiar,
     setSelectedConsulta,

@@ -6,6 +6,8 @@ import { Button } from '../components/common/Button.jsx';
 import { Alert } from '../components/common/Alert.jsx';
 import { Spinner } from '../components/common/Spinner.jsx';
 import { ConsultaDetailView } from '../components/consultas-odontologicas/ConsultaDetailView.jsx';
+import { CompletarConsultaModal } from '../components/consultas-odontologicas/CompletarConsultaModal.jsx';
+import { CancelarConsultaModal } from '../components/consultas-odontologicas/CancelarConsultaModal.jsx';
 
 export function DetalleConsultaPage({
   initialConsultaId = '',
@@ -14,11 +16,16 @@ export function DetalleConsultaPage({
   onEditarAtencion,
 }) {
   const [consultaIdInput, setConsultaIdInput] = useState(initialConsultaId);
+  const [isCompletarModalOpen, setIsCompletarModalOpen] = useState(false);
+  const [isCancelarModalOpen, setIsCancelarModalOpen] = useState(false);
+
   const {
     loading,
     error,
     selectedConsulta,
     obtenerPorId,
+    completarConsulta,
+    cancelarConsulta,
     resetError,
     limpiar,
   } = useConsultasOdontologicas();
@@ -37,7 +44,26 @@ export function DetalleConsultaPage({
 
   const handleLimpiar = () => {
     setConsultaIdInput('');
+    setIsCompletarModalOpen(false);
+    setIsCancelarModalOpen(false);
     limpiar();
+  };
+
+  const handleRecargar = async () => {
+    if (selectedConsulta?.id) {
+      return obtenerPorId(selectedConsulta.id);
+    }
+    return null;
+  };
+
+  const handleConfirmarCompletar = async ({ versionEsperada }) => {
+    if (!selectedConsulta?.id) return null;
+    return completarConsulta(selectedConsulta.id, { versionEsperada });
+  };
+
+  const handleConfirmarCancelar = async ({ versionEsperada, motivoCancelacion }) => {
+    if (!selectedConsulta?.id) return null;
+    return cancelarConsulta(selectedConsulta.id, { versionEsperada, motivoCancelacion });
   };
 
   return (
@@ -99,6 +125,31 @@ export function DetalleConsultaPage({
           onVolver={onVolver}
           onVerHistoria={onVerHistoria}
           onEditarAtencion={onEditarAtencion}
+          onCompletarClick={() => setIsCompletarModalOpen(true)}
+          onCancelarClick={() => setIsCancelarModalOpen(true)}
+        />
+      )}
+
+      {/* Modal para Completar y Sellar Consulta */}
+      {selectedConsulta && (
+        <CompletarConsultaModal
+          isOpen={isCompletarModalOpen}
+          consulta={selectedConsulta}
+          onClose={() => setIsCompletarModalOpen(false)}
+          onConfirmar={handleConfirmarCompletar}
+          onRecargar={handleRecargar}
+          onIrAEditar={onEditarAtencion}
+        />
+      )}
+
+      {/* Modal para Cancelar Consulta con Justificación */}
+      {selectedConsulta && (
+        <CancelarConsultaModal
+          isOpen={isCancelarModalOpen}
+          consulta={selectedConsulta}
+          onClose={() => setIsCancelarModalOpen(false)}
+          onConfirmar={handleConfirmarCancelar}
+          onRecargar={handleRecargar}
         />
       )}
 

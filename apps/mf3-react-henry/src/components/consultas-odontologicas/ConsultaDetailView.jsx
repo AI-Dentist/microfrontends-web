@@ -17,6 +17,8 @@ export function ConsultaDetailView({
   onVolver,
   onVerHistoria,
   onEditarAtencion,
+  onCompletarClick,
+  onCancelarClick,
 }) {
   if (!consulta) return null;
 
@@ -46,6 +48,8 @@ export function ConsultaDetailView({
     actualizadoPor,
   } = consulta;
 
+  const esTerminal = estado === 'COMPLETADA' || estado === 'CANCELADA';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Barra de acciones superior */}
@@ -67,14 +71,49 @@ export function ConsultaDetailView({
           )}
         </div>
 
-        {onEditarAtencion && estado === 'EN_CURSO' && (
-          <Button
-            variant="primary"
-            onClick={() => onEditarAtencion(id)}
-            style={{ fontSize: '13px', padding: '6px 14px' }}
-          >
-            ✏️ Atender Consulta en Sillón (6F-2)
-          </Button>
+        {/* Acciones clínicas disponibles solo para consultas EN_CURSO */}
+        {!esTerminal && (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {onEditarAtencion && (
+              <Button
+                variant="primary"
+                onClick={() => onEditarAtencion(id)}
+                style={{ fontSize: '13px', padding: '6px 14px' }}
+              >
+                ✏️ Atender en Sillón (6F-2)
+              </Button>
+            )}
+
+            {onCompletarClick && (
+              <Button
+                variant="primary"
+                onClick={() => onCompletarClick(consulta)}
+                style={{
+                  fontSize: '13px',
+                  padding: '6px 14px',
+                  background: 'var(--success)',
+                  borderColor: 'var(--success-border)',
+                }}
+              >
+                ✓ Completar Consulta (6F-3)
+              </Button>
+            )}
+
+            {onCancelarClick && (
+              <Button
+                variant="secondary"
+                onClick={() => onCancelarClick(consulta)}
+                style={{
+                  fontSize: '13px',
+                  padding: '6px 14px',
+                  color: 'var(--danger)',
+                  borderColor: 'var(--danger-border)',
+                }}
+              >
+                🚫 Cancelar Consulta
+              </Button>
+            )}
+          </div>
         )}
       </div>
 
@@ -149,21 +188,64 @@ export function ConsultaDetailView({
           </div>
         </div>
 
-        {/* Alerta si está cancelada */}
-        {estado === 'CANCELADA' && motivoCancelacion && (
+        {/* Banner de Estado Terminal: COMPLETADA */}
+        {estado === 'COMPLETADA' && (
           <div
             style={{
               marginTop: '16px',
-              padding: '12px 16px',
+              padding: '14px 18px',
+              background: 'var(--success-bg)',
+              border: '1px solid var(--success-border)',
+              borderRadius: 'var(--radius-md)',
+              color: 'var(--success)',
+              fontSize: '13px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '14px' }}>
+              <span>🔒</span> Consulta Odontológica Completada y Sellada Formalmente
+            </div>
+            <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              Este encuentro clínico ha sido cerrado formalmente el <strong>{cerradaEn ? new Date(cerradaEn).toLocaleString() : '—'}</strong> por el profesional <code>{actualizadoPor || odontologoId}</code>.
+              Por normativa de trazabilidad e inmutabilidad clínica, los datos están sellados y no admiten modificaciones ni cancelaciones posteriores.
+            </p>
+          </div>
+        )}
+
+        {/* Banner de Estado Terminal: CANCELADA */}
+        {estado === 'CANCELADA' && (
+          <div
+            style={{
+              marginTop: '16px',
+              padding: '14px 18px',
               background: 'var(--danger-bg)',
               border: '1px solid var(--danger-border)',
               borderRadius: 'var(--radius-md)',
               color: 'var(--danger)',
               fontSize: '13px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
             }}
           >
-            <strong>Motivo de Cancelación Registrado:</strong>
-            <p style={{ margin: '4px 0 0' }}>{motivoCancelacion}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '14px' }}>
+              <span>🚫</span> Consulta Odontológica Cancelada Definitivamente
+            </div>
+            <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              Cancelada el <strong>{cerradaEn ? new Date(cerradaEn).toLocaleString() : (actualizadoEn ? new Date(actualizadoEn).toLocaleString() : '—')}</strong> por el operador <code>{actualizadoPor || odontologoId}</code>.
+              {motivoCancelacion && (
+                <>
+                  <br />
+                  <strong>Motivo registrado: </strong>
+                  <span>{motivoCancelacion}</span>
+                </>
+              )}
+            </p>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+              El registro se conserva íntegro en la base de datos para auditoría clínica legal y no admite reapertura.
+            </div>
           </div>
         )}
       </Card>
@@ -442,7 +524,28 @@ export function ConsultaDetailView({
             <span style={{ color: 'var(--text-muted)' }}>Actualizado por: </span>
             <code>{actualizadoPor || '—'}</code>
           </div>
+
+          {cerradaEn && (
+            <div>
+              <span style={{ color: 'var(--text-muted)' }}>Fecha de Cierre / Cancelación: </span>
+              <strong style={{ color: estado === 'CANCELADA' ? 'var(--danger)' : 'var(--success)' }}>
+                {new Date(cerradaEn).toLocaleString()}
+              </strong>
+            </div>
+          )}
+
+          <div>
+            <span style={{ color: 'var(--text-muted)' }}>Versión del Registro: </span>
+            <Badge variant="neutral">v{version}</Badge>
+          </div>
         </div>
+
+        {motivoCancelacion && (
+          <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--border-color)', fontSize: '13px' }}>
+            <span style={{ color: 'var(--danger)', fontWeight: 600 }}>Motivo de Cancelación Registrado: </span>
+            <span style={{ color: 'var(--text-primary)' }}>{motivoCancelacion}</span>
+          </div>
+        )}
       </Card>
     </div>
   );
