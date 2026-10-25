@@ -9,7 +9,7 @@ import { EstadoConsultaBadge } from './EstadoConsultaBadge.jsx';
  * @param {object} props.consulta - ConsultaOdontologicaResponseDto
  * @param {Function} props.onVerDetalle - Callback invocado con el ID de la consulta
  */
-export function ConsultaCard({ consulta, onVerDetalle }) {
+export function ConsultaCard({ consulta, onVerDetalle, onEditarAtencion }) {
   if (!consulta) return null;
 
   const {
@@ -124,7 +124,16 @@ export function ConsultaCard({ consulta, onVerDetalle }) {
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+        {onEditarAtencion && estado === 'EN_CURSO' && (
+          <Button
+            variant="primary"
+            onClick={() => onEditarAtencion(id)}
+            style={{ fontSize: '13px', padding: '6px 14px' }}
+          >
+            ✏️ Atender en Sillón (6F-2)
+          </Button>
+        )}
         <Button
           variant="secondary"
           onClick={() => onVerDetalle && onVerDetalle(id)}

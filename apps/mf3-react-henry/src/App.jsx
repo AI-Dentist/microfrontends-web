@@ -11,6 +11,7 @@ import { GestionClinicaPage } from './pages/GestionClinicaPage.jsx';
 import { ListadoConsultasPage } from './pages/ListadoConsultasPage.jsx';
 import { DetalleConsultaPage } from './pages/DetalleConsultaPage.jsx';
 import { AbrirConsultaPage } from './pages/AbrirConsultaPage.jsx';
+import { AtencionConsultaPage } from './pages/AtencionConsultaPage.jsx';
 
 import './styles/theme.css';
 import './styles/components.css';
@@ -26,6 +27,7 @@ export function AppContent() {
   const [abrirHistoriaId, setAbrirHistoriaId] = useState('');
   const [abrirPacienteId, setAbrirPacienteId] = useState('');
   const [detalleConsultaId, setDetalleConsultaId] = useState('');
+  const [atencionConsultaId, setAtencionConsultaId] = useState('');
 
   const handleEditarAntecedentes = (id) => {
     setHistoriaAEditarId(id);
@@ -57,6 +59,11 @@ export function AppContent() {
   const handleVerDetalleConsulta = (consId) => {
     setDetalleConsultaId(consId);
     setActiveTab('detalle-consulta');
+  };
+
+  const handleEditarAtencion = (consId) => {
+    setAtencionConsultaId(consId);
+    setActiveTab('atencion-consulta');
   };
 
   const handleConsultaCreada = (consId, hId) => {
@@ -102,6 +109,7 @@ export function AppContent() {
             initialHistoriaId={consultasHistoriaId}
             onVerDetalle={handleVerDetalleConsulta}
             onAbrirConsulta={handleAbrirConsulta}
+            onEditarAtencion={handleEditarAtencion}
           />
         )}
 
@@ -113,6 +121,26 @@ export function AppContent() {
             onVerHistoria={(hId) => {
               setHistoriaAEditarId(hId);
               setActiveTab('consulta');
+            }}
+            onEditarAtencion={handleEditarAtencion}
+          />
+        )}
+
+        {activeTab === 'atencion-consulta' && (
+          <AtencionConsultaPage
+            key={atencionConsultaId || 'atencion-default'}
+            initialConsultaId={atencionConsultaId}
+            onVolver={() => {
+              if (atencionConsultaId) {
+                setDetalleConsultaId(atencionConsultaId);
+                setActiveTab('detalle-consulta');
+              } else {
+                setActiveTab('consultas');
+              }
+            }}
+            onVerDetalle={(consId) => {
+              setDetalleConsultaId(consId);
+              setActiveTab('detalle-consulta');
             }}
           />
         )}

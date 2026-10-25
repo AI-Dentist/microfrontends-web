@@ -11,6 +11,7 @@ export function DetalleConsultaPage({
   initialConsultaId = '',
   onVolver,
   onVerHistoria,
+  onEditarAtencion,
 }) {
   const [consultaIdInput, setConsultaIdInput] = useState(initialConsultaId);
   const {
@@ -97,6 +98,7 @@ export function DetalleConsultaPage({
           consulta={selectedConsulta}
           onVolver={onVolver}
           onVerHistoria={onVerHistoria}
+          onEditarAtencion={onEditarAtencion}
         />
       )}
 

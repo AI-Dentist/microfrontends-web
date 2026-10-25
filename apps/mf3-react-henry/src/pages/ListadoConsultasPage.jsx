@@ -16,7 +16,12 @@ const SUGGESTED_HISTORIAS = [
   { label: 'Historia Inexistente (404)', valor: 'hc_00000000-0000-0000-0000-000000000000' },
 ];
 
-export function ListadoConsultasPage({ initialHistoriaId = '', onVerDetalle, onAbrirConsulta }) {
+export function ListadoConsultasPage({
+  initialHistoriaId = '',
+  onVerDetalle,
+  onAbrirConsulta,
+  onEditarAtencion,
+}) {
   const [historiaId, setHistoriaId] = useState(initialHistoriaId);
   const [searchedId, setSearchedId] = useState(initialHistoriaId);
   const [currentPage, setCurrentPage] = useState(0);
@@ -193,6 +198,7 @@ export function ListadoConsultasPage({ initialHistoriaId = '', onVerDetalle, onA
                   key={consulta.id}
                   consulta={consulta}
                   onVerDetalle={onVerDetalle}
+                  onEditarAtencion={onEditarAtencion}
                 />
               ))}
 

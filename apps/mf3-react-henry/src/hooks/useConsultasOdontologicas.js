@@ -139,6 +139,57 @@ export function useConsultasOdontologicas() {
     [token],
   );
 
+  /**
+   * Actualiza los datos clínicos de una consulta odontológica en sillón (Iteración 6F-2).
+   */
+  const actualizarAtencion = useCallback(
+    async (consultaId, payload) => {
+      if (!consultaId || !consultaId.trim()) {
+        setError({
+          title: 'Campo requerido',
+          detail: 'El identificador de la consulta es obligatorio para actualizar la atención.',
+          status: 400,
+        });
+        return null;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await consultasOdontologicasService.actualizarAtencion(
+          consultaId,
+          payload,
+          token,
+        );
+        setSelectedConsulta(response);
+        return response;
+      } catch (err) {
+        setError(err);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token],
+  );
+
+  /**
+   * Consulta el estado fresco del servidor para una consulta específica
+   * sin alterar automáticamente la consulta seleccionada en edición ni su borrador.
+   */
+  const consultarEstadoServidor = useCallback(
+    async (consultaId) => {
+      if (!consultaId || !consultaId.trim()) return null;
+      try {
+        return await consultasOdontologicasService.getById(consultaId, token);
+      } catch {
+        return null;
+      }
+    },
+    [token],
+  );
+
   const limpiar = useCallback(() => {
     setListData({ consultas: [], total: 0, limite: 10, offset: 0 });
     setSelectedConsulta(null);
@@ -153,7 +204,9 @@ export function useConsultasOdontologicas() {
     selectedConsulta,
     listarPorHistoria,
     obtenerPorId,
+    consultarEstadoServidor,
     abrirConsulta,
+    actualizarAtencion,
     resetError,
     limpiar,
     setSelectedConsulta,

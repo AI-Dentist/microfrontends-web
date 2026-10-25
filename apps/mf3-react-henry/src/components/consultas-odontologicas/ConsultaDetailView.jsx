@@ -12,7 +12,12 @@ import { SnapshotRiesgoClinicoCard } from './SnapshotRiesgoClinicoCard.jsx';
  * @param {Function} [props.onVolver] - Callback para regresar al listado
  * @param {Function} [props.onVerHistoria] - Callback para navegar al expediente
  */
-export function ConsultaDetailView({ consulta, onVolver, onVerHistoria }) {
+export function ConsultaDetailView({
+  consulta,
+  onVolver,
+  onVerHistoria,
+  onEditarAtencion,
+}) {
   if (!consulta) return null;
 
   const {
@@ -45,18 +50,30 @@ export function ConsultaDetailView({ consulta, onVolver, onVerHistoria }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Barra de acciones superior */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-        {onVolver && (
-          <Button variant="secondary" onClick={onVolver} style={{ fontSize: '13px', padding: '6px 14px' }}>
-            ← Volver al Listado
-          </Button>
-        )}
-        {onVerHistoria && historiaClinicaId && (
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {onVolver && (
+            <Button variant="secondary" onClick={onVolver} style={{ fontSize: '13px', padding: '6px 14px' }}>
+              ← Volver al Listado
+            </Button>
+          )}
+          {onVerHistoria && historiaClinicaId && (
+            <Button
+              variant="secondary"
+              onClick={() => onVerHistoria(historiaClinicaId)}
+              style={{ fontSize: '13px', padding: '6px 14px' }}
+            >
+              📋 Ver Historia Clínica ({historiaClinicaId})
+            </Button>
+          )}
+        </div>
+
+        {onEditarAtencion && estado === 'EN_CURSO' && (
           <Button
-            variant="secondary"
-            onClick={() => onVerHistoria(historiaClinicaId)}
+            variant="primary"
+            onClick={() => onEditarAtencion(id)}
             style={{ fontSize: '13px', padding: '6px 14px' }}
           >
-            📋 Ver Historia Clínica ({historiaClinicaId})
+            ✏️ Atender Consulta en Sillón (6F-2)
           </Button>
         )}
       </div>
