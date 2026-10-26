@@ -14,7 +14,12 @@ import { AGRUPACION_CUADRANTES_FDI } from '../../constants/odontograma.constants
  * @param {number|null} props.selectedNumeroFDI - Pieza actualmente seleccionada
  * @param {Function} props.onSelectPieza - Callback de selección
  */
-export function ArcadaDental({ piezasMap = {}, selectedNumeroFDI = null, onSelectPieza }) {
+export function ArcadaDental({
+  piezasMap = {},
+  selectedNumeroFDI = null,
+  fdisModificadosSet = null,
+  onSelectPieza,
+}) {
   const {
     cuadrante1,
     cuadrante2,
@@ -52,6 +57,7 @@ export function ArcadaDental({ piezasMap = {}, selectedNumeroFDI = null, onSelec
                 numeroFDI={fdi}
                 pieza={piezasMap[fdi]}
                 isSelected={selectedNumeroFDI === fdi}
+                tieneBorrador={Boolean(fdisModificadosSet?.has(fdi))}
                 onSelect={onSelectPieza}
               />
             ))}
@@ -67,6 +73,7 @@ export function ArcadaDental({ piezasMap = {}, selectedNumeroFDI = null, onSelec
                 numeroFDI={fdi}
                 pieza={piezasMap[fdi]}
                 isSelected={selectedNumeroFDI === fdi}
+                tieneBorrador={Boolean(fdisModificadosSet?.has(fdi))}
                 onSelect={onSelectPieza}
               />
             ))}
@@ -98,6 +105,7 @@ export function ArcadaDental({ piezasMap = {}, selectedNumeroFDI = null, onSelec
                 numeroFDI={fdi}
                 pieza={piezasMap[fdi]}
                 isSelected={selectedNumeroFDI === fdi}
+                tieneBorrador={Boolean(fdisModificadosSet?.has(fdi))}
                 onSelect={onSelectPieza}
               />
             ))}
@@ -113,6 +121,7 @@ export function ArcadaDental({ piezasMap = {}, selectedNumeroFDI = null, onSelec
                 numeroFDI={fdi}
                 pieza={piezasMap[fdi]}
                 isSelected={selectedNumeroFDI === fdi}
+                tieneBorrador={Boolean(fdisModificadosSet?.has(fdi))}
                 onSelect={onSelectPieza}
               />
             ))}
@@ -144,6 +153,7 @@ export function ArcadaDental({ piezasMap = {}, selectedNumeroFDI = null, onSelec
                 numeroFDI={fdi}
                 pieza={piezasMap[fdi]}
                 isSelected={selectedNumeroFDI === fdi}
+                tieneBorrador={Boolean(fdisModificadosSet?.has(fdi))}
                 onSelect={onSelectPieza}
               />
             ))}
@@ -159,6 +169,7 @@ export function ArcadaDental({ piezasMap = {}, selectedNumeroFDI = null, onSelec
                 numeroFDI={fdi}
                 pieza={piezasMap[fdi]}
                 isSelected={selectedNumeroFDI === fdi}
+                tieneBorrador={Boolean(fdisModificadosSet?.has(fdi))}
                 onSelect={onSelectPieza}
               />
             ))}
@@ -190,6 +201,7 @@ export function ArcadaDental({ piezasMap = {}, selectedNumeroFDI = null, onSelec
                 numeroFDI={fdi}
                 pieza={piezasMap[fdi]}
                 isSelected={selectedNumeroFDI === fdi}
+                tieneBorrador={Boolean(fdisModificadosSet?.has(fdi))}
                 onSelect={onSelectPieza}
               />
             ))}
@@ -205,6 +217,7 @@ export function ArcadaDental({ piezasMap = {}, selectedNumeroFDI = null, onSelec
                 numeroFDI={fdi}
                 pieza={piezasMap[fdi]}
                 isSelected={selectedNumeroFDI === fdi}
+                tieneBorrador={Boolean(fdisModificadosSet?.has(fdi))}
                 onSelect={onSelectPieza}
               />
             ))}

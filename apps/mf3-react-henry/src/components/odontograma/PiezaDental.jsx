@@ -13,9 +13,16 @@ import {
  * @param {number} props.numeroFDI - Posición anatómica FDI (11..48, 51..85)
  * @param {object} [props.pieza] - PiezaDentalDto proveniente del backend
  * @param {boolean} [props.isSelected=false] - Indica si la pieza está seleccionada
+ * @param {boolean} [props.tieneBorrador=false] - Indica si la pieza tiene cambios pendientes en borrador
  * @param {Function} props.onSelect - Callback al seleccionar la pieza
  */
-export function PiezaDental({ numeroFDI, pieza, isSelected = false, onSelect }) {
+export function PiezaDental({
+  numeroFDI,
+  pieza,
+  isSelected = false,
+  tieneBorrador = false,
+  onSelect,
+}) {
   const estadoAnatomico = pieza?.estadoAnatomico || ESTADO_ANATOMICO.DESCONOCIDO;
   const estadoEvaluacion = pieza?.estadoEvaluacion || ESTADO_EVALUACION.NO_EVALUADO;
   const superficies = pieza?.superficies || {};
@@ -78,16 +85,19 @@ export function PiezaDental({ numeroFDI, pieza, isSelected = false, onSelect }) 
   return (
     <button
       type="button"
-      className={`pieza-dental-btn ${isSelected ? 'selected' : ''}`}
+      className={`pieza-dental-btn ${isSelected ? 'selected' : ''} ${tieneBorrador ? 'tiene-borrador' : ''}`}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       role="button"
       aria-pressed={isSelected}
-      aria-label={labelAria}
-      title={labelAria}
+      aria-label={`${labelAria}${tieneBorrador ? ' (Con modificaciones pendientes en borrador)' : ''}`}
+      title={`${labelAria}${tieneBorrador ? ' (Con modificaciones pendientes en borrador)' : ''}`}
       data-fdi={numeroFDI}
     >
-      <span className="pieza-numero-fdi">{numeroFDI}</span>
+      <span className="pieza-numero-fdi">
+        {numeroFDI}
+        {tieneBorrador && <span className="pieza-dot-borrador" title="Cambio en borrador">✏️</span>}
+      </span>
 
       {/* Mini esquema cruciforme simplificado */}
       <svg
