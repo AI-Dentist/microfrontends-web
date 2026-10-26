@@ -72,6 +72,15 @@ export function Navigation({ activeTab, onSelectTab }) {
         <span>🪑</span>
         <span>Atención en Sillón (6F-2)</span>
       </button>
+
+      <button
+        type="button"
+        className={`nav-tab-btn ${activeTab === 'odontograma' ? 'active' : ''}`}
+        onClick={() => onSelectTab('odontograma')}
+      >
+        <span>🦷</span>
+        <span>Odontograma (7F-2)</span>
+      </button>
     </nav>
   );
 }

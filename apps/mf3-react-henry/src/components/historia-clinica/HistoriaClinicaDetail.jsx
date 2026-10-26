@@ -12,6 +12,7 @@ export function HistoriaClinicaDetail({
   onGestionarClinica,
   onVerConsultas,
   onAbrirConsulta,
+  onVerOdontograma,
 }) {
   if (!historia) return null;
 
@@ -23,6 +24,16 @@ export function HistoriaClinicaDetail({
       <Card
         action={
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {onVerOdontograma && (
+              <Button
+                variant="secondary"
+                onClick={() => onVerOdontograma(historia.id)}
+                style={{ fontSize: '12px', padding: '6px 12px' }}
+              >
+                🦷 Odontograma
+              </Button>
+            )}
+
             {onVerConsultas && (
               <Button
                 variant="secondary"

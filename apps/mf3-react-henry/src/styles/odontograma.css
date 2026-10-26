@@ -1,0 +1,410 @@
+/* Estilos clínicos del Odontograma Longitudinal (Iteración 7F-2) */
+
+.odontograma-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.odontograma-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 16px;
+}
+
+.odontograma-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.odontograma-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.odontograma-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.odontograma-meta-item strong {
+  color: var(--text-primary);
+}
+
+/* Arcadas dentales */
+.arcadas-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow-x: auto;
+  padding: 8px 4px 16px;
+}
+
+.arcada-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background-color: var(--neutral-50);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.arcada-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px dashed var(--border-color);
+  padding-bottom: 6px;
+}
+
+.orientacion-indicator {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0 8px;
+}
+
+.arcada-grid {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  min-width: 680px;
+}
+
+.cuadrante-grupo {
+  display: flex;
+  gap: 6px;
+}
+
+.linea-media-divisor {
+  width: 2px;
+  height: 90px;
+  background-color: var(--primary);
+  opacity: 0.4;
+  margin: 0 8px;
+  border-radius: 1px;
+}
+
+/* Pieza Dental Individual */
+.pieza-dental-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  width: 58px;
+  min-height: 94px;
+  padding: 6px 4px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  position: relative;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.pieza-dental-btn:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.pieza-dental-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.pieza-dental-btn.selected {
+  border-color: var(--primary);
+  background-color: var(--primary-light);
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+.pieza-numero-fdi {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.pieza-mini-schema {
+  width: 32px;
+  height: 32px;
+  margin: 4px 0;
+}
+
+.pieza-badge-estado {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 4px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  max-width: 54px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Estados anatómicos en la pieza */
+.pieza-estado-desconocido {
+  background-color: var(--neutral-100);
+  color: var(--neutral-600);
+  border: 1px dashed var(--neutral-300);
+}
+
+.pieza-estado-presente {
+  background-color: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.pieza-estado-ausente {
+  background-color: #f5f3ff;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+
+.pieza-estado-extraido {
+  background-color: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  text-decoration: line-through;
+}
+
+.pieza-estado-no-erupcionado {
+  background-color: #fffbeb;
+  color: #b45309;
+  border: 1px dashed #fde68a;
+}
+
+.pieza-indicadores-puntos {
+  display: flex;
+  gap: 3px;
+  margin-top: 2px;
+  height: 6px;
+}
+
+.punto-indicador {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.punto-caries {
+  background-color: var(--danger);
+}
+
+.punto-obturacion {
+  background-color: var(--primary);
+}
+
+.punto-tratamiento {
+  background-color: #9333ea;
+}
+
+/* Panel de Detalle y Esquema de Superficies */
+.detalle-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 24px;
+  background-color: var(--neutral-50);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 20px;
+}
+
+@media (max-width: 900px) {
+  .detalle-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.superficies-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.superficies-svg-container {
+  width: 220px;
+  height: 220px;
+  margin: 12px 0;
+}
+
+.superficie-sector {
+  stroke: var(--neutral-400);
+  stroke-width: 1.5;
+  transition: fill 0.15s ease-in-out;
+  cursor: default;
+}
+
+.superficie-sector:hover {
+  stroke: var(--primary);
+  stroke-width: 2.5;
+}
+
+.superficie-text {
+  font-size: 11px;
+  font-weight: 700;
+  fill: var(--text-primary);
+  pointer-events: none;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+/* Colores de condición de superficie */
+.condicion-NO_EVALUADA {
+  fill: #f1f5f9;
+}
+
+.condicion-SANA {
+  fill: #dcfce7;
+  stroke: #86efac;
+}
+
+.condicion-CARIES {
+  fill: #fee2e2;
+  stroke: #fca5a5;
+}
+
+.condicion-OBTURACION_RESINA {
+  fill: #e0f2fe;
+  stroke: #7dd3fc;
+}
+
+.condicion-OBTURACION_AMALGAMA {
+  fill: #cbd5e1;
+  stroke: #64748b;
+}
+
+.condicion-FRACTURA {
+  fill: #ffedd5;
+  stroke: #fdba74;
+}
+
+.condicion-SELLANTE {
+  fill: #fef3c7;
+  stroke: #fde68a;
+}
+
+/* Detalle Ficha de Pieza */
+.detalle-ficha {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 20px;
+}
+
+.detalle-ficha-header {
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 12px;
+}
+
+.detalle-ficha-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.superficies-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.superficies-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--border-color);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.superficies-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+/* Leyenda clínica */
+.leyenda-clinica {
+  background-color: var(--neutral-50);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  font-size: 12px;
+}
+
+.leyenda-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.leyenda-columna {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.leyenda-columna-titulo {
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.leyenda-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.leyenda-muestra {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  flex-shrink: 0;
+}

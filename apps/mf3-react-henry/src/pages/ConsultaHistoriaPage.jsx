@@ -20,6 +20,7 @@ export function ConsultaHistoriaPage({
   onGestionarClinica,
   onVerConsultas,
   onAbrirConsulta,
+  onVerOdontograma,
 }) {
   const [tipoBusqueda, setTipoBusqueda] = useState('ID'); // 'ID' | 'PACIENTE'
   const [queryValue, setQueryValue] = useState('');
@@ -150,6 +151,7 @@ export function ConsultaHistoriaPage({
           onGestionarClinica={onGestionarClinica}
           onVerConsultas={onVerConsultas}
           onAbrirConsulta={onAbrirConsulta}
+          onVerOdontograma={onVerOdontograma}
         />
       )}
 

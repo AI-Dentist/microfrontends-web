@@ -19,6 +19,7 @@ export function ConsultaDetailView({
   onEditarAtencion,
   onCompletarClick,
   onCancelarClick,
+  onVerOdontograma,
 }) {
   if (!consulta) return null;
 
@@ -67,6 +68,15 @@ export function ConsultaDetailView({
               style={{ fontSize: '13px', padding: '6px 14px' }}
             >
               📋 Ver Historia Clínica ({historiaClinicaId})
+            </Button>
+          )}
+          {onVerOdontograma && historiaClinicaId && (
+            <Button
+              variant="secondary"
+              onClick={() => onVerOdontograma(historiaClinicaId)}
+              style={{ fontSize: '13px', padding: '6px 14px' }}
+            >
+              🦷 Ver Odontograma
             </Button>
           )}
         </div>

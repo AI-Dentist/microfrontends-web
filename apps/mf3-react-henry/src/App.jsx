@@ -12,6 +12,7 @@ import { ListadoConsultasPage } from './pages/ListadoConsultasPage.jsx';
 import { DetalleConsultaPage } from './pages/DetalleConsultaPage.jsx';
 import { AbrirConsultaPage } from './pages/AbrirConsultaPage.jsx';
 import { AtencionConsultaPage } from './pages/AtencionConsultaPage.jsx';
+import { OdontogramaPage } from './pages/OdontogramaPage.jsx';
 
 import './styles/theme.css';
 import './styles/components.css';
@@ -28,6 +29,7 @@ export function AppContent() {
   const [abrirPacienteId, setAbrirPacienteId] = useState('');
   const [detalleConsultaId, setDetalleConsultaId] = useState('');
   const [atencionConsultaId, setAtencionConsultaId] = useState('');
+  const [odontogramaHistoriaId, setOdontogramaHistoriaId] = useState('');
 
   const handleEditarAntecedentes = (id) => {
     setHistoriaAEditarId(id);
@@ -48,6 +50,11 @@ export function AppContent() {
   const handleVerConsultasDeHistoria = (hId) => {
     setConsultasHistoriaId(hId);
     setActiveTab('consultas');
+  };
+
+  const handleVerOdontogramaDeHistoria = (hId) => {
+    setOdontogramaHistoriaId(hId);
+    setActiveTab('odontograma');
   };
 
   const handleAbrirConsulta = (hId = '', pacId = '') => {
@@ -84,6 +91,7 @@ export function AppContent() {
             onGestionarClinica={handleGestionarClinica}
             onVerConsultas={handleVerConsultasDeHistoria}
             onAbrirConsulta={handleAbrirConsulta}
+            onVerOdontograma={handleVerOdontogramaDeHistoria}
           />
         )}
 
@@ -123,6 +131,22 @@ export function AppContent() {
               setActiveTab('consulta');
             }}
             onEditarAtencion={handleEditarAtencion}
+            onVerOdontograma={handleVerOdontogramaDeHistoria}
+          />
+        )}
+
+        {activeTab === 'odontograma' && (
+          <OdontogramaPage
+            key={odontogramaHistoriaId || 'odontograma-default'}
+            initialHistoriaId={odontogramaHistoriaId}
+            onVolverAHistoria={(hId) => {
+              setHistoriaAEditarId(hId);
+              setActiveTab('consulta');
+            }}
+            onVerConsultas={(hId) => {
+              setConsultasHistoriaId(hId);
+              setActiveTab('consultas');
+            }}
           />
         )}
 
