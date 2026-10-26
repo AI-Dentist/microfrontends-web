@@ -1,0 +1,9 @@
+/* Compiles Web Workers (local AI engine) with the WebWorker lib instead of the DOM lib. */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["es2022", "webworker"],
+    "types": []
+  },
+  "include": ["src/**/*.worker.ts"]
+}

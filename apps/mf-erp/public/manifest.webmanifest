@@ -1,0 +1,17 @@
+{
+  "name": "Dental ERP - Finance & Cash",
+  "short_name": "Dental ERP",
+  "display": "standalone",
+  "scope": "./",
+  "start_url": "./",
+  "theme_color": "#0f766e",
+  "background_color": "#f8fafc",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
