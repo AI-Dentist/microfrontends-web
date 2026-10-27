@@ -1,6 +1,15 @@
 import { parseProblemDetails, ProblemDetailsError } from './problem-details.js';
 
-const BASE_URL = '/api/expediente';
+const BASE_URL = import.meta.env?.VITE_API_BASE_URL || '/api/expediente';
+
+// A capability, not a captured token: each request reads the current session.
+export function createHttpClient({ apiBaseUrl = BASE_URL, getAccessToken } = {}) {
+  return (endpoint, options = {}) => httpClient(endpoint, {
+    ...options,
+    apiBaseUrl,
+    token: getAccessToken ? getAccessToken() : options.token,
+  });
+}
 
 /**
  * Cliente HTTP modular para interactuar con la API REST de expediente clínico.
@@ -20,8 +29,18 @@ export async function httpClient(endpoint, {
   token,
   headers = {},
   signal,
+  apiBaseUrl = BASE_URL,
 } = {}) {
-  const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const baseQueryIndex = apiBaseUrl.indexOf('?');
+  const basePath = baseQueryIndex === -1 ? apiBaseUrl : apiBaseUrl.slice(0, baseQueryIndex);
+  const baseQuery = baseQueryIndex === -1 ? '' : apiBaseUrl.slice(baseQueryIndex + 1);
+  const endpointQueryIndex = endpoint.indexOf('?');
+  const endpointPath = endpointQueryIndex === -1 ? endpoint : endpoint.slice(0, endpointQueryIndex);
+  const endpointQuery = endpointQueryIndex === -1 ? '' : endpoint.slice(endpointQueryIndex + 1);
+  // Append rather than reserialize: preserve encoding, order and repeated keys.
+  const query = [baseQuery, endpointQuery].filter(Boolean).join('&');
+  const suffix = baseQueryIndex !== -1 || endpointQueryIndex !== -1 ? `?${query}` : '';
+  const url = `${basePath.replace(/\/$/, '')}${endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`}${suffix}`;
 
   const requestHeaders = {
     Accept: 'application/json, application/problem+json',

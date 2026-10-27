@@ -1,12 +1,13 @@
 import { httpClient } from './client.js';
 
-export const historiasClinicasService = {
+export function createHistoriasClinicasService(client = httpClient) {
+  return {
   /**
    * Consulta el estado de salud del microservicio y de la conexión a MongoDB.
    * Endpoint público de infraestructura.
    */
   async getHealth(signal) {
-    return httpClient('/health', { signal });
+    return client('/health', { signal });
   },
 
   /**
@@ -20,7 +21,7 @@ export const historiasClinicasService = {
     if (!id || !id.trim()) {
       throw new Error('El ID de la historia clínica es requerido.');
     }
-    return httpClient(`/historias-clinicas/${encodeURIComponent(id.trim())}`, {
+    return client(`/historias-clinicas/${encodeURIComponent(id.trim())}`, {
       token,
       signal,
     });
@@ -38,7 +39,7 @@ export const historiasClinicasService = {
     if (!pacienteId || !pacienteId.trim()) {
       throw new Error('El ID del paciente es requerido.');
     }
-    const result = await httpClient(
+    const result = await client(
       `/historias-clinicas?pacienteId=${encodeURIComponent(pacienteId.trim())}`,
       { token, signal },
     );
@@ -57,7 +58,7 @@ export const historiasClinicasService = {
    * @param {AbortSignal} [signal]
    */
   async create(payload, token, signal) {
-    return httpClient('/historias-clinicas', {
+    return client('/historias-clinicas', {
       method: 'POST',
       body: payload,
       token,
@@ -77,12 +78,15 @@ export const historiasClinicasService = {
     if (!id || !id.trim()) {
       throw new Error('El ID de la historia clínica es requerido.');
     }
-    return httpClient(`/historias-clinicas/${encodeURIComponent(id.trim())}/antecedentes`, {
+    return client(`/historias-clinicas/${encodeURIComponent(id.trim())}/antecedentes`, {
       method: 'PATCH',
       body: payload,
       token,
       signal,
     });
   },
-};
+  };
+}
+
+export const historiasClinicasService = createHistoriasClinicasService();
 

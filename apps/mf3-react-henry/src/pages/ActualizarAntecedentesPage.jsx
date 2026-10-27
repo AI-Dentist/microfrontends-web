@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { historiasClinicasService } from '../api/historias-clinicas.service.js';
+import { useClinicalServices } from '../context/ClinicalServices.jsx';
 import { useDevAuth } from '../hooks/useDevAuth.js';
 import { Card } from '../components/common/Card.jsx';
 import { Input } from '../components/common/Input.jsx';
@@ -13,6 +13,7 @@ import { validateAntecedentes, serializeAntecedentes } from '../components/histo
 
 export function ActualizarAntecedentesPage({ initialHistoriaId }) {
   const { token, currentIdentity } = useDevAuth();
+  const historiasClinicasService = useClinicalServices();
 
   const [searchId, setSearchId] = useState(initialHistoriaId || '');
   const [historiaActual, setHistoriaActual] = useState(null);
@@ -54,7 +55,7 @@ export function ActualizarAntecedentesPage({ initialHistoriaId }) {
         setLoadingHistoria(false);
       }
     },
-    [searchId, token],
+    [searchId, token, historiasClinicasService],
   );
 
   useEffect(() => {
@@ -89,7 +90,7 @@ export function ActualizarAntecedentesPage({ initialHistoriaId }) {
     return () => {
       isMounted = false;
     };
-  }, [initialHistoriaId, token]);
+  }, [initialHistoriaId, token, historiasClinicasService]);
 
   const handleRecargarConflict = () => {
     setUpdateError(null);

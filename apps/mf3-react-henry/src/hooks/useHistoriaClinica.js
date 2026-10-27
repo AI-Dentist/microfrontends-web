@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { historiasClinicasService } from '../api/historias-clinicas.service.js';
+import { useClinicalServices } from '../context/ClinicalServices.jsx';
 import { useDevAuth } from './useDevAuth.js';
 
 export function useHistoriaClinica() {
   const { token } = useDevAuth();
+  const historiasClinicasService = useClinicalServices();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -64,7 +65,7 @@ export function useHistoriaClinica() {
         setLoading(false);
       }
     },
-    [token],
+    [token, historiasClinicasService],
   );
 
   const buscarPorPaciente = useCallback(
@@ -102,7 +103,7 @@ export function useHistoriaClinica() {
         setLoading(false);
       }
     },
-    [token],
+    [token, historiasClinicasService],
   );
 
   return {

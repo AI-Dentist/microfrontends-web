@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { historiasClinicasService } from '../api/historias-clinicas.service.js';
+import { useClinicalServices } from '../context/ClinicalServices.jsx';
 import { useDevAuth } from '../hooks/useDevAuth.js';
 import { Card } from '../components/common/Card.jsx';
 import { Input } from '../components/common/Input.jsx';
@@ -10,10 +10,11 @@ import { HistoriaClinicaDetail } from '../components/historia-clinica/HistoriaCl
 import { validateAntecedentes, serializeAntecedentes } from '../components/historia-clinica/antecedentes-utils.js';
 
 export function CrearHistoriaPage({ onVerHistoria }) {
-  const { token, currentIdentity } = useDevAuth();
+  const { token, currentIdentity, isRemote } = useDevAuth();
+  const historiasClinicasService = useClinicalServices();
 
   const [pacienteId, setPacienteId] = useState('');
-  const [odontologoResponsableId, setOdontologoResponsableId] = useState('od_dev_henry');
+  const [odontologoResponsableId, setOdontologoResponsableId] = useState(isRemote ? '' : 'od_dev_henry');
   const [observacionesGenerales, setObservacionesGenerales] = useState('Apertura de expediente clínico en consulta inicial.');
   const [antecedentes, setAntecedentes] = useState({
     antecedentesOdontologicos: {
@@ -146,12 +147,12 @@ export function CrearHistoriaPage({ onVerHistoria }) {
               Complete los datos del paciente y el bloque de antecedentes iniciales para aperturar el expediente clínico.
               <br />
               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                Operador autenticado actual: <strong>{currentIdentity?.nombre || 'Dr. Henry'}</strong>
+                Operador autenticado actual: <strong>{currentIdentity?.nombre || 'Sesión del host'}</strong>
               </span>
             </p>
 
             {/* Chips de prueba rápida */}
-            <div className="quick-chips-container" style={{ marginBottom: '16px' }}>
+            {!isRemote && <div className="quick-chips-container" style={{ marginBottom: '16px' }}>
               <span>Casos de prueba de desarrollo:</span>
               <button type="button" className="quick-chip" onClick={handleQuickSynthetic}>
                 ⚡ Generar Paciente Sintético Único
@@ -162,7 +163,7 @@ export function CrearHistoriaPage({ onVerHistoria }) {
               <button type="button" className="quick-chip" onClick={handleTestInexistente}>
                 ⚠️ Probar Paciente Inexistente en MS1 (422)
               </button>
-            </div>
+            </div>}
 
             {/* Errores de validación cliente */}
             {validationErrors.length > 0 && (

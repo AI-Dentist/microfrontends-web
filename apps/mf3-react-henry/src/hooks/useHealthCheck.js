@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { historiasClinicasService } from '../api/historias-clinicas.service.js';
+import { useClinicalServices } from '../context/ClinicalServices.jsx';
 
 export function useHealthCheck(autoCheck = true) {
+  const historiasClinicasService = useClinicalServices();
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -21,7 +22,7 @@ export function useHealthCheck(autoCheck = true) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [historiasClinicasService]);
 
   useEffect(() => {
     if (!autoCheck) return;
@@ -47,7 +48,7 @@ export function useHealthCheck(autoCheck = true) {
     return () => {
       isMounted = false;
     };
-  }, [autoCheck]);
+  }, [autoCheck, historiasClinicasService]);
 
   return {
     health,
