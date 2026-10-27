@@ -69,6 +69,7 @@ export function ModalRegistrarRevision({
   const [aplicaAlEstadoActual, setAplicaAlEstadoActual] = useState(true);
   const [mostrarPayloadJson, setMostrarPayloadJson] = useState(false);
   const [errorLocal, setErrorLocal] = useState(null);
+  const [mensajeSimulacion, setMensajeSimulacion] = useState(null);
 
   // Metadatos actuales en memoria
   const metadatosActuales = useMemo(() => {
@@ -113,6 +114,7 @@ export function ModalRegistrarRevision({
     if (isSubmitting) return;
 
     setErrorLocal(null);
+    setMensajeSimulacion(null);
 
     if (!validacionMetadatos.esValido) {
       const msg = Object.values(validacionMetadatos.errores)[0];
@@ -136,6 +138,8 @@ export function ModalRegistrarRevision({
       setErrorLocal('Primero complete los campos obligatorios del formulario.');
       return;
     }
+    setErrorLocal(null);
+    setMensajeSimulacion('Simulación ejecutada: el payload es válido, pero ningún dato fue persistido en MongoDB.');
     if (onSimularEnvio) {
       await onSimularEnvio(payloadGenerado);
     }
@@ -208,6 +212,14 @@ export function ModalRegistrarRevision({
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Mensaje de simulación de desarrollo */}
+        {mensajeSimulacion && (
+          <div style={{ background: '#f0fdf4', border: '1px solid #86efac', padding: '8px 12px', borderRadius: '4px', fontSize: '12px', color: '#166534', display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '14px' }}>
+            <span>🧪</span>
+            <span><strong>Simulación — No guardado:</strong> {mensajeSimulacion}</span>
           </div>
         )}
 

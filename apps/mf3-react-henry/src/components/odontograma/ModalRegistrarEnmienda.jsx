@@ -70,6 +70,7 @@ export function ModalRegistrarEnmienda({
   const [mostrarPayloadJson, setMostrarPayloadJson] = useState(false);
   const [errorLocal, setErrorLocal] = useState(null);
   const [mensajeSimulacion, setMensajeSimulacion] = useState(null);
+  const [confirmacionConsciente, setConfirmacionConsciente] = useState(false);
 
   // Verificar entorno de desarrollo para mostrar controles mock
   const esEntornoDesarrollo = Boolean(
@@ -146,25 +147,65 @@ export function ModalRegistrarEnmienda({
 
         {/* Alerta de Conflicto de Concurrencia Optimista (INV-ODO-06) */}
         {versionActualCambio && (
-          <div style={{ background: '#fef2f2', border: '1px solid #f87171', borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: '14px', color: '#991b1b' }} role="alert">
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-              <span style={{ fontSize: '18px' }}>⚠️</span>
+          <div style={{ background: '#fef2f2', border: '1px solid #f87171', borderRadius: 'var(--radius-sm)', padding: '12px 16px', marginBottom: '14px', color: '#991b1b' }} role="alert">
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+              <span style={{ fontSize: '20px' }}>⚠️</span>
               <div style={{ flex: 1 }}>
-                <strong style={{ fontSize: '13px', display: 'block' }}>
+                <strong style={{ fontSize: '14px', display: 'block', marginBottom: '4px' }}>
                   Conflicto de Concurrencia Optimista (INV-ODO-06)
                 </strong>
-                <p style={{ margin: '4px 0 8px', fontSize: '12px', lineHeight: 1.4 }}>
+                <p style={{ margin: '0 0 8px', fontSize: '12px', lineHeight: 1.4 }}>
                   Esta enmienda fue preparada sobre la versión <strong>v{versionEsperadaOriginal}</strong>, pero el odontograma maestro en el servidor avanzó a la versión <strong>v{odontograma?.version}</strong>.
                   La confirmación se encuentra <strong>bloqueada</strong> para prevenir sobrescrituras concurrentes no deseadas.
                 </p>
+                <div style={{ background: '#fff', border: '1px solid #fca5a5', borderRadius: '4px', padding: '8px 12px', marginBottom: '10px', fontSize: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <div>
+                      <span style={{ color: '#6b7280' }}>Versión Base Borrador:</span> <strong>v{versionEsperadaOriginal}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#6b7280' }}>Versión Vigente Servidor:</span> <strong>v{odontograma?.version}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#6b7280' }}>Deltas Preparados:</span> <strong>{deltas.length} piezas</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#6b7280' }}>Revisión Rectificada:</span> <strong>#{revisionCorregida?.numeroRevision}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <label className="checkbox-label" style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', fontSize: '12px', marginBottom: '8px' }}>
+                  <input
+                    type="checkbox"
+                    checked={confirmacionConsciente}
+                    onChange={(e) => setConfirmacionConsciente(e.target.checked)}
+                    style={{ marginTop: '2px' }}
+                  />
+                  <span>
+                    He contrastado el estado vigente del odontograma (v{odontograma?.version}) y ratifico conscientemente que los {deltas.length} deltas preparados sobre el snapshot histórico de la Rev #{revisionCorregida?.numeroRevision} siguen siendo clínicamente pertinentes.
+                  </span>
+                </label>
+
                 {onResolverConflicto && (
                   <Button
                     type="button"
                     variant="secondary"
-                    onClick={onResolverConflicto}
-                    style={{ fontSize: '12px', padding: '4px 10px', borderColor: '#b91c1c', color: '#b91c1c' }}
+                    onClick={() => {
+                      if (!confirmacionConsciente) return;
+                      onResolverConflicto();
+                      setConfirmacionConsciente(false);
+                    }}
+                    disabled={!confirmacionConsciente}
+                    style={{
+                      fontSize: '12px',
+                      padding: '4px 12px',
+                      borderColor: confirmacionConsciente ? '#b91c1c' : '#d1d5db',
+                      color: confirmacionConsciente ? '#b91c1c' : '#9ca3af',
+                    }}
+                    title={confirmacionConsciente ? 'Actualiza la versión esperada a la versión vigente del servidor' : 'Marque la casilla de revisión consciente para habilitar'}
                   >
-                    🔄 Revisar y Alinear a Versión Vigente (v{odontograma?.version})
+                    🔄 Aceptar y Alinear a Versión Vigente (v{odontograma?.version})
                   </Button>
                 )}
               </div>

@@ -52,6 +52,8 @@ export function useOdontogramaEnmienda(odontogramaActual, historiaClinicaId = ''
   const [fechaObservacion, setFechaObservacion] = useState(obtenerFechaActualLocal);
   const [consultaId, setConsultaId] = useState('');
   const [versionEsperadaOriginal, setVersionEsperadaOriginal] = useState(null);
+  const [errorValidacion, setErrorValidacion] = useState(null);
+  const [conflictoRevisadoConsciente, setConflictoRevisadoConsciente] = useState(false);
 
   const prevHistoriaIdRef = useRef(historiaClinicaId);
   const prevOdontogramaIdRef = useRef(odontogramaActual?.id);
@@ -357,9 +359,11 @@ export function useOdontogramaEnmienda(odontogramaActual, historiaClinicaId = ''
    * las modificaciones del borrador ni la base histórica.
    */
   const revisarYAlinearConflicto = useCallback(() => {
-    if (!odontogramaActual?.version) return;
+    if (!odontogramaActual?.version) return false;
     setVersionEsperadaOriginal(odontogramaActual.version);
+    setConflictoRevisadoConsciente(true);
     setErrorValidacion(null);
+    return true;
   }, [odontogramaActual]);
 
   return {
@@ -377,6 +381,8 @@ export function useOdontogramaEnmienda(odontogramaActual, historiaClinicaId = ''
     errorValidacion,
     versionActualCambio,
     versionEsperadaOriginal,
+    conflictoRevisadoConsciente,
+    setConflictoRevisadoConsciente,
     versionEsperada: versionEsperadaOriginal ?? odontogramaActual?.version ?? 1,
     validacionMetadatos,
     payloadGenerado,
