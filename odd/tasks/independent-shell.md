@@ -1,5 +1,5 @@
 # Independently deployable microfrontend shell
-Branch: `feat/independent-microfrontend-shell`, base `746925b`. Delivery: local work-unit commits, no publication; forecast ~1800 authored lines across cohesive slices (generated locks excluded).
+Branch: `feat/independent-microfrontend-shell`, base `746925b`. Delivery: local work-unit slices on one feature branch, no publication; 2413 authored changed lines in implementation slices (generated locks excluded). PR shape remains unrequested; do not infer push/PR authority.
 Checks: Node contract tests, app builds, Angular tests, real-browser multi-origin smoke and independent verification. Deployment credentials and identity-provider provisioning are outside this frontend implementation.
 
 ## Specs
@@ -9,11 +9,11 @@ S3. "Quiero que lo hagas sin parar hasta acabar todo, quiero lo mejor, preparado
 S4. "Continúa sin parar hasta acabar todo"
 
 ## Tasks
-T1 | S2-S3 | inline | in_progress | Define versioned framework-neutral lifecycle, runtime deployment configuration and contract tests. Risk: item 5 (runtime deployment boundary). Commit: pending.
-T2 | S2-S3 | delegated | pending | Vue standalone + remote lifecycle, configurable API/session, tests and docs. Risk: item 2 (session propagation). Commit: pending.
-T3 | S2-S3 | delegated | pending | React standalone + remote lifecycle, configurable API/session, tests and docs. Risk: item 2 (session propagation). Commit: pending.
-T4 | S1-S3 | inline | pending | Angular shell, ERP federation, isolated Vue/React loading, navigation and failure handling. Risk: item 5 (independent runtime loading). Commit: pending.
-T5 | S2-S4 | inline | pending | Local orchestration, deploy/rollback/security guide and multi-origin browser verification; independent verification and native review per offered authority. Risk: item 5 (deployment examples). Commit: pending.
+T1 | S2-S3 | delegated | done | Versioned lifecycle and validated runtime manifest; RED/GREEN 68/68 Node tests, parent rerun passed. Risk: item 5 (runtime deployment boundary). Commit: a5e7b94.
+T2 | S2-S3 | delegated | done | Vue standalone + remote lifecycle, configurable API/session, tests/docs. RED/GREEN initially7/7, final12/12; both builds and browser pass. Risk: item 2 (session propagation). Commit: 5395563.
+T3 | S2-S3 | delegated | done | React standalone + remote lifecycle, instance-scoped API/session and navigation. RED/GREEN initially5/5, final17/17; both builds, browser and lint pass (one Fast Refresh warning). Risk: item 2 (session propagation). Commit: 3e25fad.
+T4 | S1-S3 | delegated | done | Angular shell, ERP federation, isolated loaders/navigation and failures. Shell80/80, typecheck/build pass; ERP official ng test356/356 (49 files), production build passes. Risk: item 5 (independent runtime loading). Commits: 890d12e ERP endpoint; 057baec loader; 348bb04 host.
+T5 | S2-S4 | delegated | done | Local orchestration, deployment/rollback/security guide; final112/112 combined Node tests and multi-origin browser smoke pass. Independent verifier blocker corrected and approved on limited recheck. Native review unavailable as L9. Risk: item 5 (deployment examples). Commit: 7b34a28.
 
 ## Log
 L1. User: "Quiero que analices cómo podemos hacer la shell para los microfrontends"
@@ -22,3 +22,7 @@ L3. User: "Quiero que lo hagas sin parar hasta acabar todo, quiero lo mejor, pre
 L4. User: "Continúa sin parar hasta acabar todo"
 L5. Assumptions: Angular host reuses ERP ./Routes; Vue/React expose self-contained ESM lifecycle v1 (not incompatible federation dialects), with host-owned Shadow DOM and no cross-framework shared state. One runtime manifest selects immutable release URLs and API bases. Existing standalone flows remain. No backend changes, fabricated production auth, automatic pushes/PRs or deployments. Actual production identity/gateway/CSP configuration is documented as operator-owned.
 L6. Incident resolved read-only: active feat/mf-erp-angular was stale; switched to new branch from origin/main. Existing untracked ERP odd files and .angular cache preserved and excluded from commits. Read-only explorer lacked Git execution; parent inspected committed refs.
+L7. Verified work-unit boundaries: a5e7b94 contract/config (385 lines including tracker), 5395563 Vue (466 diff lines), 3e25fad React (393 diff lines). Each is a separate reversible local slice, not one proposed oversized PR. Further boundaries: 890d12e ERP endpoint (85 lines); 057baec loader lifecycle (186); 348bb04 host application (385 excluding lock); 7b34a28 deployment tooling/evidence (513, kept coherent with browser smoke and guide). No push or PR creation authorized.
+L8. Independent verifier passed base API differential against 746925b and reported one query-bearing API-base defect. Both clients corrected with observed RED/GREEN; re-verification passed29/29 plus3 independent probes, legacy Vue export restored. Final combined Node112/112. ERP official ng test356/356 (49 files), production build pass. Final multi-origin browser smoke passes versioned assets, gateway/auth fixtures, URL history/reloads, repeated mounts, remote outage isolation and standalone headings. Tests send no requests/writes to real backends.
+L9. Native ASSESS currently unavailable: untracked files require explicit declaration, including preserved unrelated ERP odd files. No reviewDue continuation or native approval was returned; no START, consent, authority burn, recovery or maintenance attempted. Independent risk-gated verification completed; do not claim native approval.
+L10. All requested frontend implementation tasks complete. Previous failed direct Vitest invocation was replaced by the official Angular runner and passes; query regression and synthetic smoke-token issues corrected. React Fast Refresh lint warning remains non-failing for the remote lifecycle entry. No production gateway/identity/CSP credentials were supplied or deployed; production setup is documented, not certified. Existing untracked ERP odd artifacts remain untouched. See root README for built-artifact preview and docs/platform-deployment.md for independent release/rollback.
