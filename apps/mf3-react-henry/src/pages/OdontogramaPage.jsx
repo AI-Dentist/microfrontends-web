@@ -81,9 +81,13 @@ export function OdontogramaPage({
       if (res?.aislado && res?.puertoMongo === 27018) {
         setEsEntornoAislado(true);
       } else {
+        delete window.__ODONTOGRAMA_TEST_API_URL__;
+        window.localStorage?.removeItem('ODONTOGRAMA_TEST_API_URL');
         setEsEntornoAislado(false);
       }
     } catch {
+      delete window.__ODONTOGRAMA_TEST_API_URL__;
+      window.localStorage?.removeItem('ODONTOGRAMA_TEST_API_URL');
       setEsEntornoAislado(false);
     } finally {
       setVerificandoAislamiento(false);
@@ -103,6 +107,8 @@ export function OdontogramaPage({
         })
         .catch(() => {
           if (activo) {
+            delete window.__ODONTOGRAMA_TEST_API_URL__;
+            window.localStorage?.removeItem('ODONTOGRAMA_TEST_API_URL');
             setEsEntornoAislado(false);
           }
         });

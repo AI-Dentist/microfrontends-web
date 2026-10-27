@@ -2,6 +2,18 @@ import { parseProblemDetails, ProblemDetailsError } from './problem-details.js';
 
 export function getBaseUrl() {
   if (typeof window !== 'undefined') {
+    return '/api/expediente';
+  }
+  return process.env.API_BASE_URL || 'http://localhost/api/expediente';
+}
+
+/**
+ * Retorna la URL base para el módulo de odontogramas.
+ * Permite redirigir exclusivamente las llamadas de odontograma al puerto aislado (e.g. 3002)
+ * cuando esté explícitamente configurado, sin alterar el resto de la aplicación ni la conectividad general.
+ */
+export function getOdontogramaBaseUrl() {
+  if (typeof window !== 'undefined') {
     if (window.__ODONTOGRAMA_TEST_API_URL__) {
       return window.__ODONTOGRAMA_TEST_API_URL__;
     }
@@ -13,9 +25,8 @@ export function getBaseUrl() {
     if (stored) {
       return stored;
     }
-    return '/api/expediente';
   }
-  return process.env.API_BASE_URL || 'http://localhost/api/expediente';
+  return getBaseUrl();
 }
 
 /**
@@ -28,6 +39,7 @@ export function getBaseUrl() {
  * @param {string} [options.token] - Token Bearer para autenticación
  * @param {HeadersInit} [options.headers]
  * @param {AbortSignal} [options.signal]
+ * @param {string} [options.baseUrl] - URL base personalizada opcional
  * @returns {Promise<any>}
  */
 export async function httpClient(endpoint, {
@@ -36,8 +48,10 @@ export async function httpClient(endpoint, {
   token,
   headers = {},
   signal,
+  baseUrl,
 } = {}) {
-  const url = `${getBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const base = baseUrl || getBaseUrl();
+  const url = `${base}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
   const requestHeaders = {
     Accept: 'application/json, application/problem+json',

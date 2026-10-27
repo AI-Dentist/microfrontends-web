@@ -1,4 +1,4 @@
-import { httpClient } from './client.js';
+import { httpClient, getOdontogramaBaseUrl } from './client.js';
 import {
   TIPO_REVISION_ODONTOGRAMA,
   esNumeroFDIValido,
@@ -33,6 +33,7 @@ export const odontogramasService = {
       body,
       token,
       signal,
+      baseUrl: getOdontogramaBaseUrl(),
     });
   },
 
@@ -53,6 +54,7 @@ export const odontogramasService = {
       method: 'GET',
       token,
       signal,
+      baseUrl: getOdontogramaBaseUrl(),
     });
   },
 
@@ -129,6 +131,7 @@ export const odontogramasService = {
       body: safePayload,
       token,
       signal,
+      baseUrl: getOdontogramaBaseUrl(),
     });
   },
 
@@ -163,6 +166,7 @@ export const odontogramasService = {
       method: 'GET',
       token,
       signal,
+      baseUrl: getOdontogramaBaseUrl(),
     });
   },
 
@@ -189,6 +193,7 @@ export const odontogramasService = {
       method: 'GET',
       token,
       signal,
+      baseUrl: getOdontogramaBaseUrl(),
     });
   },
 
@@ -209,6 +214,7 @@ export const odontogramasService = {
       method: 'GET',
       token,
       signal,
+      baseUrl: getOdontogramaBaseUrl(),
     });
   },
 
@@ -224,6 +230,7 @@ export const odontogramasService = {
       method: 'GET',
       token,
       signal,
+      baseUrl: getOdontogramaBaseUrl(),
     });
   },
 };
