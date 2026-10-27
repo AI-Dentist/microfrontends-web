@@ -24,8 +24,11 @@ export function PanelCambiosPendientes({
   onDescartarTodo,
   onDescartarPieza,
   onSalir,
+  onCerrarEdicion,
+  onAbrirRegistroRevision,
 }) {
   const [confirmandoDescarte, setConfirmandoDescarte] = useState(false);
+  const handleSalir = onSalir || onCerrarEdicion;
 
   const {
     hayCambios,
@@ -84,13 +87,26 @@ export function PanelCambiosPendientes({
             </div>
           )}
 
-          <Button
-            variant="secondary"
-            onClick={onSalir}
-            style={{ fontSize: '12px', padding: '4px 10px' }}
-          >
-            👁️ Volver a Lectura
-          </Button>
+          {hayCambios && onAbrirRegistroRevision && (
+            <Button
+              variant="primary"
+              onClick={onAbrirRegistroRevision}
+              style={{ fontSize: '12px', padding: '4px 12px', fontWeight: 600 }}
+              title="Abrir formulario para registrar la revisión en el expediente"
+            >
+              💾 Registrar Revisión...
+            </Button>
+          )}
+
+          {handleSalir && (
+            <Button
+              variant="secondary"
+              onClick={handleSalir}
+              style={{ fontSize: '12px', padding: '4px 10px' }}
+            >
+              👁️ Volver a Lectura
+            </Button>
+          )}
         </div>
       </div>
 

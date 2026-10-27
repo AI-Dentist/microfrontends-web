@@ -202,14 +202,24 @@ export function useOdontograma() {
             rawError: err,
           });
         } else if (err.status === 503) {
-          // Servicio temporalmente no disponible
+          // Servicio temporalmente no disponible (ej. Mongo standalone sin réplicas)
           setError({
             status: 503,
             type: err.type,
-            title: 'Servicio no disponible',
+            title: err.title || 'Servicio de persistencia no disponible',
             detail:
+              err.detail ||
               'La escritura clínica del odontograma no está disponible temporalmente. Intente nuevamente en unos instantes.',
             instance: err.instance,
+          });
+        } else if (err.status === 0 || err.name === 'TypeError' || (err.message && err.message.toLowerCase().includes('fetch'))) {
+          // Fallo de red con resultado incierto: no repetir mutación automáticamente
+          setError({
+            status: 0,
+            title: 'Fallo de red o resultado incierto',
+            detail:
+              'No se pudo confirmar la respuesta del servidor. No repita la operación a ciegas; compruebe el estado del expediente antes de intentar nuevamente para prevenir duplicados.',
+            rawError: err,
           });
         } else {
           setError(err);

@@ -4,6 +4,7 @@ import { SuperficiesDentales } from './SuperficiesDentales.jsx';
 import { DetallePiezaDental } from './DetallePiezaDental.jsx';
 import { EditorPiezaDental } from './EditorPiezaDental.jsx';
 import { PanelCambiosPendientes } from './PanelCambiosPendientes.jsx';
+import { ModalRegistrarRevision } from './ModalRegistrarRevision.jsx';
 import { LeyendaClinica } from './LeyendaClinica.jsx';
 import { useOdontogramaEditor } from '../../hooks/useOdontogramaEditor.js';
 import { Spinner } from '../common/Spinner.jsx';
@@ -12,11 +13,15 @@ import { Button } from '../common/Button.jsx';
 import '../../styles/odontograma.css';
 
 /**
- * Visor interactivo clínico del Odontograma Longitudinal (Iteraciones 7F-2 y 7F-3A).
+ * Visor interactivo clínico del Odontograma Longitudinal (Iteraciones 7F-2, 7F-3A y 7F-3B).
  *
  * Soporta dos modos explícitos:
  * 1. "Ver Odontograma": Solo lectura con navegación e inspección anatómica.
  * 2. "Preparar Edición": Editor en memoria de borradores locales no persistidos (INV-ODO-02 / INV-ODO-04).
+ *
+ * Integración 7F-3B:
+ * - Modal controlado de registro de revisión con inspección de deltas y validación.
+ * - Bloqueo explícito de escrituras en MongoDB Standalone.
  *
  * @param {object} props
  * @param {object|null} props.odontograma - OdontogramaActualDto proveniente de useOdontograma
@@ -24,6 +29,12 @@ import '../../styles/odontograma.css';
  * @param {object|null} [props.error=null] - Error de solicitud (ProblemDetailsError)
  * @param {Function} [props.onRecargar] - Callback para reintentar o recargar
  * @param {string} [props.historiaClinicaId] - ID de la historia clínica en contexto
+ * @param {Function} [props.onRegistrarRevision] - Callback para enviar revisión al backend
+ * @param {boolean} [props.isSubmitting=false] - Solicitud de revisión en curso
+ * @param {object|null} [props.errorRegistro=null] - Error devuelto al intentar registrar
+ * @param {object|null} [props.conflictRegistro=null] - Detalle de conflicto 409
+ * @param {boolean} [props.escrituraHabilitada=false] - Bloqueo de escritura en standalone
+ * @param {Function} [props.onSimularEnvio] - Callback para pruebas de integración con mocks
  */
 export function OdontogramaViewer({
   odontograma,
@@ -31,8 +42,15 @@ export function OdontogramaViewer({
   error = null,
   onRecargar,
   historiaClinicaId = '',
+  onRegistrarRevision,
+  isSubmitting = false,
+  errorRegistro = null,
+  conflictRegistro = null,
+  escrituraHabilitada = false,
+  onSimularEnvio,
 }) {
   const [userSelectedFDI, setUserSelectedFDI] = useState(null);
+  const [modalRevisionAbierto, setModalRevisionAbierto] = useState(false);
 
   // Hook gestor del borrador clínico en memoria (Iteración 7F-3A)
   const editor = useOdontogramaEditor(odontograma, historiaClinicaId);
@@ -181,7 +199,7 @@ export function OdontogramaViewer({
               role="tab"
               aria-selected={!editor.modoEdicion}
               className={`btn-modo ${!editor.modoEdicion ? 'active' : ''}`}
-              onClick={() => editor.setModoEdicion(false)}
+              onClick={editor.salirModoEdicion}
             >
               👁️ Ver odontograma
             </button>
@@ -196,7 +214,7 @@ export function OdontogramaViewer({
                   ? 'Requiere un odontograma inicializado en el servidor'
                   : 'Modo preparación de cambios clínicos (borrador en memoria)'
               }
-              onClick={() => editor.setModoEdicion(true)}
+              onClick={editor.iniciarEdicion}
             >
               ✏️ Preparar edición
               {editor.resumen.piezasModificadas > 0 && (
@@ -232,7 +250,8 @@ export function OdontogramaViewer({
           deltas={editor.deltas}
           onDescartarPieza={editor.descartarCambiosPieza}
           onDescartarTodo={editor.descartarTodo}
-          onCerrarEdicion={() => editor.setModoEdicion(false)}
+          onSalir={editor.salirModoEdicion}
+          onAbrirRegistroRevision={() => setModalRevisionAbierto(true)}
         />
       )}
 
@@ -278,6 +297,46 @@ export function OdontogramaViewer({
 
       {/* Leyenda clínica de apoyo visual */}
       <LeyendaClinica />
+
+      {/* Modal para Registro Controlado de Revisiones (Iteración 7F-3B) */}
+      {modalRevisionAbierto && (
+        <ModalRegistrarRevision
+          isOpen={modalRevisionAbierto}
+          onClose={() => setModalRevisionAbierto(false)}
+          odontograma={odontograma}
+          deltas={editor.deltas}
+          resumen={editor.resumen}
+          onConfirmar={async (payload) => {
+            if (onRegistrarRevision) {
+              const res = await onRegistrarRevision(odontograma.id, payload);
+              if (res) {
+                editor.descartarTodo();
+                editor.salirModoEdicion();
+                setModalRevisionAbierto(false);
+              }
+              return res;
+            }
+          }}
+          isSubmitting={isSubmitting}
+          error={errorRegistro}
+          conflict={conflictRegistro}
+          onRecargarConsolidado={onRecargar}
+          escrituraHabilitada={escrituraHabilitada}
+          onSimularEnvio={
+            onSimularEnvio
+              ? async (payload) => {
+                  const res = await onSimularEnvio(payload);
+                  if (res) {
+                    editor.descartarTodo();
+                    editor.salirModoEdicion();
+                    setModalRevisionAbierto(false);
+                  }
+                  return res;
+                }
+              : undefined
+          }
+        />
+      )}
     </div>
   );
 }

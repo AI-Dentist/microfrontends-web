@@ -29,10 +29,15 @@ export function OdontogramaPage({
 
   const {
     loading,
+    isSubmitting,
     error,
+    conflict,
+    successMessage,
     odontogramaActual,
     cargarOdontogramaActual,
+    registrarRevision,
     limpiarError,
+    limpiarMensaje,
     setOdontogramaActual,
   } = useOdontograma();
 
@@ -137,13 +142,33 @@ export function OdontogramaPage({
         </div>
       </Card>
 
-      {/* Visor interactivo del Odontograma */}
+      {/* Notificación de éxito post-registro */}
+      {successMessage && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#ecfdf5', border: '1px solid #10b981', color: '#065f46', borderRadius: 'var(--radius-md)', padding: '12px 16px', fontSize: '14px' }}>
+          <span>✅ {successMessage}</span>
+          <button
+            type="button"
+            onClick={limpiarMensaje}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold', color: '#065f46' }}
+            aria-label="Cerrar mensaje"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Visor interactivo del Odontograma con flujo de revisión controlado */}
       <OdontogramaViewer
         odontograma={odontogramaActual}
         loading={loading}
         error={error}
         onRecargar={handleRecargar}
         historiaClinicaId={historiaConsultada}
+        onRegistrarRevision={registrarRevision}
+        isSubmitting={isSubmitting}
+        errorRegistro={error}
+        conflictRegistro={conflict}
+        escrituraHabilitada={false}
       />
     </div>
   );
