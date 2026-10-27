@@ -1,0 +1,12 @@
+/* Shell chrome is deliberately scoped: ERP owns its business styles. */
+body { margin: 0; background: #f5f7fb; color: #17263c; font-family: system-ui, sans-serif; }
+.platform-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding: 1rem 1.5rem; background: #10263e; color: white; }
+.platform-header a { color: inherit; text-decoration: none; padding: .6rem; border-radius: .3rem; }
+.platform-header .brand { font-weight: 750; font-size: 1.2rem; }
+.platform-header nav { display: flex; flex-wrap: wrap; gap: .4rem; }
+.platform-header a.active { background: #335675; text-decoration: underline; text-underline-offset: .3rem; }
+platform-shell > main { display: block; padding: 1.5rem; min-height: 75vh; }
+.skip-link { position: fixed; top: -5rem; left: 1rem; padding: 1rem; background: white; color: #10263e; z-index: 10000; }
+.skip-link:focus { top: .5rem; }
+.platform-header a:focus-visible, .skip-link:focus-visible { outline: 3px solid #f0c56b; outline-offset: 3px; }
+@media (max-width: 600px) { .platform-header { padding: .75rem; } platform-shell > main { padding: .75rem; } }

@@ -1,0 +1,15 @@
+/* Standalone-only global styles. Tailwind utilities ship with the ERP layout component
+   so they are also present when the Application Shell loads this remote. */
+@layer theme, base, primeng, components, utilities;
+
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'primeicons/primeicons.css';
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background-color: #f8fafc;
+  color: #0f172a;
+}

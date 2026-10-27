@@ -1,5 +1,5 @@
 /* Sistema de diseño clínico OdontoClinic */
-:root {
+:root, #root {
   --primary: #0284c7;
   --primary-hover: #0369a1;
   --primary-light: #e0f2fe;
@@ -48,7 +48,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root, #root {
     --bg-app: #0f172a;
     --bg-surface: #1e293b;
     --border-color: #334155;

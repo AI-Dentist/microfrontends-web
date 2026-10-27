@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { tabFromContext, navigateTab } from './remote-session.js';
 import { DevAuthProvider } from './context/DevAuthContext.jsx';
 import { Header } from './components/layout/Header.jsx';
 import { Navigation } from './components/layout/Navigation.jsx';
@@ -18,8 +19,13 @@ import { EstudiosPage } from './pages/EstudiosPage.jsx';
 import './styles/theme.css';
 import './styles/components.css';
 
-export function AppContent() {
-  const [activeTab, setActiveTab] = useState('consulta');
+export function AppContent({ remoteContext }) {
+  const [localTab, setLocalTab] = useState('consulta');
+  const activeTab = remoteContext ? tabFromContext(remoteContext) : localTab;
+  const selectTab = (tab) => {
+    if (remoteContext) navigateTab(remoteContext, tab);
+    else setLocalTab(tab);
+  };
   const [historiaAEditarId, setHistoriaAEditarId] = useState('');
   const [historiaGestionId, setHistoriaGestionId] = useState('');
   const [gestionSubtab, setGestionSubtab] = useState('alergias');
@@ -39,12 +45,12 @@ export function AppContent() {
 
   const handleEditarAntecedentes = (id) => {
     setHistoriaAEditarId(id);
-    setActiveTab('actualizar');
+    selectTab('actualizar');
   };
 
   const handleVerHistoriaCreada = (id) => {
     setHistoriaAEditarId(id);
-    setActiveTab('consulta');
+    selectTab('consulta');
   };
 
   const handleGestionarClinica = (id, subtab = 'alergias') => {
@@ -102,7 +108,7 @@ export function AppContent() {
     <div className="app-container">
       <Header />
       <main className="main-content">
-        <Navigation activeTab={activeTab} onSelectTab={setActiveTab} />
+        <Navigation activeTab={activeTab} onSelectTab={selectTab} />
 
         {activeTab === 'consulta' && (
           <ConsultaHistoriaPage
