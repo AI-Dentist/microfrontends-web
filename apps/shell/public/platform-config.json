@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "remotes": [
+    {
+      "id": "erp",
+      "label": "ERP",
+      "basePath": "/erp",
+      "kind": "native-federation",
+      "entry": "http://localhost:4201/remoteEntry.json",
+      "apiBaseUrl": "/api/erp"
+    },
+    {
+      "id": "operations",
+      "label": "Operations",
+      "basePath": "/operations",
+      "kind": "module",
+      "entry": "http://localhost:4202/remote.js",
+      "styles": "http://localhost:4202/remote.css",
+      "apiBaseUrl": "/api/operations"
+    },
+    {
+      "id": "clinical",
+      "label": "Clinical",
+      "basePath": "/clinical",
+      "kind": "module",
+      "entry": "http://localhost:4203/remote.js",
+      "styles": "http://localhost:4203/remote.css",
+      "apiBaseUrl": "/api/clinical"
+    }
+  ]
+}
