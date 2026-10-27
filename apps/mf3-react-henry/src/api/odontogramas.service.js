@@ -211,4 +211,19 @@ export const odontogramasService = {
       signal,
     });
   },
+
+  /**
+   * 7. Consulta el estado de aislamiento de base de datos y capacidad de escritura transaccional.
+   *
+   * @param {string} token - Token de autenticación Bearer del operador
+   * @param {AbortSignal} [signal]
+   * @returns {Promise<object>} { aislado: boolean, entorno: string, puertoMongo: number, replicaSet: string, escrituraHabilitada: boolean }
+   */
+  async consultarEstadoEntornoAislado(token, signal) {
+    return httpClient('/odontogramas/entorno-aislado/status', {
+      method: 'GET',
+      token,
+      signal,
+    });
+  },
 };

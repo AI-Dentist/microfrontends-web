@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useOdontograma } from '../hooks/useOdontograma.js';
+import { useDevAuth } from '../hooks/useDevAuth.js';
+import { odontogramasService } from '../api/odontogramas.service.js';
 import { Card } from '../components/common/Card.jsx';
 import { Input } from '../components/common/Input.jsx';
 import { Button } from '../components/common/Button.jsx';
@@ -24,8 +26,21 @@ export function OdontogramaPage({
   onVolverAHistoria,
   onVerConsultas,
 }) {
+  const { token } = useDevAuth();
   const [historiaInput, setHistoriaInput] = useState(initialHistoriaId);
   const [historiaConsultada, setHistoriaConsultada] = useState(initialHistoriaId);
+
+  // Detección del backend aislado en puerto 3002
+  const [esEntornoAislado, setEsEntornoAislado] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const urlParam = new URLSearchParams(window.location.search).get('apiPort');
+    if (urlParam === '3002') return true;
+    return Boolean(
+      window.__ODONTOGRAMA_TEST_API_URL__?.includes('3002') ||
+      window.localStorage?.getItem('ODONTOGRAMA_TEST_API_URL')?.includes('3002')
+    );
+  });
+  const [verificandoAislamiento, setVerificandoAislamiento] = useState(false);
 
   const {
     loading,
@@ -40,6 +55,7 @@ export function OdontogramaPage({
     snapshotSeleccionado,
     revisionesConsulta,
     cargarOdontogramaActual,
+    inicializarOdontograma,
     registrarRevision,
     cargarHistorial,
     cargarSnapshotRevision,
@@ -49,12 +65,73 @@ export function OdontogramaPage({
     setOdontogramaActual,
   } = useOdontograma();
 
+  // Función para activar o verificar la conexión con el backend aislado en puerto 3002
+  const verificarConexionAislada = useCallback(async (activar = true) => {
+    setVerificandoAislamiento(true);
+    try {
+      if (activar) {
+        window.__ODONTOGRAMA_TEST_API_URL__ = 'http://127.0.0.1:3002/api/expediente';
+        window.localStorage?.setItem('ODONTOGRAMA_TEST_API_URL', 'http://127.0.0.1:3002/api/expediente');
+      } else {
+        delete window.__ODONTOGRAMA_TEST_API_URL__;
+        window.localStorage?.removeItem('ODONTOGRAMA_TEST_API_URL');
+      }
+
+      const res = await odontogramasService.consultarEstadoEntornoAislado(token);
+      if (res?.aislado && res?.puertoMongo === 27018) {
+        setEsEntornoAislado(true);
+      } else {
+        setEsEntornoAislado(false);
+      }
+    } catch {
+      setEsEntornoAislado(false);
+    } finally {
+      setVerificandoAislamiento(false);
+    }
+  }, [token]);
+
+  // Si está presente el parámetro apiPort=3002 o ya estaba configurado, verificar conexión al montar
+  useEffect(() => {
+    let activo = true;
+    const urlParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('apiPort') : null;
+    if (urlParam === '3002' || esEntornoAislado) {
+      odontogramasService.consultarEstadoEntornoAislado(token)
+        .then((res) => {
+          if (activo) {
+            setEsEntornoAislado(Boolean(res?.aislado && res?.puertoMongo === 27018));
+          }
+        })
+        .catch(() => {
+          if (activo) {
+            setEsEntornoAislado(false);
+          }
+        });
+    }
+    return () => {
+      activo = false;
+    };
+  }, [token, esEntornoAislado]);
+
   // Si se provee un initialHistoriaId, cargar su odontograma actual al montar
   useEffect(() => {
     if (initialHistoriaId && initialHistoriaId.trim()) {
       void cargarOdontogramaActual(initialHistoriaId.trim());
     }
   }, [initialHistoriaId, cargarOdontogramaActual]);
+
+  const handleInicializarOdontograma = async () => {
+    if (!historiaConsultada.trim()) return;
+    const confirmar = window.confirm(
+      `¿Desea inicializar el odontograma longitudinal para la historia clínica "${historiaConsultada}"?\n\nSe crearán las 52 posiciones FDI en estado basal (DESCONOCIDO y NO_EVALUADO) exclusivamente en MongoDB temporal 27018.`
+    );
+    if (!confirmar) return;
+
+    limpiarError();
+    const resultado = await inicializarOdontograma(historiaConsultada.trim());
+    if (resultado) {
+      void cargarOdontogramaActual(historiaConsultada.trim());
+    }
+  };
 
   const handleBuscar = (e) => {
     if (e) e.preventDefault();
@@ -165,6 +242,39 @@ export function OdontogramaPage({
         </div>
       )}
 
+      {/* Banner de Estado de Aislamiento Clínico */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: esEntornoAislado ? '#ecfdf5' : '#f8fafc',
+        border: `1px solid ${esEntornoAislado ? '#10b981' : '#cbd5e1'}`,
+        borderRadius: 'var(--radius-md)',
+        padding: '10px 16px',
+        fontSize: '13px',
+        color: esEntornoAislado ? '#065f46' : 'var(--text-secondary)',
+        flexWrap: 'wrap',
+        gap: '8px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>{esEntornoAislado ? '🟢' : '⚪'}</span>
+          <span>
+            <strong>{esEntornoAislado ? 'Entorno Aislado Activo:' : 'Entorno Estándar:'}</strong>{' '}
+            {esEntornoAislado
+              ? 'Conectado a Backend Aislado (puerto 3002) y MongoDB temporal (puerto 27018 / rs_odontograma_test). Escritura transaccional habilitada.'
+              : 'Conectado al Gateway Nginx principal. Persistencia transaccional bloqueada para salvaguarda de 127.0.0.1:27017.'}
+          </span>
+        </div>
+        <Button
+          variant="secondary"
+          onClick={() => void verificarConexionAislada(!esEntornoAislado)}
+          loading={verificandoAislamiento}
+          style={{ fontSize: '11px', padding: '4px 10px' }}
+        >
+          {esEntornoAislado ? 'Cambiar a Principal (3001)' : '🧪 Conectar a Backend Aislado (3002)'}
+        </Button>
+      </div>
+
       {/* Visor interactivo del Odontograma con flujo de revisión y visor longitudinal */}
       <OdontogramaViewer
         odontograma={odontogramaActual}
@@ -176,7 +286,8 @@ export function OdontogramaPage({
         isSubmitting={isSubmitting}
         errorRegistro={error}
         conflictRegistro={conflict}
-        escrituraHabilitada={false}
+        escrituraHabilitada={esEntornoAislado}
+        onInicializarOdontograma={handleInicializarOdontograma}
         historial={historial}
         loadingHistorial={loadingHistorial}
         onCargarHistorial={(offset, limite) => {

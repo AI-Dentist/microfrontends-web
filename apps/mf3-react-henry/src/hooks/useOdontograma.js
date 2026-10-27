@@ -225,6 +225,21 @@ export function useOdontograma() {
           revisiones: [revisionCreada, ...prev.revisiones],
         }));
 
+        // Consultar nuevamente el odontograma consolidado desde el backend para garantizar fidelidad
+        if (odontogramaActual?.historiaClinicaId) {
+          try {
+            const reloaded = await odontogramasService.obtenerOdontogramaActual(
+              odontogramaActual.historiaClinicaId,
+              token,
+            );
+            if (reloaded) {
+              setOdontogramaActual(reloaded);
+            }
+          } catch {
+            // Conservar actualización reactiva previa
+          }
+        }
+
         setSuccessMessage('Revisión clínica registrada exitosamente.');
         return revisionCreada;
       } catch (err) {
@@ -268,7 +283,7 @@ export function useOdontograma() {
         setLoading(false);
       }
     },
-    [isSubmitting, token],
+    [isSubmitting, token, odontogramaActual],
   );
 
   /**

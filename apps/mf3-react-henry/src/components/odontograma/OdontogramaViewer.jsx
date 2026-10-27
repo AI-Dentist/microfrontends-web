@@ -69,6 +69,7 @@ export function OdontogramaViewer({
   onCargarSnapshotRevision,
   consultaIdContexto = '',
   revisionesConsulta = [],
+  onInicializarOdontograma,
 }) {
   const [userSelectedFDI, setUserSelectedFDI] = useState(null);
   const [modalRevisionAbierto, setModalRevisionAbierto] = useState(false);
@@ -157,12 +158,31 @@ export function OdontogramaViewer({
           <div style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '480px', margin: '0 auto' }}>
             ℹ️ Por protocolo clínico, el odontograma se inicializa de forma explícita durante la apertura o atención de una consulta estomatológica. La preparación de revisiones está deshabilitada hasta su inicialización en el servidor.
           </div>
-          {onRecargar && (
-            <div style={{ marginTop: '20px' }}>
-              <Button variant="secondary" onClick={onRecargar}>
-                🔄 Reintentar Consulta
+          {escrituraHabilitada && onInicializarOdontograma ? (
+            <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Button
+                variant="primary"
+                onClick={onInicializarOdontograma}
+                loading={isSubmitting}
+                disabled={isSubmitting}
+                style={{ fontWeight: 600 }}
+              >
+                🦷 Inicializar Odontograma
               </Button>
+              {onRecargar && (
+                <Button variant="secondary" onClick={onRecargar} disabled={isSubmitting}>
+                  🔄 Reintentar Consulta
+                </Button>
+              )}
             </div>
+          ) : (
+            onRecargar && (
+              <div style={{ marginTop: '20px' }}>
+                <Button variant="secondary" onClick={onRecargar}>
+                  🔄 Reintentar Consulta
+                </Button>
+              </div>
+            )
           )}
         </div>
       </div>

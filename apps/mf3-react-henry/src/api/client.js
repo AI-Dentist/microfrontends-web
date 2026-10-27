@@ -1,9 +1,22 @@
 import { parseProblemDetails, ProblemDetailsError } from './problem-details.js';
 
-const BASE_URL =
-  typeof window !== 'undefined'
-    ? '/api/expediente'
-    : (process.env.API_BASE_URL || 'http://localhost/api/expediente');
+export function getBaseUrl() {
+  if (typeof window !== 'undefined') {
+    if (window.__ODONTOGRAMA_TEST_API_URL__) {
+      return window.__ODONTOGRAMA_TEST_API_URL__;
+    }
+    const paramMatch = window.location?.search?.match(/[?&]apiPort=(\d+)/);
+    if (paramMatch && paramMatch[1]) {
+      return `http://127.0.0.1:${paramMatch[1]}/api/expediente`;
+    }
+    const stored = window.localStorage?.getItem('ODONTOGRAMA_TEST_API_URL');
+    if (stored) {
+      return stored;
+    }
+    return '/api/expediente';
+  }
+  return process.env.API_BASE_URL || 'http://localhost/api/expediente';
+}
 
 /**
  * Cliente HTTP modular para interactuar con la API REST de expediente clínico.
@@ -24,7 +37,7 @@ export async function httpClient(endpoint, {
   headers = {},
   signal,
 } = {}) {
-  const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const url = `${getBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
   const requestHeaders = {
     Accept: 'application/json, application/problem+json',
