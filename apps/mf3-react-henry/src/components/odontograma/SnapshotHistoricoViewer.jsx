@@ -25,9 +25,9 @@ import {
  *
  * @param {object} props
  * @param {object} props.revision - RevisionOdontogramaDto con snapshotPiezas y metadatos
- * @param {Function} props.onVolver - Callback para regresar al odontograma actual o lista de historial
+ * @param {Function} [props.onIniciarEnmienda] - Callback para preparar enmienda sobre esta revisión
  */
-export function SnapshotHistoricoViewer({ revision, onVolver }) {
+export function SnapshotHistoricoViewer({ revision, onVolver, onIniciarEnmienda }) {
   const [userSelectedFDI, setUserSelectedFDI] = useState(null);
   const [mostrarDeltasDetalle, setMostrarDeltasDetalle] = useState(false);
 
@@ -102,13 +102,26 @@ export function SnapshotHistoricoViewer({ revision, onVolver }) {
             </div>
           </div>
 
-          <Button
-            variant="secondary"
-            onClick={onVolver}
-            style={{ fontSize: '13px', padding: '6px 14px', fontWeight: 600 }}
-          >
-            ← Volver al Odontograma Actual
-          </Button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {onIniciarEnmienda && (
+              <Button
+                variant="warning"
+                onClick={() => onIniciarEnmienda(revision)}
+                style={{ fontSize: '13px', padding: '6px 14px', fontWeight: 600, background: '#d97706', color: '#fff', border: 'none' }}
+                title={`Iniciar preparación de enmienda correctiva sobre la revisión #${revision.numeroRevision}`}
+              >
+                ✏️ Preparar Enmienda de esta Revisión
+              </Button>
+            )}
+
+            <Button
+              variant="secondary"
+              onClick={onVolver}
+              style={{ fontSize: '13px', padding: '6px 14px', fontWeight: 600 }}
+            >
+              ← Volver al Odontograma Actual
+            </Button>
+          </div>
         </div>
 
         {/* Ficha de metadatos clínicos de la revisión */}

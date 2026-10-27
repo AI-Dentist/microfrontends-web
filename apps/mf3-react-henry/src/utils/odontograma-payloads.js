@@ -82,7 +82,7 @@ export function validarMetadatosRevision(
   if (tipoRevision === TIPO_REVISION_ODONTOGRAMA.ENMIENDA_CORRECTIVA) {
     if (!opciones.soporteSnapshotHistorico) {
       errores.tipoRevision =
-        'La opción ENMIENDA_CORRECTIVA requiere cargar el snapshot histórico base de la revisión a rectificar (función programada para la Iteración 7F-4). Por seguridad clínica, utilice NUEVA_OBSERVACION.';
+        'La opción ENMIENDA_CORRECTIVA requiere cargar el snapshot histórico base de la revisión a rectificar (Iteración 7F-4). Por seguridad clínica, utilice NUEVA_OBSERVACION.';
     }
     if (!revisionCorregidaId || typeof revisionCorregidaId !== 'string' || !revisionCorregidaId.trim()) {
       errores.revisionCorregidaId =
@@ -95,10 +95,12 @@ export function validarMetadatosRevision(
     }
   }
 
-  // 3. Validar motivo de revisión
+  // 3. Validar motivo de revisión (mínimo 10 caracteres para enmiendas INV-ODO-05, 5 caracteres o no vacío para observaciones)
   const motivoTrim = typeof motivoRevision === 'string' ? motivoRevision.trim() : '';
   if (!motivoTrim) {
     errores.motivoRevision = 'El motivo o justificación clínica de la revisión es obligatorio.';
+  } else if (tipoRevision === TIPO_REVISION_ODONTOGRAMA.ENMIENDA_CORRECTIVA && motivoTrim.length < 10) {
+    errores.motivoRevision = `La justificación de una enmienda correctiva debe contener al menos 10 caracteres (actual: ${motivoTrim.length}).`;
   } else if (motivoTrim.length > 500) {
     errores.motivoRevision = `El motivo de la revisión no puede exceder 500 caracteres (actual: ${motivoTrim.length}).`;
   }
@@ -241,6 +243,10 @@ export function construirPayloadRevision({
   // Formatear fecha ISO 8601 estricta
   const fechaISO = new Date(fechaObservacionClinica).toISOString();
 
+  // Si es enmienda correctiva retrospectiva, aplicaAlEstadoActual es estrictamente false
+  const esEnmienda = tipoRevision === TIPO_REVISION_ODONTOGRAMA.ENMIENDA_CORRECTIVA;
+  const aplicaActual = esEnmienda ? false : Boolean(aplicaAlEstadoActual);
+
   // Construcción estricta del DTO sin propiedades sobrantes ni de identidad clínica
   const payload = {
     versionEsperada,
@@ -248,7 +254,7 @@ export function construirPayloadRevision({
     fechaObservacionClinica: fechaISO,
     motivoRevision: motivoRevision.trim(),
     deltas: deltasSanitizados,
-    aplicaAlEstadoActual: Boolean(aplicaAlEstadoActual),
+    aplicaAlEstadoActual: aplicaActual,
   };
 
   // Solo incluir consultaId si tiene un valor no vacío; si es falsy, usar null

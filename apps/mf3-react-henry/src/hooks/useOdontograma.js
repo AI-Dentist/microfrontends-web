@@ -205,6 +205,17 @@ export function useOdontograma() {
               piezas: revisionCreada.snapshotPiezas,
             };
           });
+        } else if (revisionCreada && !revisionCreada.aplicaAlEstadoActual) {
+          // Enmienda retrospectiva: incrementa versión y totalRevisiones, pero piezas y revisionActualId permanecen intactas
+          setOdontogramaActual((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              version: (prev.version || 0) + 1,
+              totalRevisiones: (prev.totalRevisiones || 0) + 1,
+              actualizadoEn: revisionCreada.fechaRegistro,
+            };
+          });
         }
 
         // Agregar la nueva revisión al listado si está cargado

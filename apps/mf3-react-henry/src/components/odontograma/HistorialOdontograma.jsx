@@ -20,7 +20,7 @@ import { TIPO_REVISION_ODONTOGRAMA } from '../../constants/odontograma.constants
  * @param {object} props.historial - Objeto paginado { total, limite, offset, revisiones }
  * @param {boolean} [props.loading=false] - Estado de carga de la paginación
  * @param {Function} props.onCargarPagina - Callback (offset, limite) => void
- * @param {Function} props.onSeleccionarRevision - Callback (revision) => void
+ * @param {Function} [props.onIniciarEnmienda] - Callback (revision) => void
  * @param {string} [props.consultaIdFiltro] - Identificador de consulta clínica en contexto
  * @param {Array<object>} [props.revisionesConsulta] - Revisiones filtradas por consulta
  */
@@ -30,6 +30,7 @@ export function HistorialOdontograma({
   loading = false,
   onCargarPagina,
   onSeleccionarRevision,
+  onIniciarEnmienda,
   consultaIdFiltro = '',
   revisionesConsulta = [],
 }) {
@@ -220,14 +221,27 @@ export function HistorialOdontograma({
                     )}
                   </div>
 
-                  <Button
-                    variant="primary"
-                    onClick={() => onSeleccionarRevision && onSeleccionarRevision(rev)}
-                    style={{ fontSize: '12px', padding: '4px 12px' }}
-                    title={`Ver snapshot anatómico de la revisión #${rev.numeroRevision}`}
-                  >
-                    👁️ Ver Snapshot Histórico
-                  </Button>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    {onIniciarEnmienda && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => onIniciarEnmienda(rev)}
+                        style={{ fontSize: '12px', padding: '4px 10px', borderColor: '#d97706', color: '#b45309' }}
+                        title={`Preparar enmienda correctiva para la revisión #${rev.numeroRevision}`}
+                      >
+                        ✏️ Preparar Enmienda
+                      </Button>
+                    )}
+
+                    <Button
+                      variant="primary"
+                      onClick={() => onSeleccionarRevision && onSeleccionarRevision(rev)}
+                      style={{ fontSize: '12px', padding: '4px 12px' }}
+                      title={`Ver snapshot anatómico de la revisión #${rev.numeroRevision}`}
+                    >
+                      👁️ Ver Snapshot Histórico
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Justificación / Motivo clínico */}

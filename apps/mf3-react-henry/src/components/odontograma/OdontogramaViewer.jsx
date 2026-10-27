@@ -5,10 +5,12 @@ import { DetallePiezaDental } from './DetallePiezaDental.jsx';
 import { EditorPiezaDental } from './EditorPiezaDental.jsx';
 import { PanelCambiosPendientes } from './PanelCambiosPendientes.jsx';
 import { ModalRegistrarRevision } from './ModalRegistrarRevision.jsx';
+import { ModalRegistrarEnmienda } from './ModalRegistrarEnmienda.jsx';
 import { HistorialOdontograma } from './HistorialOdontograma.jsx';
 import { SnapshotHistoricoViewer } from './SnapshotHistoricoViewer.jsx';
 import { LeyendaClinica } from './LeyendaClinica.jsx';
 import { useOdontogramaEditor } from '../../hooks/useOdontogramaEditor.js';
+import { useOdontogramaEnmienda } from '../../hooks/useOdontogramaEnmienda.js';
 import { Spinner } from '../common/Spinner.jsx';
 import { Alert } from '../common/Alert.jsx';
 import { Button } from '../common/Button.jsx';
@@ -64,15 +66,41 @@ export function OdontogramaViewer({
   loadingSnapshot = false,
   onSeleccionarRevision,
   onVolverDeSnapshot,
+  onCargarSnapshotRevision,
   consultaIdContexto = '',
   revisionesConsulta = [],
 }) {
   const [userSelectedFDI, setUserSelectedFDI] = useState(null);
   const [modalRevisionAbierto, setModalRevisionAbierto] = useState(false);
+  const [modalEnmiendaAbierto, setModalEnmiendaAbierto] = useState(false);
   const [vistaActiva, setVistaActiva] = useState('ACTUAL'); // 'ACTUAL' | 'HISTORIAL'
 
-  // Hook gestor del borrador clínico en memoria (Iteración 7F-3A)
+  // Hook gestor del borrador clínico en memoria para NUEVA_OBSERVACION (Iteración 7F-3A)
   const editor = useOdontogramaEditor(odontograma, historiaClinicaId);
+
+  // Hook gestor del borrador independiente para ENMIENDA_CORRECTIVA (Iteración 7F-4B)
+  const enmienda = useOdontogramaEnmienda(odontograma, historiaClinicaId);
+
+  const handleIniciarEnmienda = async (revision) => {
+    if (!revision) return;
+    if (editor.modoEdicion && editor.resumen.hayCambios) {
+      const confirmar = window.confirm(
+        'Tiene un borrador activo de nueva observación con cambios no guardados. ¿Desea descartarlo para iniciar la enmienda correctiva?'
+      );
+      if (!confirmar) return;
+      editor.descartarTodo();
+      editor.salirModoEdicion();
+    }
+    // Si la revisión seleccionada no contiene 52 piezas y se dispone de cargador:
+    if ((!revision.snapshotPiezas || revision.snapshotPiezas.length !== 52) && onCargarSnapshotRevision && odontograma?.id) {
+      const cargada = await onCargarSnapshotRevision(odontograma.id, revision.id);
+      if (cargada && Array.isArray(cargada.snapshotPiezas) && cargada.snapshotPiezas.length === 52) {
+        enmienda.iniciarEnmienda(cargada);
+        return;
+      }
+    }
+    enmienda.iniciarEnmienda(revision);
+  };
 
   // Mapear el arreglo de piezas originales a un diccionario por numeroFDI para acceso O(1)
   const piezasMap = useMemo(() => {
@@ -180,6 +208,172 @@ export function OdontogramaViewer({
     );
   }
 
+  // Si estamos en modo de preparación de ENMIENDA_CORRECTIVA histórica (Iteración 7F-4B)
+  if (enmienda.modoEnmienda) {
+    const revCorregida = enmienda.revisionCorregida;
+    const fdiActivo = selectedNumeroFDI || (revCorregida?.snapshotPiezas?.[0]?.numeroFDI || 11);
+    const piezaOriginalHistorica = enmienda.piezasHistoricasMap[fdiActivo];
+    const piezaBorradorHistorica = enmienda.obtenerPiezaBorrador(fdiActivo);
+
+    return (
+      <div className="odontograma-container" aria-label="Editor de Enmienda Correctiva Histórica">
+        <header className="enmienda-banner-header" role="region" aria-label="Aviso de enmienda en borrador">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <span style={{ fontSize: '28px' }}>✏️</span>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <h3 style={{ margin: 0, fontSize: '17px', color: '#78350f' }}>
+                    Edición de Enmienda Histórica — Borrador sin guardar
+                  </h3>
+                  <Badge variant="warning">ENMIENDA_CORRECTIVA</Badge>
+                  <Badge variant="secondary">Corrige Rev #{revCorregida?.numeroRevision}</Badge>
+                  <Badge variant="primary">v{enmienda.versionEsperadaOriginal || odontograma?.version || 1} esperada</Badge>
+                </div>
+                <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#92400e' }}>
+                  Base de deltas: Snapshot histórico de la revisión {revCorregida?.id}. Invariante: <code>aplicaAlEstadoActual = false</code> (retrospectiva pura).
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {enmienda.resumen.hayCambios && (
+                <Button
+                  variant="primary"
+                  onClick={() => setModalEnmiendaAbierto(true)}
+                  style={{ fontSize: '13px', padding: '6px 14px', fontWeight: 600, background: '#d97706', borderColor: '#b45309' }}
+                >
+                  💾 Revisar y Registrar Enmienda ({enmienda.deltas.length} piezas)
+                </Button>
+              )}
+
+              {enmienda.resumen.hayCambios && (
+                <Button
+                  variant="secondary"
+                  onClick={enmienda.descartarTodo}
+                  style={{ fontSize: '12px', padding: '6px 12px', color: 'var(--danger)' }}
+                >
+                  🗑️ Descartar Cambios
+                </Button>
+              )}
+
+              <Button
+                variant="secondary"
+                onClick={enmienda.salirModoEnmienda}
+                style={{ fontSize: '12px', padding: '6px 12px' }}
+              >
+                ✕ Cancelar Enmienda
+              </Button>
+            </div>
+          </div>
+
+          {enmienda.versionActualCambio && (
+            <div style={{ marginTop: '10px', background: '#fef2f2', border: '1px solid #f87171', color: '#991b1b', padding: '8px 12px', borderRadius: '4px', fontSize: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                ⚠️ <strong>Conflicto Concurrente (INV-ODO-06):</strong> La enmienda fue preparada sobre la versión <strong>v{enmienda.versionEsperadaOriginal}</strong>, pero el odontograma maestro en el servidor avanzó a la versión <strong>v{odontograma?.version}</strong>. El borrador histórico se conserva.
+              </div>
+              <Button
+                variant="secondary"
+                onClick={enmienda.revisarYAlinearConflicto}
+                style={{ fontSize: '11px', padding: '4px 10px', borderColor: '#b91c1c', color: '#b91c1c' }}
+                title="Acepta explícitamente la versión vigente del servidor manteniendo los cambios en borrador"
+              >
+                🔄 Aceptar v{odontograma?.version} y desbloquear
+              </Button>
+            </div>
+          )}
+
+          {enmienda.errorValidacion && (
+            <div style={{ marginTop: '10px', background: '#fef2f2', border: '1px solid #f87171', color: '#991b1b', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
+              ❌ {enmienda.errorValidacion}
+            </div>
+          )}
+        </header>
+
+        {enmienda.resumen.hayCambios && (
+          <PanelCambiosPendientes
+            resumen={enmienda.resumen}
+            deltas={enmienda.deltas}
+            onDescartarPieza={enmienda.descartarCambiosPieza}
+            onDescartarTodo={enmienda.descartarTodo}
+            onSalir={enmienda.salirModoEnmienda}
+            onAbrirRegistroRevision={() => setModalEnmiendaAbierto(true)}
+          />
+        )}
+
+        <ArcadaDental
+          piezasMap={enmienda.piezasProyectadasMap}
+          selectedNumeroFDI={fdiActivo}
+          onSelectPieza={setUserSelectedFDI}
+          fdisModificadosSet={enmienda.fdisModificadosSet}
+        />
+
+        <div className="detalle-layout">
+          {fdiActivo ? (
+            <SuperficiesDentales
+              numeroFDI={fdiActivo}
+              superficies={piezaBorradorHistorica?.superficies || {}}
+            />
+          ) : (
+            <div className="superficies-card" style={{ justifyContent: 'center' }}>
+              <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                Seleccione una pieza dental para corregir sus superficies en esta enmienda.
+              </span>
+            </div>
+          )}
+
+          <EditorPiezaDental
+            numeroFDI={fdiActivo}
+            piezaOriginal={piezaOriginalHistorica}
+            piezaBorrador={piezaBorradorHistorica}
+            tieneCambios={enmienda.fdisModificadosSet.has(fdiActivo)}
+            onActualizar={(cambios) => enmienda.prepararCambioPieza(fdiActivo, cambios)}
+            onDescartar={() => enmienda.descartarCambiosPieza(fdiActivo)}
+          />
+        </div>
+
+        <LeyendaClinica />
+
+        {modalEnmiendaAbierto && (
+          <ModalRegistrarEnmienda
+            isOpen={modalEnmiendaAbierto}
+            onClose={() => setModalEnmiendaAbierto(false)}
+            odontograma={odontograma}
+            revisionCorregida={enmienda.revisionCorregida}
+            deltas={enmienda.deltas}
+            resumen={enmienda.resumen}
+            motivoRevision={enmienda.motivoRevision}
+            onMotivoChange={enmienda.setMotivoRevision}
+            fechaObservacion={enmienda.fechaObservacion}
+            onFechaObservacionChange={enmienda.setFechaObservacion}
+            consultaId={enmienda.consultaId}
+            onConsultaIdChange={enmienda.setConsultaId}
+            validacionMetadatos={enmienda.validacionMetadatos}
+            payloadGenerado={enmienda.payloadGenerado}
+            versionActualCambio={enmienda.versionActualCambio}
+            versionEsperadaOriginal={enmienda.versionEsperadaOriginal}
+            onResolverConflicto={enmienda.revisarYAlinearConflicto}
+            escrituraHabilitada={escrituraHabilitada}
+            isSubmitting={isSubmitting}
+            error={errorRegistro}
+            onConfirmar={async (payload) => {
+              if (onRegistrarRevision) {
+                const res = await onRegistrarRevision(odontograma.id, payload);
+                if (res) {
+                  enmienda.descartarTodo();
+                  enmienda.salirModoEnmienda();
+                  setModalEnmiendaAbierto(false);
+                }
+                return res;
+              }
+            }}
+            onSimularEnvio={onSimularEnvio}
+          />
+        )}
+      </div>
+    );
+  }
+
   // Si hay un snapshot histórico seleccionado para inspección inmutable
   if (snapshotSeleccionado) {
     return (
@@ -187,6 +381,7 @@ export function OdontogramaViewer({
         <SnapshotHistoricoViewer
           revision={snapshotSeleccionado}
           onVolver={onVolverDeSnapshot}
+          onIniciarEnmienda={handleIniciarEnmienda}
         />
       </div>
     );
@@ -246,6 +441,7 @@ export function OdontogramaViewer({
           loading={loadingHistorial}
           onCargarPagina={onCargarHistorial}
           onSeleccionarRevision={onSeleccionarRevision}
+          onIniciarEnmienda={handleIniciarEnmienda}
           consultaIdFiltro={consultaIdContexto}
           revisionesConsulta={revisionesConsulta}
         />
@@ -416,13 +612,7 @@ export function OdontogramaViewer({
           onSimularEnvio={
             onSimularEnvio
               ? async (payload) => {
-                  const res = await onSimularEnvio(payload);
-                  if (res) {
-                    editor.descartarTodo();
-                    editor.salirModoEdicion();
-                    setModalRevisionAbierto(false);
-                  }
-                  return res;
+                  return await onSimularEnvio(payload);
                 }
               : undefined
           }

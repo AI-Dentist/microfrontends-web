@@ -445,17 +445,17 @@ export function ModalRegistrarRevision({
               Cancelar / Volver
             </Button>
 
-            {/* Botón de prueba con mock (para validar el flujo sin base de datos) */}
-            {onSimularEnvio && (
+            {/* Botón de prueba con mock (visible exclusivamente en entorno desarrollo/test) */}
+            {Boolean(typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV) && onSimularEnvio && (
               <Button
                 type="button"
                 variant="secondary"
                 onClick={handleProbarConMock}
                 disabled={isSubmitting || !validacionMetadatos.esValido}
-                style={{ fontSize: '12px' }}
-                title="Valida la ejecución con respuesta 201 simulada sin escribir en MongoDB"
+                style={{ fontSize: '12px', border: '1px dashed #6b7280' }}
+                title="Valida la ejecución en desarrollo sin escribir en MongoDB ni descartar el borrador"
               >
-                🧪 Simular HTTP 201 (Mock)
+                🧪 Simulación — No guardado
               </Button>
             )}
 

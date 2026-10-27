@@ -192,6 +192,7 @@ export function OdontogramaPage({
           }
         }}
         onVolverDeSnapshot={limpiarSnapshot}
+        onCargarSnapshotRevision={cargarSnapshotRevision}
         revisionesConsulta={revisionesConsulta}
       />
     </div>
