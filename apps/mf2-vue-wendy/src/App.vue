@@ -7,9 +7,9 @@
 
     <!-- Navegación entre módulos -->
     <div class="tabs">
-      <button :class="{ active: tab === 'citas' }" @click="tab = 'citas'">📅 Citas Agendadas</button>
-      <button :class="{ active: tab === 'horarios' }" @click="tab = 'horarios'">⏰ Horarios Médicos</button>
-      <button :class="{ active: tab === 'stock' }" @click="tab = 'stock'">📦 Inventario y Stock</button>
+      <button :class="{ active: tab === 'citas' }" @click="selectTab('citas')">📅 Citas Agendadas</button>
+      <button :class="{ active: tab === 'horarios' }" @click="selectTab('horarios')">⏰ Horarios Médicos</button>
+      <button :class="{ active: tab === 'stock' }" @click="selectTab('stock')">📦 Inventario y Stock</button>
     </div>
 
     <main class="content">
@@ -143,10 +143,24 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
-import { ms3Service } from './api/ms3Api';
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
+import { createMs3Service } from './api/ms3Api.js';
+import { tabForContext, navigateTab } from './lifecycle.js';
 
-const tab = ref('citas');
+const props = defineProps({ context: Object });
+const ms3Service = computed(() => createMs3Service({
+  apiBaseUrl: props.context?.apiBaseUrl,
+  getAccessToken: () => props.context?.getAccessToken() ?? null,
+}));
+const tab = ref(tabForContext(props.context));
+watch(() => props.context?.path, () => { tab.value = tabForContext(props.context); });
+function selectTab(next) {
+  const local = navigateTab(props.context, next);
+  if (local) tab.value = local;
+}
+let active = true;
+let refreshTimer;
+let loadGeneration = 0;
 const citas = ref([]);
 const horarios = ref([]);
 const stock = ref([]);
@@ -163,22 +177,24 @@ const nuevaCita = ref({
 });
 
 const cargarDatos = async () => {
+  const generation = ++loadGeneration;
   cargando.value = true;
   error.value = null;
   try {
+    const service = ms3Service.value;
     const [citasRes, horariosRes, stockRes] = await Promise.all([
-      ms3Service.getCitas(),
-      ms3Service.getHorarios(),
-      ms3Service.getStock()
+      service.getCitas(),
+      service.getHorarios(),
+      service.getStock()
     ]);
+    if (!active || generation !== loadGeneration) return;
     citas.value = citasRes.citas || [];
     horarios.value = horariosRes.horarios || [];
     stock.value = stockRes.insumos || [];
-  } catch (err) {
-    error.value = 'Error al conectar con el backend MS3 en http://localhost:8001.';
-    console.error(err);
+  } catch {
+    if (active && generation === loadGeneration) error.value = 'Error al conectar con el backend MS3.';
   } finally {
-    cargando.value = false;
+    if (active && generation === loadGeneration) cargando.value = false;
   }
 };
 
@@ -196,12 +212,12 @@ const guardarCita = async () => {
       fecha_hora: formattedDate
     };
 
-    const resCrear = await ms3Service.crearCita(payload);
-    console.log('Respuesta backend al crear:', resCrear);
+    const resCrear = await ms3Service.value.crearCita(payload);
+    if (!active) return;
 
     // Si Laravel devolvió un error de validación HTTP
     if (resCrear.error || resCrear.errors) {
-      alert('Error de validación: ' + JSON.stringify(resCrear.error || resCrear.errors));
+      error.value = 'Error de validación al agendar cita.';
       return;
     }
 
@@ -226,23 +242,28 @@ const guardarCita = async () => {
     nuevaCita.value = { paciente_id: '', odontologo_id: '', consultorio_id: '', fecha_hora: '' };
 
     // Sincronizar en segundo plano con el archivo de persistencia
-    setTimeout(async () => {
-      const resListado = await ms3Service.getCitas();
-      if (resListado && resListado.citas) {
-        citas.value = resListado.citas;
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(async () => {
+      try {
+        const resListado = await ms3Service.value.getCitas();
+        if (active && resListado?.citas) citas.value = resListado.citas;
+      } catch {
+        if (active) error.value = 'Error al sincronizar citas con MS3.';
       }
     }, 500);
 
-  } catch (err) {
-    console.error('Error al agendar cita:', err);
-    alert('Ocurrió un error al contactar al backend.');
+  } catch {
+    if (active) error.value = 'Ocurrió un error al contactar al backend.';
   } finally {
-    enviando.value = false;
+    if (active) enviando.value = false;
   }
 };
 
-onMounted(() => {
-  cargarDatos();
+onMounted(cargarDatos);
+watch(() => props.context?.apiBaseUrl, cargarDatos);
+onUnmounted(() => {
+  active = false;
+  clearTimeout(refreshTimer);
 });
 </script>
 

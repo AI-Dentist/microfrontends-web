@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:remote": "vite build --config vite.remote.config.js",
     "preview": "vite preview"
   },
   "dependencies": {
