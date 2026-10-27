@@ -7,7 +7,8 @@
       "basePath": "/erp",
       "kind": "native-federation",
       "entry": "http://localhost:4201/remoteEntry.json",
-      "apiBaseUrl": "/api/erp"
+      "styles": "http://localhost:4201/styles.css",
+      "apiBaseUrl": "/api/erp/graphql"
     },
     {
       "id": "operations",
@@ -16,7 +17,7 @@
       "kind": "module",
       "entry": "http://localhost:4202/remote.js",
       "styles": "http://localhost:4202/remote.css",
-      "apiBaseUrl": "/api/operations"
+      "apiBaseUrl": "/api/agendamiento"
     },
     {
       "id": "clinical",
@@ -25,7 +26,7 @@
       "kind": "module",
       "entry": "http://localhost:4203/remote.js",
       "styles": "http://localhost:4203/remote.css",
-      "apiBaseUrl": "/api/clinical"
+      "apiBaseUrl": "/api/expediente"
     }
   ]
 }
