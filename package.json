@@ -1,0 +1,12 @@
+{
+  "name": "dental-microfrontend-platform",
+  "private": true,
+  "scripts": {
+    "install:apps": "node scripts/platform.mjs install",
+    "build": "node scripts/platform.mjs build",
+    "test": "node scripts/platform.mjs test",
+    "test:platform": "node --test scripts/test/*.test.mjs",
+    "test:browser": "node scripts/platform-smoke.mjs",
+    "dev": "node scripts/platform.mjs dev"
+  }
+}
