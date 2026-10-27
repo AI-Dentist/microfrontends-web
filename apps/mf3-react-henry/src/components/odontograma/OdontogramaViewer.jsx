@@ -5,23 +5,23 @@ import { DetallePiezaDental } from './DetallePiezaDental.jsx';
 import { EditorPiezaDental } from './EditorPiezaDental.jsx';
 import { PanelCambiosPendientes } from './PanelCambiosPendientes.jsx';
 import { ModalRegistrarRevision } from './ModalRegistrarRevision.jsx';
+import { HistorialOdontograma } from './HistorialOdontograma.jsx';
+import { SnapshotHistoricoViewer } from './SnapshotHistoricoViewer.jsx';
 import { LeyendaClinica } from './LeyendaClinica.jsx';
 import { useOdontogramaEditor } from '../../hooks/useOdontogramaEditor.js';
 import { Spinner } from '../common/Spinner.jsx';
 import { Alert } from '../common/Alert.jsx';
 import { Button } from '../common/Button.jsx';
+import { Badge } from '../common/Badge.jsx';
 import '../../styles/odontograma.css';
 
 /**
- * Visor interactivo clínico del Odontograma Longitudinal (Iteraciones 7F-2, 7F-3A y 7F-3B).
+ * Visor interactivo clínico del Odontograma Longitudinal (Iteraciones 7F-2, 7F-3A, 7F-3B y 7F-4A).
  *
- * Soporta dos modos explícitos:
- * 1. "Ver Odontograma": Solo lectura con navegación e inspección anatómica.
- * 2. "Preparar Edición": Editor en memoria de borradores locales no persistidos (INV-ODO-02 / INV-ODO-04).
- *
- * Integración 7F-3B:
- * - Modal controlado de registro de revisión con inspección de deltas y validación.
- * - Bloqueo explícito de escrituras en MongoDB Standalone.
+ * Modos de trabajo:
+ * 1. "Estado Actual Consolidado": Visor de las 52 posiciones FDI vigentes y preparación de borradores.
+ * 2. "Historial del Odontograma": Listado paginado auditado de todas las revisiones y enmiendas.
+ * 3. "Snapshot Histórico": Inspección inmutable de una revisión temporal sellada (solo lectura).
  *
  * @param {object} props
  * @param {object|null} props.odontograma - OdontogramaActualDto proveniente de useOdontograma
@@ -35,6 +35,15 @@ import '../../styles/odontograma.css';
  * @param {object|null} [props.conflictRegistro=null] - Detalle de conflicto 409
  * @param {boolean} [props.escrituraHabilitada=false] - Bloqueo de escritura en standalone
  * @param {Function} [props.onSimularEnvio] - Callback para pruebas de integración con mocks
+ * @param {object} [props.historial] - Objeto { total, limite, offset, revisiones }
+ * @param {boolean} [props.loadingHistorial=false] - Carga de historial
+ * @param {Function} [props.onCargarHistorial] - (offset, limite) => Promise<any>
+ * @param {object|null} [props.snapshotSeleccionado=null] - RevisionOdontogramaDto histórico
+ * @param {boolean} [props.loadingSnapshot=false] - Carga de snapshot
+ * @param {Function} [props.onSeleccionarRevision] - (revision) => void
+ * @param {Function} [props.onVolverDeSnapshot] - () => void
+ * @param {string} [props.consultaIdContexto=''] - Consulta clínica activa
+ * @param {Array<object>} [props.revisionesConsulta=[]] - Revisiones de la consulta
  */
 export function OdontogramaViewer({
   odontograma,
@@ -48,9 +57,19 @@ export function OdontogramaViewer({
   conflictRegistro = null,
   escrituraHabilitada = false,
   onSimularEnvio,
+  historial = { total: 0, limite: 20, offset: 0, revisiones: [] },
+  loadingHistorial = false,
+  onCargarHistorial,
+  snapshotSeleccionado = null,
+  loadingSnapshot = false,
+  onSeleccionarRevision,
+  onVolverDeSnapshot,
+  consultaIdContexto = '',
+  revisionesConsulta = [],
 }) {
   const [userSelectedFDI, setUserSelectedFDI] = useState(null);
   const [modalRevisionAbierto, setModalRevisionAbierto] = useState(false);
+  const [vistaActiva, setVistaActiva] = useState('ACTUAL'); // 'ACTUAL' | 'HISTORIAL'
 
   // Hook gestor del borrador clínico en memoria (Iteración 7F-3A)
   const editor = useOdontogramaEditor(odontograma, historiaClinicaId);
@@ -161,142 +180,214 @@ export function OdontogramaViewer({
     );
   }
 
+  // Si hay un snapshot histórico seleccionado para inspección inmutable
+  if (snapshotSeleccionado) {
+    return (
+      <div className="odontograma-container" aria-label="Visor de Snapshot Histórico">
+        <SnapshotHistoricoViewer
+          revision={snapshotSeleccionado}
+          onVolver={onVolverDeSnapshot}
+        />
+      </div>
+    );
+  }
+
+  // Si está cargando un snapshot histórico seleccionado
+  if (loadingSnapshot) {
+    return (
+      <div className="odontograma-container" style={{ textAlign: 'center', padding: '60px 20px' }}>
+        <Spinner dark />
+        <p style={{ marginTop: '16px', color: 'var(--text-muted)', fontSize: '14px' }}>
+          Recuperando snapshot histórico sellado de las 52 piezas dentales...
+        </p>
+      </div>
+    );
+  }
+
   const piezaSeleccionada = selectedNumeroFDI ? activePiezasMap[selectedNumeroFDI] : null;
 
   return (
     <div className="odontograma-container" aria-label="Visor del Odontograma">
-      {/* Encabezado clínico del odontograma */}
-      <header className="odontograma-header">
-        <div className="odontograma-header-info">
-          <h2 className="odontograma-title">
-            <span>🦷</span>
-            <span>Odontograma Longitudinal Consolidado</span>
-          </h2>
-          <div className="odontograma-meta">
-            <span className="odontograma-meta-item">
-              Historia Clínica: <strong>{odontograma.historiaClinicaId}</strong>
-            </span>
-            <span className="odontograma-meta-item">
-              Versión Maestra: <strong>v{odontograma.version || 1}</strong>
-            </span>
-            <span className="odontograma-meta-item">
-              Revisiones Totales: <strong>{odontograma.totalRevisiones || 0}</strong>
-            </span>
-            {odontograma.actualizadoEn && (
-              <span className="odontograma-meta-item">
-                Última Actualización:{' '}
-                <strong>{new Date(odontograma.actualizadoEn).toLocaleString()}</strong>
-              </span>
-            )}
-          </div>
-        </div>
+      {/* Pestañas de navegación de alto nivel: Estado Actual vs Historial Longitudinal */}
+      <nav className="odontograma-tabs-nav" role="tablist" aria-label="Vistas del odontograma">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={vistaActiva === 'ACTUAL'}
+          className={`tab-nav-btn ${vistaActiva === 'ACTUAL' ? 'active' : ''}`}
+          onClick={() => setVistaActiva('ACTUAL')}
+        >
+          🦷 Estado Actual Consolidado
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={vistaActiva === 'HISTORIAL'}
+          className={`tab-nav-btn ${vistaActiva === 'HISTORIAL' ? 'active' : ''}`}
+          onClick={() => {
+            setVistaActiva('HISTORIAL');
+            if (odontograma?.id && onCargarHistorial && historial.revisiones.length === 0) {
+              void onCargarHistorial(0, historial.limite || 20);
+            }
+          }}
+        >
+          📜 Historial del Odontograma
+          <Badge variant="secondary" style={{ marginLeft: '6px', fontSize: '11px' }}>
+            {historial.total || odontograma?.totalRevisiones || 0}
+          </Badge>
+        </button>
+      </nav>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          {/* Alternador de Modo: Ver Odontograma / Preparar Edición */}
-          <div className="odontograma-modo-switcher" role="tablist" aria-label="Modo de trabajo clínico">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={!editor.modoEdicion}
-              className={`btn-modo ${!editor.modoEdicion ? 'active' : ''}`}
-              onClick={editor.salirModoEdicion}
-            >
-              👁️ Ver odontograma
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={editor.modoEdicion}
-              className={`btn-modo ${editor.modoEdicion ? 'active' : ''}`}
-              disabled={!editor.puedeEditar}
-              title={
-                !editor.puedeEditar
-                  ? 'Requiere un odontograma inicializado en el servidor'
-                  : 'Modo preparación de cambios clínicos (borrador en memoria)'
-              }
-              onClick={editor.iniciarEdicion}
-            >
-              ✏️ Preparar edición
-              {editor.resumen.piezasModificadas > 0 && (
-                <span
-                  style={{
-                    marginLeft: '6px',
-                    backgroundColor: '#f59e0b',
-                    color: '#fff',
-                    borderRadius: '10px',
-                    padding: '1px 6px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                  }}
-                >
-                  {editor.resumen.piezasModificadas}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {onRecargar && (
-            <Button variant="secondary" onClick={onRecargar} style={{ fontSize: '12px', padding: '6px 12px' }}>
-              🔄 Actualizar Datos
-            </Button>
-          )}
-        </div>
-      </header>
-
-      {/* Panel de Cambios Pendientes (si estamos en modo edición y hay modificaciones) */}
-      {editor.modoEdicion && editor.resumen.hayCambios && (
-        <PanelCambiosPendientes
-          resumen={editor.resumen}
-          deltas={editor.deltas}
-          onDescartarPieza={editor.descartarCambiosPieza}
-          onDescartarTodo={editor.descartarTodo}
-          onSalir={editor.salirModoEdicion}
-          onAbrirRegistroRevision={() => setModalRevisionAbierto(true)}
+      {/* Vista de Historial Longitudinal */}
+      {vistaActiva === 'HISTORIAL' && (
+        <HistorialOdontograma
+          odontogramaId={odontograma.id}
+          historial={historial}
+          loading={loadingHistorial}
+          onCargarPagina={onCargarHistorial}
+          onSeleccionarRevision={onSeleccionarRevision}
+          consultaIdFiltro={consultaIdContexto}
+          revisionesConsulta={revisionesConsulta}
         />
       )}
 
-      {/* Distribución anatómica de las 52 posiciones FDI */}
-      <ArcadaDental
-        piezasMap={activePiezasMap}
-        selectedNumeroFDI={selectedNumeroFDI}
-        onSelectPieza={setUserSelectedFDI}
-        fdisModificadosSet={editor.fdisModificadosSet}
-      />
+      {/* Vista de Estado Actual Consolidado */}
+      {vistaActiva === 'ACTUAL' && (
+        <>
+          {/* Encabezado clínico del odontograma */}
+          <header className="odontograma-header">
+            <div className="odontograma-header-info">
+              <h2 className="odontograma-title">
+                <span>🦷</span>
+                <span>Odontograma Longitudinal Consolidado</span>
+              </h2>
+              <div className="odontograma-meta">
+                <span className="odontograma-meta-item">
+                  Historia Clínica: <strong>{odontograma.historiaClinicaId}</strong>
+                </span>
+                <span className="odontograma-meta-item">
+                  Versión Maestra: <strong>v{odontograma.version || 1}</strong>
+                </span>
+                <span className="odontograma-meta-item">
+                  Revisiones Totales: <strong>{odontograma.totalRevisiones || 0}</strong>
+                </span>
+                {odontograma.actualizadoEn && (
+                  <span className="odontograma-meta-item">
+                    Última Actualización:{' '}
+                    <strong>{new Date(odontograma.actualizadoEn).toLocaleString()}</strong>
+                  </span>
+                )}
+              </div>
+            </div>
 
-      {/* Panel inferior: Esquema de Superficies y Ficha de Detalle / Editor de la Pieza */}
-      <div className="detalle-layout">
-        {selectedNumeroFDI ? (
-          <SuperficiesDentales
-            numeroFDI={selectedNumeroFDI}
-            superficies={piezaSeleccionada?.superficies || {}}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              {/* Alternador de Modo: Ver Odontograma / Preparar Edición */}
+              <div className="odontograma-modo-switcher" role="tablist" aria-label="Modo de trabajo clínico">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={!editor.modoEdicion}
+                  className={`btn-modo ${!editor.modoEdicion ? 'active' : ''}`}
+                  onClick={editor.salirModoEdicion}
+                >
+                  👁️ Ver odontograma
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={editor.modoEdicion}
+                  className={`btn-modo ${editor.modoEdicion ? 'active' : ''}`}
+                  disabled={!editor.puedeEditar}
+                  title={
+                    !editor.puedeEditar
+                      ? 'Requiere un odontograma inicializado en el servidor'
+                      : 'Modo preparación de cambios clínicos (borrador en memoria)'
+                  }
+                  onClick={editor.iniciarEdicion}
+                >
+                  ✏️ Preparar edición
+                  {editor.resumen.piezasModificadas > 0 && (
+                    <span
+                      style={{
+                        marginLeft: '6px',
+                        backgroundColor: '#f59e0b',
+                        color: '#fff',
+                        borderRadius: '10px',
+                        padding: '1px 6px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {editor.resumen.piezasModificadas}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {onRecargar && (
+                <Button variant="secondary" onClick={onRecargar} style={{ fontSize: '12px', padding: '6px 12px' }}>
+                  🔄 Actualizar Datos
+                </Button>
+              )}
+            </div>
+          </header>
+
+          {/* Panel de Cambios Pendientes (si estamos en modo edición y hay modificaciones) */}
+          {editor.modoEdicion && editor.resumen.hayCambios && (
+            <PanelCambiosPendientes
+              resumen={editor.resumen}
+              deltas={editor.deltas}
+              onDescartarPieza={editor.descartarCambiosPieza}
+              onDescartarTodo={editor.descartarTodo}
+              onSalir={editor.salirModoEdicion}
+              onAbrirRegistroRevision={() => setModalRevisionAbierto(true)}
+            />
+          )}
+
+          {/* Distribución anatómica de las 52 posiciones FDI */}
+          <ArcadaDental
+            piezasMap={activePiezasMap}
+            selectedNumeroFDI={selectedNumeroFDI}
+            onSelectPieza={setUserSelectedFDI}
+            fdisModificadosSet={editor.fdisModificadosSet}
           />
-        ) : (
-          <div className="superficies-card" style={{ justifyContent: 'center' }}>
-            <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-              Seleccione una pieza dental para ver sus 5 superficies.
-            </span>
+
+          {/* Panel inferior: Esquema de Superficies y Ficha de Detalle / Editor de la Pieza */}
+          <div className="detalle-layout">
+            {selectedNumeroFDI ? (
+              <SuperficiesDentales
+                numeroFDI={selectedNumeroFDI}
+                superficies={piezaSeleccionada?.superficies || {}}
+              />
+            ) : (
+              <div className="superficies-card" style={{ justifyContent: 'center' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                  Seleccione una pieza dental para ver sus 5 superficies.
+                </span>
+              </div>
+            )}
+
+            {editor.modoEdicion ? (
+              <EditorPiezaDental
+                numeroFDI={selectedNumeroFDI}
+                piezaOriginal={piezasMap[selectedNumeroFDI]}
+                piezaBorrador={editor.obtenerPiezaBorrador(selectedNumeroFDI)}
+                tieneCambios={editor.fdisModificadosSet.has(selectedNumeroFDI)}
+                onActualizar={(cambios) => editor.prepararCambioPieza(selectedNumeroFDI, cambios)}
+                onDescartar={() => editor.descartarCambiosPieza(selectedNumeroFDI)}
+              />
+            ) : (
+              <DetallePiezaDental
+                numeroFDI={selectedNumeroFDI}
+                pieza={piezaSeleccionada}
+              />
+            )}
           </div>
-        )}
 
-        {editor.modoEdicion ? (
-          <EditorPiezaDental
-            numeroFDI={selectedNumeroFDI}
-            piezaOriginal={piezasMap[selectedNumeroFDI]}
-            piezaBorrador={editor.obtenerPiezaBorrador(selectedNumeroFDI)}
-            tieneCambios={editor.fdisModificadosSet.has(selectedNumeroFDI)}
-            onActualizar={(cambios) => editor.prepararCambioPieza(selectedNumeroFDI, cambios)}
-            onDescartar={() => editor.descartarCambiosPieza(selectedNumeroFDI)}
-          />
-        ) : (
-          <DetallePiezaDental
-            numeroFDI={selectedNumeroFDI}
-            pieza={piezaSeleccionada}
-          />
-        )}
-      </div>
-
-      {/* Leyenda clínica de apoyo visual */}
-      <LeyendaClinica />
+          {/* Leyenda clínica de apoyo visual */}
+          <LeyendaClinica />
+        </>
+      )}
 
       {/* Modal para Registro Controlado de Revisiones (Iteración 7F-3B) */}
       {modalRevisionAbierto && (

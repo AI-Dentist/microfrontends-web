@@ -17,6 +17,8 @@ export function useOdontograma() {
 
   // Estados de solicitud
   const [loading, setLoading] = useState(false);
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
+  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [conflict, setConflict] = useState(null);
@@ -34,6 +36,8 @@ export function useOdontograma() {
   const [revisionesConsulta, setRevisionesConsulta] = useState([]);
 
   const abortControllerRef = useRef(null);
+  const abortHistorialRef = useRef(null);
+  const abortSnapshotRef = useRef(null);
 
   const limpiarError = useCallback(() => {
     setError(null);
@@ -45,6 +49,19 @@ export function useOdontograma() {
 
   const limpiarMensaje = useCallback(() => {
     setSuccessMessage(null);
+  }, []);
+
+  const limpiarSnapshot = useCallback(() => {
+    setSnapshotSeleccionado(null);
+  }, []);
+
+  const limpiarHistorial = useCallback(() => {
+    setHistorial({
+      total: 0,
+      limite: 20,
+      offset: 0,
+      revisiones: [],
+    });
   }, []);
 
   /**
@@ -67,11 +84,21 @@ export function useOdontograma() {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
+      if (abortHistorialRef.current) {
+        abortHistorialRef.current.abort();
+      }
+      if (abortSnapshotRef.current) {
+        abortSnapshotRef.current.abort();
+      }
       abortControllerRef.current = new AbortController();
 
       setLoading(true);
       setError(null);
       setConflict(null);
+      // Al cambiar de historia clínica, limpiar snapshots y revisiones anteriores
+      setSnapshotSeleccionado(null);
+      setHistorial({ total: 0, limite: 20, offset: 0, revisiones: [] });
+      setRevisionesConsulta([]);
 
       try {
         const data = await odontogramasService.obtenerOdontogramaActual(
@@ -244,7 +271,12 @@ export function useOdontograma() {
     async (odontogramaId, { limite = 20, offset = 0 } = {}) => {
       if (!odontogramaId || !odontogramaId.trim()) return null;
 
-      setLoading(true);
+      if (abortHistorialRef.current) {
+        abortHistorialRef.current.abort();
+      }
+      abortHistorialRef.current = new AbortController();
+
+      setLoadingHistorial(true);
       setError(null);
 
       try {
@@ -252,14 +284,17 @@ export function useOdontograma() {
           odontogramaId,
           { limite, offset },
           token,
+          abortHistorialRef.current.signal,
         );
         setHistorial(data || { total: 0, limite, offset, revisiones: [] });
         return data;
       } catch (err) {
-        setError(err);
+        if (err.name !== 'AbortError') {
+          setError(err);
+        }
         return null;
       } finally {
-        setLoading(false);
+        setLoadingHistorial(false);
       }
     },
     [token],
@@ -276,7 +311,12 @@ export function useOdontograma() {
     async (odontogramaId, revisionId) => {
       if (!odontogramaId || !revisionId) return null;
 
-      setLoading(true);
+      if (abortSnapshotRef.current) {
+        abortSnapshotRef.current.abort();
+      }
+      abortSnapshotRef.current = new AbortController();
+
+      setLoadingSnapshot(true);
       setError(null);
 
       try {
@@ -284,14 +324,17 @@ export function useOdontograma() {
           odontogramaId,
           revisionId,
           token,
+          abortSnapshotRef.current.signal,
         );
         setSnapshotSeleccionado(data);
         return data;
       } catch (err) {
-        setError(err);
+        if (err.name !== 'AbortError') {
+          setError(err);
+        }
         return null;
       } finally {
-        setLoading(false);
+        setLoadingSnapshot(false);
       }
     },
     [token],
@@ -327,6 +370,8 @@ export function useOdontograma() {
   return {
     // Estados reactivos
     loading,
+    loadingHistorial,
+    loadingSnapshot,
     isSubmitting,
     error,
     conflict,
@@ -347,6 +392,8 @@ export function useOdontograma() {
     limpiarError,
     limpiarConflicto,
     limpiarMensaje,
+    limpiarSnapshot,
+    limpiarHistorial,
     setOdontogramaActual,
     setSnapshotSeleccionado,
   };

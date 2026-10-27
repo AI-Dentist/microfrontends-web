@@ -29,13 +29,21 @@ export function OdontogramaPage({
 
   const {
     loading,
+    loadingHistorial,
+    loadingSnapshot,
     isSubmitting,
     error,
     conflict,
     successMessage,
     odontogramaActual,
+    historial,
+    snapshotSeleccionado,
+    revisionesConsulta,
     cargarOdontogramaActual,
     registrarRevision,
+    cargarHistorial,
+    cargarSnapshotRevision,
+    limpiarSnapshot,
     limpiarError,
     limpiarMensaje,
     setOdontogramaActual,
@@ -157,7 +165,7 @@ export function OdontogramaPage({
         </div>
       )}
 
-      {/* Visor interactivo del Odontograma con flujo de revisión controlado */}
+      {/* Visor interactivo del Odontograma con flujo de revisión y visor longitudinal */}
       <OdontogramaViewer
         odontograma={odontogramaActual}
         loading={loading}
@@ -169,6 +177,22 @@ export function OdontogramaPage({
         errorRegistro={error}
         conflictRegistro={conflict}
         escrituraHabilitada={false}
+        historial={historial}
+        loadingHistorial={loadingHistorial}
+        onCargarHistorial={(offset, limite) => {
+          if (odontogramaActual?.id) {
+            void cargarHistorial(odontogramaActual.id, { offset, limite });
+          }
+        }}
+        snapshotSeleccionado={snapshotSeleccionado}
+        loadingSnapshot={loadingSnapshot}
+        onSeleccionarRevision={(rev) => {
+          if (odontogramaActual?.id && rev?.id) {
+            void cargarSnapshotRevision(odontogramaActual.id, rev.id);
+          }
+        }}
+        onVolverDeSnapshot={limpiarSnapshot}
+        revisionesConsulta={revisionesConsulta}
       />
     </div>
   );

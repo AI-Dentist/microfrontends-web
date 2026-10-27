@@ -1092,3 +1092,267 @@
   flex-wrap: wrap;
 }
 
+/* =============================================================================
+   Iteración 7F-4A: Historial Longitudinal y Visor de Snapshots Históricos
+   ============================================================================= */
+
+.odontograma-tabs-nav {
+  display: flex;
+  gap: 8px;
+  border-bottom: 2px solid var(--border-color);
+  margin-bottom: 16px;
+  padding-bottom: 4px;
+}
+
+.tab-nav-btn {
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease-in-out;
+  margin-bottom: -6px;
+}
+
+.tab-nav-btn:hover {
+  color: var(--primary);
+}
+
+.tab-nav-btn.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* Contenedor del Historial */
+.historial-odontograma-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.historial-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 14px;
+}
+
+.historial-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.historial-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.historial-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  background-color: var(--neutral-50, #f9fafb);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+}
+
+.historial-contador {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.historial-paginacion-controles {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.historial-lista {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.revision-card-item {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.revision-card-item:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.revision-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.revision-numero-badge {
+  background-color: #1e3a8a;
+  color: #ffffff;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.revision-consulta-tag {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background-color: var(--neutral-100, #f3f4f6);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.revision-consulta-tag code {
+  font-size: 11px;
+}
+
+.revision-motivo {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  background-color: var(--neutral-50, #f9fafb);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--primary);
+}
+
+.revision-referencia-enmienda {
+  font-size: 12px;
+  color: #92400e;
+  background-color: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+}
+
+.revision-meta-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-top: 1px dashed var(--border-color);
+  padding-top: 8px;
+}
+
+/* Visor de Snapshot Histórico */
+.snapshot-historico-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.snapshot-banner-inmutable {
+  background-color: #eff6ff;
+  border: 1px solid #3b82f6;
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.snapshot-banner-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.snapshot-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  background-color: #ffffff;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+}
+
+.snapshot-meta-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.snapshot-meta-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.snapshot-meta-val {
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.snapshot-deltas-toggle-container {
+  border-top: 1px solid #bfdbfe;
+  padding-top: 10px;
+}
+
+.snapshot-deltas-lista {
+  list-style: none;
+  padding: 8px 12px;
+  margin: 8px 0 0;
+  background-color: #ffffff;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.snapshot-delta-item {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+
