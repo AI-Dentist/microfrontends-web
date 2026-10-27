@@ -13,6 +13,7 @@ export function HistoriaClinicaDetail({
   onVerConsultas,
   onAbrirConsulta,
   onVerOdontograma,
+  onVerEstudios,
 }) {
   if (!historia) return null;
 
@@ -31,6 +32,16 @@ export function HistoriaClinicaDetail({
                 style={{ fontSize: '12px', padding: '6px 12px' }}
               >
                 🦷 Odontograma
+              </Button>
+            )}
+
+            {onVerEstudios && (
+              <Button
+                variant="secondary"
+                onClick={() => onVerEstudios(historia.id)}
+                style={{ fontSize: '12px', padding: '6px 12px' }}
+              >
+                🔬 Estudios Clínicos
               </Button>
             )}
 

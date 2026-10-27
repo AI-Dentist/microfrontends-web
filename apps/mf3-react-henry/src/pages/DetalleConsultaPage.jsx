@@ -15,6 +15,8 @@ export function DetalleConsultaPage({
   onVerHistoria,
   onEditarAtencion,
   onVerOdontograma,
+  onVerEstudios,
+  onSolicitarEstudio,
 }) {
   const [consultaIdInput, setConsultaIdInput] = useState(initialConsultaId);
   const [isCompletarModalOpen, setIsCompletarModalOpen] = useState(false);
@@ -129,6 +131,8 @@ export function DetalleConsultaPage({
           onCompletarClick={() => setIsCompletarModalOpen(true)}
           onCancelarClick={() => setIsCancelarModalOpen(true)}
           onVerOdontograma={onVerOdontograma}
+          onVerEstudios={onVerEstudios}
+          onSolicitarEstudio={onSolicitarEstudio}
         />
       )}
 

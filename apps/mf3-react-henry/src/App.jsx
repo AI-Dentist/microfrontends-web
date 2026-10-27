@@ -13,6 +13,7 @@ import { DetalleConsultaPage } from './pages/DetalleConsultaPage.jsx';
 import { AbrirConsultaPage } from './pages/AbrirConsultaPage.jsx';
 import { AtencionConsultaPage } from './pages/AtencionConsultaPage.jsx';
 import { OdontogramaPage } from './pages/OdontogramaPage.jsx';
+import { EstudiosPage } from './pages/EstudiosPage.jsx';
 
 import './styles/theme.css';
 import './styles/components.css';
@@ -30,6 +31,11 @@ export function AppContent() {
   const [detalleConsultaId, setDetalleConsultaId] = useState('');
   const [atencionConsultaId, setAtencionConsultaId] = useState('');
   const [odontogramaHistoriaId, setOdontogramaHistoriaId] = useState('');
+
+  // Estados de navegación para Estudios e Imagenología
+  const [estudiosSubtab, setEstudiosSubtab] = useState('tipos');
+  const [estudiosHistoriaId, setEstudiosHistoriaId] = useState('');
+  const [estudiosConsultaId, setEstudiosConsultaId] = useState('');
 
   const handleEditarAntecedentes = (id) => {
     setHistoriaAEditarId(id);
@@ -55,6 +61,19 @@ export function AppContent() {
   const handleVerOdontogramaDeHistoria = (hId) => {
     setOdontogramaHistoriaId(hId);
     setActiveTab('odontograma');
+  };
+
+  const handleVerEstudiosDeHistoria = (hId) => {
+    setEstudiosHistoriaId(hId);
+    setEstudiosSubtab('historial');
+    setActiveTab('estudios');
+  };
+
+  const handleSolicitarEstudio = (consId, hId = '') => {
+    setEstudiosConsultaId(consId);
+    if (hId) setEstudiosHistoriaId(hId);
+    setEstudiosSubtab('solicitar');
+    setActiveTab('estudios');
   };
 
   const handleAbrirConsulta = (hId = '', pacId = '') => {
@@ -92,6 +111,7 @@ export function AppContent() {
             onVerConsultas={handleVerConsultasDeHistoria}
             onAbrirConsulta={handleAbrirConsulta}
             onVerOdontograma={handleVerOdontogramaDeHistoria}
+            onVerEstudios={handleVerEstudiosDeHistoria}
           />
         )}
 
@@ -132,6 +152,8 @@ export function AppContent() {
             }}
             onEditarAtencion={handleEditarAtencion}
             onVerOdontograma={handleVerOdontogramaDeHistoria}
+            onVerEstudios={handleVerEstudiosDeHistoria}
+            onSolicitarEstudio={handleSolicitarEstudio}
           />
         )}
 
@@ -146,6 +168,23 @@ export function AppContent() {
             onVerConsultas={(hId) => {
               setConsultasHistoriaId(hId);
               setActiveTab('consultas');
+            }}
+          />
+        )}
+
+        {activeTab === 'estudios' && (
+          <EstudiosPage
+            key={`${estudiosSubtab}-${estudiosHistoriaId}-${estudiosConsultaId}`}
+            initialSubtab={estudiosSubtab}
+            initialHistoriaId={estudiosHistoriaId}
+            initialConsultaId={estudiosConsultaId}
+            onVerHistoria={(hId) => {
+              setHistoriaAEditarId(hId);
+              setActiveTab('consulta');
+            }}
+            onVerConsulta={(consId) => {
+              setDetalleConsultaId(consId);
+              setActiveTab('detalle-consulta');
             }}
           />
         )}

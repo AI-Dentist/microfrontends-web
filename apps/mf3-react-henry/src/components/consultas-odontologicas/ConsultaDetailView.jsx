@@ -20,6 +20,8 @@ export function ConsultaDetailView({
   onCompletarClick,
   onCancelarClick,
   onVerOdontograma,
+  onVerEstudios,
+  onSolicitarEstudio,
 }) {
   if (!consulta) return null;
 
@@ -79,11 +81,30 @@ export function ConsultaDetailView({
               🦷 Ver Odontograma
             </Button>
           )}
+          {onVerEstudios && historiaClinicaId && (
+            <Button
+              variant="secondary"
+              onClick={() => onVerEstudios(historiaClinicaId)}
+              style={{ fontSize: '13px', padding: '6px 14px' }}
+            >
+              🔬 Ver Estudios
+            </Button>
+          )}
         </div>
 
         {/* Acciones clínicas disponibles solo para consultas EN_CURSO */}
         {!esTerminal && (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {onSolicitarEstudio && (
+              <Button
+                variant="secondary"
+                onClick={() => onSolicitarEstudio(id, historiaClinicaId)}
+                style={{ fontSize: '13px', padding: '6px 14px' }}
+              >
+                🔬 Solicitar Estudio
+              </Button>
+            )}
+
             {onEditarAtencion && (
               <Button
                 variant="primary"
