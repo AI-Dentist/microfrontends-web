@@ -3,11 +3,12 @@ import { provideErp } from './core/erp.providers';
 import { ErpLayout } from './shared/components/erp-layout/erp-layout.component';
 
 /** Routes exposed through Native Federation as `./Routes` (mounted by the shell under /erp). */
-export const ERP_ROUTES: Routes = [
+export function createErpRoutes(config: { graphqlUrl?: string } = {}): Routes {
+  return [
   {
     path: '',
     component: ErpLayout,
-    providers: [provideErp()],
+    providers: [provideErp(config)],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       { path: 'cash-flow', pathMatch: 'full', redirectTo: 'dashboard' },
@@ -61,5 +62,7 @@ export const ERP_ROUTES: Routes = [
     ],
   },
 ];
+}
 
+export const ERP_ROUTES: Routes = createErpRoutes();
 export default ERP_ROUTES;

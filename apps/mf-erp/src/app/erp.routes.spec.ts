@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Route, Router, RouterOutlet, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { describe, expect, it } from 'vitest';
-import { ERP_ROUTES } from './erp.routes';
+import { ERP_ROUTES, createErpRoutes } from './erp.routes';
 import { routes } from './app.routes';
 
 @Component({ imports: [RouterOutlet], template: '<router-outlet />' })
@@ -19,6 +19,12 @@ function isolated(route: Route): Route {
 }
 
 describe('ERP canonical navigation contract', () => {
+  it('creates independent configured routes while preserving the default export', () => {
+    const configured = createErpRoutes({ graphqlUrl: 'https://shell.example/api/erp/graphql' });
+    expect(configured).not.toBe(ERP_ROUTES);
+    expect(configured[0].children?.map(r => r.path)).toEqual(ERP_ROUTES[0].children?.map(r => r.path));
+    expect(createErpRoutes()[0].path).toBe('');
+  });
   it('exposes host-relative children, self-contained providers and the composed catalog', () => {
     expect(ERP_ROUTES[0].path).toBe('');
     expect(ERP_ROUTES[0].providers?.length).toBeGreaterThan(0);

@@ -14,7 +14,9 @@ import { prepareOperationHeaders } from './request-headers';
 export const IDEMPOTENCY_CONTEXT_KEY = 'idempotencyKey';
 export const OWNER_CONTEXT_KEY = 'ownerPrincipal';
 
-export function provideErpGraphql(): (Provider | EnvironmentProviders)[] {
+export interface ErpGraphqlConfig { graphqlUrl?: string; }
+
+export function provideErpGraphql(config: ErpGraphqlConfig = {}): (Provider | EnvironmentProviders)[] {
   return [
     provideHttpClient(withFetch()),
     provideApollo(() => {
@@ -44,7 +46,7 @@ export function provideErpGraphql(): (Provider | EnvironmentProviders)[] {
       });
 
       return {
-        link: ApolloLink.from([errorLink, headersLink, httpLink.create({ uri: environment.graphqlUrl })]),
+        link: ApolloLink.from([errorLink, headersLink, httpLink.create({ uri: config.graphqlUrl ?? environment.graphqlUrl })]),
         cache: new InMemoryCache(),
         defaultOptions: {
           watchQuery: { fetchPolicy: 'cache-and-network' },

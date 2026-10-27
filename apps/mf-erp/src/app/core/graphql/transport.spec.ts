@@ -55,6 +55,22 @@ it.each([
   expect((await done).data).toEqual({ probe: true });
 });
 
+it('uses an optional validated host endpoint without changing per-request credentials', async () => {
+  TestBed.resetTestingModule();
+  TestBed.configureTestingModule({ providers: [
+    ...provideErpGraphql({ graphqlUrl: 'https://shell.example/api/erp/graphql' }), provideHttpClientTesting(),
+  ] });
+  http = TestBed.inject(HttpTestingController);
+  apollo = TestBed.inject(Apollo);
+  const done = firstValueFrom(apollo.query({ query }));
+  await drain();
+  const request = http.expectOne('https://shell.example/api/erp/graphql');
+  expect(request.request.headers.get('Authorization')).toBe(`Bearer ${token}`);
+  expect(request.request.headers.has('Idempotency-Key')).toBe(false);
+  request.flush({ data: { probe: true } });
+  expect((await done).data).toEqual({ probe: true });
+});
+
 it('does not generate a key for existing queries', async () => {
   const factory = vi.spyOn(crypto, 'randomUUID');
   const done = firstValueFrom(apollo.query({ query, context: { idempotencyKey: 'ignored' } }));
