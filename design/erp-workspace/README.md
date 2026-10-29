@@ -2,7 +2,7 @@
 
 **One connected offline demo**, in Spanish, for fictional Clínica Dental Andina. Open [`01-unified-workspace.html`](01-unified-workspace.html) directly in a modern browser; no build, server, install or internet. All records are fictional and in memory: **reload clears every change**. Fixed date: Monday 18 May 2026.
 
-The prototype covers **S1–S13**, including **configuration-only Triage, complete editable-master CRUD and provider-free Laboratorio / Imagen**. Each study menu opens its own CRUD directly, with no subtabs, provider records, defaults or request dependency. The appointment → consultation → cash/QR → receipt flow is preserved.
+The prototype covers **S1–S16 and S18**, including **configuration-only Triage, complete editable-master CRUD and provider-free Laboratorio / Imagenología**. The first menu/page is **Resumen**, without changing its financial meaning. **Pagos and simulated login/logout (S17, S19–S20) remain outside this slice**. Each study menu opens its own CRUD directly, with no subtabs, provider records, defaults or request dependency. The appointment → consultation → cash/QR → receipt flow is preserved.
 
 Feature: [`../../odd/tasks/erp-prototype-full-workflows.md`](../../odd/tasks/erp-prototype-full-workflows.md). The parent owns tracking, commits, review and canvas opening. This is not production medical, accounting, inventory or authorization software. Never enter real personal or medical information.
 
@@ -13,7 +13,7 @@ Feature: [`../../odd/tasks/erp-prototype-full-workflows.md`](../../odd/tasks/erp
 | **Médicos** | Name, optional unique demo document, specialties and multiple availability windows. |
 | **Especialidades** | Specialty name. |
 | **Consultorios** | Name, optional location and active flag. |
-| **Laboratorio / Imagen** | Direct, modality-filtered study CRUD: name and price only. Modality is fixed by the current menu and visible in the form/detail. No provider fields or subtabs. |
+| **Laboratorio / Imagenología** | Direct, modality-filtered study CRUD: name and price only. Modality is fixed by the current menu and visible in the form/detail. No provider fields or subtabs. |
 | **Enfermedades / Alergias** | Clinic reference name and optional description, at most 120 characters each. These never populate actual patient allergies or diagnoses. |
 | **Triage** | **Clasificación** and **Descripción**, both required after trimming, each 1–120 characters. Classification is case-insensitively unique after trimming. Plain literal text only. No patient selector, history readout, vitals, scoring, diagnosis or assessment. |
 | **Aranceles** | Procedure name and nonnegative price in cents (initial Consulta demo Bs 300 / Control demo Bs 600). |
@@ -42,7 +42,7 @@ Blocked confirmation explains the reference and leaves dependent records and fin
 ## Try the complete connected workflow
 
 1. **Especialidades / Consultorios / Médicos:** create resources; choose a specialty and weekday/start/end/active-room availability. New windows default to Monday 08:00–12:00, not to clinical information. Adjacent windows are allowed; overlapping same-doctor windows are rejected.
-2. **Laboratorio / Imagen:** open either direct menu and create a study with name and price. Modality is implicit in the menu, not editable. Ver shows its stable ID, name, modality and saved price; Editar preserves the ID; Eliminar confirms and protects referenced studies. Each menu shows only its own records, including after navigation and edits. Newly created types are immediately available for consultation requests, with no intermediate configuration.
+2. **Laboratorio / Imagenología:** open either direct menu and create a study with name and price. Modality is implicit in the menu, not editable. Ver shows its stable ID, name, modality and saved price; Editar preserves the ID; Eliminar confirms and protects referenced studies. Each menu shows only its own records, including after navigation and edits. Newly created types are immediately available for consultation requests, with no intermediate configuration.
 3. **Pacientes → Ver expediente:** add/edit/remove actual patient allergy entries (substance, reaction, recorded severity), family history (relation, condition), personal-history notes and **Hábitos**. Habits is explicitly saved plain text up to 1000 characters; clear/save gives **Sin registrar**. Empty information never asserts absence of allergies. Cancel/Escape discard drafts; records remain patient-specific. Triage is now an unrelated configuration catalog, not another patient chart.
 4. **Agenda → Agendar cita:** choose patient, doctor, active room, date/time, integer duration 15–240 minutes and a reason. Use 2026-05-18 within the configured Monday window. The entire appointment must fit one matching availability window. Doctor/room conflicts, invalid references, inactive rooms and invalid windows reject without mutation. Day/week, professional, room and status filters remain.
 5. **Iniciar consulta / Continuar atención:** opens that appointment's patient and exactly one EN_CURSO consultation. Appointment becomes **En atención**. Enter human fictional motivo, anamnesis, exploración and diagnóstico; select procedures; **Guardar progreso** explicitly saves. No diagnosis or other clinical default is invented. Save before navigating: unsaved text is not a durable draft.
@@ -57,12 +57,14 @@ Blocked confirmation explains the reference and leaves dependent records and fin
 - Initial dashboard: Bs 700 income, Bs 250 expenses, Bs 450 net, Bs 1,400 pending. Prior fixture payments are labeled without historical receipts. Earlier chart days remain independent fixtures. Only confirmed cash/QR adds income.
 - ORD-102 starts Bs 800 pending. A Bs 200 cash payment leaves Bs 600 and changes income/net/pending to Bs 900/650/1,200. Invalid/zero/negative/over-balance/fractional-cent payments, Cancel and Escape leave balances unchanged. Filters/empty states and low-stock counts remain coherent.
 - One sourced light shell, palette and font stack; one header/sidebar/main. Clinic/contact, sourced blue/teal, comfortable/compact density and navigation hide/show/reorder remain configurable; Configuration cannot be hidden. No new framework.
+- Every sidebar menu retains its readable name and has its own semantic inline SVG geometry (16 distinct icons). Action buttons—including settings tabs, row actions, dialogs, QR and menu controls—show only SVG icons, retain accessible names and have at least 44×44px targets. Hover or keyboard focus shows a shared, viewport-clamped tooltip in the top layer; it remains visible outside scrolling tables and inside native dialogs. Escape dismisses it and preserves existing dialog close/focus restoration. Touch actions remain directly operable with accessible names.
+- Laboratorio exposes **Crear Laboratorio**; Imagenología exposes **Crear Imagen**. Their create/edit/detail/delete labels identify the entity, with name/price and implicit modality unchanged. Consultation selection says **Laboratorio / Imagen**, never generic tipo de estudio.
 - Labeled fields, semantic tables/captions, status/error announcements and visible focus. Shared native detail/edit/delete dialogs trap Tab/Shift+Tab, support Escape/Cancel and restore initiating focus when it survives. Keyboard tabs and mobile drawer trapping/Escape remain. Long tables scroll inside labeled regions, never across the page. Reduced motion supported.
 - All HTML/CSS/JS/SVG inline. No external assets/fonts, HTTP/API/backend, authentication, credentials, cookies, localStorage, service worker or durable storage. The header session and permissions are simulated. No medical diagnosis/ML, prescription, real QR/provider integration or accounting certification. Source authority: [`../system.md`](../system.md).
 
 ## Verify
 
-Run in the foreground from repository root with a timeout **at least 240 seconds**:
+Run in the foreground from repository root with a timeout **at least 300 seconds**:
 
 ```sh
 node design/erp-workspace/smoke.mjs
@@ -75,11 +77,15 @@ Uses existing Playwright via `apps/mf-erp/package.json` and its existing Chromiu
 | Previous T2 CRUD candidate | Exit 0: **PASS 608 checks**; configuration Triage and complete master CRUD. |
 | S12 RED, tests first | Exit 1: `S12 laboratory is direct study CRUD without providers`. No final count. |
 | S12 first GREEN | Exit 0: **PASS 804 checks**, zero HTTP/API/storage writes/page errors. Provider-free requests/results still issue the exact Bs 600.30 order and cash/QR receipts. |
-| Final expanded GREEN | Exit 0: **PASS 812 checks**, including explicit unknown-type rejection, saved study details and distinct stable-ID isolation across modality routes. Zero HTTP/API/storage writes/page errors. |
+| Previous S12 expanded GREEN | Exit 0: **PASS 812 checks**, including unknown-type rejection, saved study details and stable-ID isolation. |
+| S14–S16/S18 RED | `node design/erp-workspace/smoke.mjs`, exit 1: combined presentation assertion named missing Resumen, distinct navigation geometries, entity-specific create labels and icon-only actions. No final count. |
+| First implementation check | Exit 1: Escape restored dialog focus but reopened its tooltip. Fixed by suppressing tooltip reopening during Escape focus restoration. |
+| First GREEN | Same command, exit 0: **PASS 838 checks**. |
+| Expanded GREEN | Same command, exit 0: **PASS 1044 checks**. All 812 business/regression checks retained with intentional accessible-name/startup-label adaptations; added entity titles/delete confirmation, reviewed semantic SVG motifs, visible-button audits throughout navigation/dialog journeys, hover/focus/Escape tooltips in dialog and scrolled mobile table. Zero HTTP/API/storage writes/page errors. |
 
 All unaffected business and CRUD assertions from the 608-check candidate remain. Obsolete provider creation/default/selector/dependency checks are replaced by direct study CRUD, implicit modality, provider-free requests and source/runtime absence checks, not weakened clinical or monetary expectations. Navigation and dialog checks assert no visible provider text throughout the journey; a structural check rejects any provider concept in the artboard source. The earlier five obsolete patient-context Triage assertions remain replaced by real configuration CRUD. Coverage includes required/duplicate/blank/bounded Triage fields, literal malicious text, exact 120-character boundaries and rejection at 121, actual details, edits with stable IDs, Cancel/Escape no-ops, confirmed deletion/empty states; complete free-record CRUD per master; reference-deletion business snapshots; patient/context protection and live labels versus issued snapshots; role protection/CRUD; inventory typed validation and counts; public ID-allocation no-op proof; owned availability cleanup; mobile forms/focus/overflow. Existing patient history/habits isolation, complete appointments/consultations/studies, cent money, cash/QR idempotency, receipts, settings and reload-reset tests remain.
 
-Current screenshots: [`desktop.png`](desktop.png) at 1440×1000 shows the simple **Laboratorio study CRUD** with a test-created example; [`mobile.png`](mobile.png) at 390×844 shows **configuration Triage**. Imagen uses the same direct CRUD and is separately verified for modality/ID isolation, details, full CRUD and responsive forms. Tables may scroll locally. No pixel-diff baseline claimed.
+Current screenshots: [`desktop.png`](desktop.png) at 1440×1000 shows the simple **Laboratorio study CRUD** with a test-created example; [`mobile.png`](mobile.png) at 390×844 shows **configuration Triage scrolled locally to its icon-only row actions**. Imagen uses the same direct CRUD and is separately verified for modality/ID isolation, details, full CRUD and responsive forms. Tables may scroll locally. No pixel-diff baseline claimed.
 
 ## Shared model / maintenance handoff
 
@@ -92,4 +98,6 @@ Everything stays in the artboard closure's `state`, not a fake global API:
 - `appointments` connects patient/physician/room/date/time/duration/status; `consultations` has one appointment/patient, human documentation, procedure IDs and order ID. Reuse `createAppointment`, `startConsultation`, `saveConsultation`.
 - All money is integer cents. `parseCents` validates input, `money` formats output. Issued orders now include a patient-name snapshot alongside immutable issued lines; receipts retain their own snapshots. Only **`registerPayment`** creates ledger/receipt records. QR holds order revision and cannot mutate money directly. `newId` allocates only after validation.
 
-Coverage: **S1–S13 implemented at prototype scope, including S12 provider-free study catalogs and requests; all CRUD/reference and clinical/payment invariants preserved.** Parent final verification/native review, tracking, commits and canvas remain outside this unit.
+- Presentation uses **`decorateActions` / `actionIcon`** as a shared adapter for static and dynamically rendered buttons. It preserves existing nodes, types, handlers and tab state; new action vocabulary must map to a semantic SVG rather than a fallback. A narrow MutationObserver decorates inserted controls and changed accessible menu labels. The shared manual-popover tooltip is owned by the active dialog when needed, clamps to the viewport and dismisses on Escape, scrolling, click or resize.
+
+Coverage: **S1–S16 and S18 implemented at prototype scope; all CRUD/reference and clinical/payment invariants preserved. S17 and S19–S20 are deferred to T3.** Parent final verification/native review, tracking, commits and canvas remain outside this unit.

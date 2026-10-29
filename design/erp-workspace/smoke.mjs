@@ -51,6 +51,7 @@ try {
   }
   async function noProviderUI(target) {
     check(!/proveedor|provider/i.test(await target.locator('body').innerText()), 'No visible provider concepts in current page/dialog');
+    await iconButtons(target);
   }
   const page = await openPage({width:1440,height:1000});
   const text = selector => page.locator(selector).innerText();
@@ -62,6 +63,45 @@ try {
   const rows = selector => page.locator(`${selector} tbody tr`);
   const noOverflow = async target => check(await target.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No page horizontal overflow');
   const snapshotKPIs = () => page.locator('[data-kpi]').allTextContents();
+
+  // S14–S16/S18 presentation checks precede business mutations.
+  const presentationFailures=[];
+  if(await text('#page-title')!=='Resumen' || await text('#breadcrumb')!=='Clínica / Resumen' || await page.locator('#navigation button').first().innerText()!=='Resumen') presentationFailures.push('Resumen entry/title/breadcrumb');
+  // Distinct geometry is not enough: each reviewed motif must match its menu.
+  const navMotifs={overview:'M3 13h7',payments:'M3 5h18',patients:'M16 21v-2',agenda:'M4 5h16',clinical:'M9 3h6',physicians:'M5 3v5',specialties:'M12 3l3 5',rooms:'M4 21h16',laboratory:'M9 3h6M10',imaging:'M3 4h18',diseases:'M12 7a5',allergyCatalog:'M12 3C9',triage:'M8 4H5',catalogs:'M4 3h16',inventory:'M3 7l9',settings:'M12 8a4'};
+  for(const [route,motif] of Object.entries(navMotifs)) {
+    if(!(await page.locator(`#navigation [data-page="${route}"] svg path`).getAttribute('d')).startsWith(motif)) presentationFailures.push(`Semantic motif ${route}`);
+  }
+  const navGeometry=await page.locator('#navigation button svg').evaluateAll(nodes=>nodes.map(svg=>svg.innerHTML));
+  if(navGeometry.length!==16 || new Set(navGeometry).size!==16) presentationFailures.push('16 distinct semantic navigation geometries');
+  async function iconButtons(target) {
+    const invalid=await target.locator('button:visible').evaluateAll(nodes=>nodes.filter(button=>!button.querySelector('svg path') || (!button.closest('#navigation') && (button.textContent.trim() || !button.getAttribute('aria-label')))).map(button=>button.id || button.outerHTML));
+    check(invalid.length===0, `Named SVG-only actions, labeled navigation: ${invalid.join(', ')}`);
+  }
+  async function tooltip(target,control,label) {
+    await control.hover();
+    check(await target.getByRole('tooltip').innerText()===label, 'Hover tooltip explains action');
+    check(await target.getByRole('tooltip').evaluate(node=>{const r=node.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;}), 'Tooltip stays inside viewport without table clipping');
+    await target.mouse.move(0,0); await control.focus();
+    check(await target.getByRole('tooltip').innerText()===label, 'Keyboard focus tooltip explains action');
+    await target.keyboard.press('Escape');
+    check(!await target.getByRole('tooltip').isVisible(), 'Escape dismisses tooltip');
+  }
+  for(const [route,entity] of [['laboratory','Laboratorio'],['imaging','Imagen']]) {
+    await go(route);
+    if(await page.locator('#catalog-add').getAttribute('aria-label')!==`Crear ${entity}` || /tipo[s]? de estudio/i.test(await text('#view'))) presentationFailures.push(`${entity} entity-specific create and heading`);
+  }
+  const initialAction=page.locator('#catalog-add');
+  if(!await initialAction.getAttribute('aria-label') || await initialAction.innerText()) presentationFailures.push('icon-only named actions');
+  check(presentationFailures.length===0, `T2 presentation: ${presentationFailures.join('; ')}`);
+  await iconButtons(page);
+  await tooltip(page,initialAction,'Crear Imagen');
+  await initialAction.click();
+  check(await text('#catalog-title')==='Crear · Imagen', 'Imagen create dialog names entity');
+  await iconButtons(page);
+  await tooltip(page,page.locator('#catalog-form [data-close]'),'Cancelar');
+  check(await initialAction.evaluate(node=>node===document.activeElement), 'Dialog tooltip Escape closes dialog and restores focus');
+  await go('overview');
 
   // S12 RED boundary: direct modality catalogs have no intermediate resource tabs.
   for(const route of ['laboratory','imaging']) {
@@ -76,12 +116,12 @@ try {
   await go('triage');
   check(await page.locator('#catalog-add').count()===1 && await page.locator('#triage-patient').count()===0, 'S11 Triage is configuration CRUD, not patient assessment');
   await go('overview');
-  const resourceMenus = {physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',laboratory:'Laboratorio',imaging:'Imagen',diseases:'Enfermedades',allergyCatalog:'Alergias',triage:'Triage'};
+  const resourceMenus = {physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',laboratory:'Laboratorio',imaging:'Imagenología',diseases:'Enfermedades',allergyCatalog:'Alergias',triage:'Triage'};
   await page.locator('#navigation [data-page="clinical"]').click();
   console.log(`S8-S11 discovery: direct menus=${(await page.locator('#navigation button').allTextContents()).filter(label=>Object.values(resourceMenus).includes(label)).length}/8; habits=${await page.getByRole('button',{name:'Editar hábitos',exact:true}).count()}; references=${await page.locator('#navigation [data-page="diseases"],#navigation [data-page="allergyCatalog"]').count()}/2; triage=${await page.locator('#navigation [data-page="triage"]').count()}/1`);
   await page.locator('#navigation [data-page="overview"]').click();
   check((await page.locator('#navigation button').allTextContents()).filter(label=>Object.values(resourceMenus).includes(label)).length===8, 'S8-S11 eight direct business menus, not generic catalog tabs');
-  check(await text('#page-title') === 'Flujo de caja', 'Initial dashboard');
+  check(await text('#page-title') === 'Resumen', 'Initial dashboard');
   check(await page.locator('[data-kpi]').count() === 4, 'Four KPIs');
   check((await snapshotKPIs()).join('|') === 'Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'Initial coherent totals');
   check(await page.locator('header').count() === 1 && await page.locator('aside').count() === 1 && await page.locator('main').count() === 1, 'One shell');
@@ -549,10 +589,10 @@ try {
   await flow.locator('#request-study').click();
   const noStudies=await ft('#consultation-studies');
   await flow.locator('#study-form button[type=submit]').click();
-  check(await ft('#study-error')==='Selecciona un tipo de estudio válido en una consulta activa.' && await ft('#consultation-studies')===noStudies, 'Empty study type rejected without request mutation');
+  check(await ft('#study-error')==='Selecciona un Laboratorio o Imagen válido en una consulta activa.' && await ft('#consultation-studies')===noStudies, 'Empty study type rejected without request mutation');
   await flow.locator('#study-type').evaluate(node=>node.add(new Option('Tipo inexistente','UNKNOWN-TYPE')));
   await flow.locator('#study-type').selectOption('UNKNOWN-TYPE'); await flow.locator('#study-form button[type=submit]').click();
-  check(await ft('#study-error')==='Selecciona un tipo de estudio válido en una consulta activa.' && await ft('#consultation-studies')===noStudies, 'Unknown type rejected without request mutation or unrelated dependency');
+  check(await ft('#study-error')==='Selecciona un Laboratorio o Imagen válido en una consulta activa.' && await ft('#consultation-studies')===noStudies, 'Unknown type rejected without request mutation or unrelated dependency');
   await flow.keyboard.press('Escape');
   for(const study of ['Estudio lab flujo','Estudio imagen flujo']) {
     await flow.locator('#request-study').click();
@@ -603,7 +643,7 @@ try {
   check((await flow.locator('[data-kpi]').allTextContents()).join('|')==='Bs 700,00|Bs 250,00|Bs 450,00|Bs 2.000,30', 'Order increases pending, not income');
   await flow.screenshot({path:fileURLToPath(new URL('desktop.png',import.meta.url)),fullPage:true});
   await fg('catalogs'); await fcTab('studyTypes');
-  await flow.locator('#catalog-results tbody tr').filter({hasText:'Estudio lab flujo'}).getByRole('button',{name:'Editar',exact:true}).click();
+  await flow.locator('#catalog-results tbody tr').filter({hasText:'Estudio lab flujo'}).getByRole('button',{name:'Editar Laboratorio',exact:true}).click();
   await flow.locator('#cat-name').fill('Estudio lab renombrado'); await flow.locator('#cat-price').fill('999');
   await flow.locator('#catalog-form button[type=submit]').click();
   await fg('payments'); await flowOrder().locator('[data-order-detail]').click();
@@ -656,7 +696,7 @@ try {
   await flow.keyboard.press('Escape');
   await flowOrder().locator('[data-pay]').click(); await flow.locator('#payment-amount').fill('300.10'); await flow.locator('#payment-form button[type=submit]').click();
   check((await flowOrder().innerText()).includes('Pagado') && !await flowOrder().locator('[data-pay]').count() && await flowOrder().locator('[data-receipt]').count()===3, 'Final cash fully pays with three unique receipts');
-  const receiptIds=await flowOrder().locator('[data-receipt]').allTextContents();
+  const receiptIds=await flowOrder().locator('[data-receipt]').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label')));
   check(new Set(receiptIds).size===3 && receiptIds.every(id=>id.includes('DEMO-')), 'Receipt identifiers unique and explicitly demo');
   await flowOrder().locator('[data-receipt]').last().click();
   check((await ft('#receipt-content')).includes('EFECTIVO') && (await ft('#receipt-content')).includes('Bs 0,00'), 'Final cash receipt shows no remaining balance');
@@ -777,7 +817,11 @@ try {
     modalityIds.set(mode,await expanded.locator('[data-catalog-edit]').getAttribute('data-catalog-edit'));
     await expanded.locator('[data-master-view]').click();
     check((await et('#master-detail-content')).includes(`Estudio ${mode}`) && (await et('#master-detail-content')).includes(`Modalidad: ${mode}`) && (await et('#master-detail-content')).includes('Bs 12,34'), `Study detail contains saved type/modality/price: ${mode}`);
+    check(await et('#master-detail-title')===`Detalle · ${mode==='IMAGEN'?'Imagen':'Laboratorio'}`, 'Entity-specific detail title');
     await noProviderUI(expanded); await expanded.keyboard.press('Escape');
+    await expanded.locator('[data-master-delete]').click();
+    check(await et('#master-delete-title')===`Eliminar · ${mode==='IMAGEN'?'Imagen':'Laboratorio'}` && (await et('#master-delete-summary')).includes(`Eliminar ${mode==='IMAGEN'?'Imagen':'Laboratorio'}:`), 'Entity-specific delete confirmation');
+    await expanded.keyboard.press('Escape');
   }
   check(new Set(modalityIds.values()).size===2, 'Both modality records have distinct stable IDs');
   for(const [route,mode,other] of [['laboratory','LABORATORIO','IMAGEN'],['imaging','IMAGEN','LABORATORIO']]) {
@@ -1093,12 +1137,17 @@ try {
   await masters.locator('#cat-name').fill('Clasificación de ejemplo'); await masters.locator('#cat-description').fill('Referencia configurable de demostración; sin valoración de pacientes.'); await submitMaster();
   await mc('studyTypes','LABORATORIO'); await masters.locator('#catalog-add').click();
   await masters.locator('#cat-name').fill('Hemograma de ejemplo'); await masters.locator('#cat-price').fill('100.10'); await submitMaster();
+  await iconButtons(masters);
   await masters.screenshot({path:fileURLToPath(new URL('desktop.png',import.meta.url)),fullPage:true});
   await mc('studyTypes','IMAGEN'); await masters.locator('#catalog-add').click();
   await masters.locator('#cat-name').fill('Imagen de ejemplo'); await masters.locator('#cat-price').fill('200.20'); await submitMaster();
   check((await mt('#catalog-results')).includes('Imagen de ejemplo') && !(await mt('#catalog-results')).includes('Hemograma de ejemplo'), 'Final modality catalog isolation');
   await mg('triage');
   await masters.setViewportSize({width:390,height:844}); await noOverflow(masters);
+  await iconButtons(masters);
+  await masters.locator('.table-wrap').evaluate(node=>node.scrollLeft=node.scrollWidth);
+  await tooltip(masters,masters.locator('[data-master-delete]'),'Eliminar');
+  await noOverflow(masters);
   await masters.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
   for (const context of contexts) for (const item of context.pages()) check(await item.evaluate(()=>window.demoViolations.length) === 0, 'No API or storage writes');
   check(network.length === 0, `No HTTP requests: ${network.join(', ')}`);

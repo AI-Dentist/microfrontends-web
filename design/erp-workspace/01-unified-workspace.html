@@ -24,6 +24,8 @@ button:hover { background:#e2e8f0; }
 button.primary { background:var(--action); color:#ffffff; border-color:var(--action); padding:10px 20px; }
 button.primary:hover { background:#075985; border-color:#075985; }
 button:disabled { cursor:not-allowed; }
+button.icon-action,button.primary.icon-action { min-width:44px; min-height:44px; padding:10px; }
+.action-tooltip { position:fixed; inset:auto; margin:0; max-width:calc(100vw - 16px); padding:8px 12px; border:1px solid #334155; border-radius:6px; background:#0f172a; color:#ffffff; font-size:12px; pointer-events:none; overflow-wrap:anywhere; box-shadow:0 4px 6px -1px rgb(0 0 0 / .1); }
 :focus-visible { outline:3px solid var(--focus); outline-offset:3px; }
 input,select { border:1px solid #64748b; border-radius:10px; padding:10px 14px; background:#ffffff; color:var(--ink); min-width:0; width:100%; }
 input[type=checkbox] { width:18px; height:18px; accent-color:var(--action); }
@@ -169,7 +171,7 @@ body.nav-collapsed .sidebar { display:none; }
 </header>
 <main id="main" tabindex="-1">
  <div class="breadcrumb" id="breadcrumb">Clínica / Resumen</div>
- <div class="page-heading"><div><h1 id="page-title">Flujo de caja</h1><p id="page-subtitle"></p></div><div id="page-actions"></div></div>
+ <div class="page-heading"><div><h1 id="page-title">Resumen</h1><p id="page-subtitle"></p></div><div id="page-actions"></div></div>
  <p id="announcement" role="status" aria-live="polite" aria-atomic="true"></p>
  <div id="view"></div>
  <footer class="fixture">Prototipo · datos ficticios · sin backend · Fecha fija: lunes 18 de mayo de 2026. Los cambios se pierden al recargar.</footer>
@@ -244,7 +246,7 @@ body.nav-collapsed .sidebar { display:none; }
 <dialog id="study-dialog" aria-labelledby="study-title">
  <form id="study-form" novalidate>
   <h2 id="study-title">Solicitar estudio ficticio</h2><p id="study-context" class="help"></p>
-  <label>Tipo de estudio<select id="study-type"></select></label>
+  <label>Laboratorio / Imagen<select id="study-type"></select></label>
   <p id="study-error" class="error" role="alert"></p>
   <div class="dialog-actions"><button type="button" data-close="study-dialog">Cancelar</button><button type="submit" class="primary">Solicitar estudio demo</button></div>
  </form>
@@ -300,11 +302,29 @@ const iconPaths = {
  clinical:'M9 3h6v6h6v6h-6v6H9v-6H3V9h6z',
  catalogs:'M4 3h16v18H4zM8 7h8M8 12h8M8 17h5',
  inventory:'M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10',
+ physicians:'M5 3v5a4 4 0 0 0 8 0V3M3 3h4M11 3h4M9 12v4a5 5 0 0 0 10 0v-3M19 9a2 2 0 1 0 0 4 2 2 0 0 0 0-4',
+ specialties:'M12 3l3 5 6 1-4 5 1 7-6-3-6 3 1-7-4-5 6-1z',
+ rooms:'M4 21h16M6 21V3h12v18M14 12h1',
+ laboratory:'M9 3h6M10 3v7L4 19q-1 2 2 2h12q3 0 2-2l-6-9V3M7 15h10',
+ imaging:'M3 4h18v16H3zM3 17l6-6 4 4 3-3 5 5M15 7h2v2h-2z',
+ diseases:'M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10M12 2v5M12 17v5M2 12h5M17 12h5M5 5l4 4M15 15l4 4M5 19l4-4M15 9l4-4',
+ allergyCatalog:'M12 3C9 8 5 11 5 15a7 7 0 0 0 14 0c0-4-4-7-7-12M12 10v5M12 18h.01',
+ triage:'M8 4H5v17h14V4h-3M8 3h8v4H8zM8 12h2M13 12h3M8 16h2M13 16h3',
+ add:'M12 4v16M4 12h16', edit:'M4 16l12-12 4 4L8 20H4zM14 6l4 4',
+ view:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6',
+ delete:'M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7',
+ save:'M4 3h13l4 4v14H3V3zM7 3v6h9V3M7 21v-8h10v8',
+ close:'M5 5l14 14M19 5L5 19', confirm:'M4 12l5 5L20 6',
+ qr:'M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h3v3h3v3h-6z',
+ receipt:'M5 3h14v18l-3-2-4 2-4-2-3 2zM8 7h8M8 11h8M8 15h5',
+ clock:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v5l3 2',
+ up:'M5 14l7-7 7 7M12 7v14', down:'M5 10l7 7 7-7M12 3v14',
+ appearance:'M12 3a9 9 0 1 0 0 18h2a2 2 0 0 0 0-4h-1a2 2 0 0 1 0-4h4a4 4 0 0 0 0-8zM7 8h.01M6 13h.01M11 6h.01',
  settings:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2'
 };
-function icon(key) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${iconPaths[key] || iconPaths.catalogs}"/></svg>`; }
+function icon(key) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${iconPaths[key]}"/></svg>`; }
 const pages = {
- overview:['Resumen / Flujo de caja','Flujo de caja','La jornada de tu clínica, en un solo lugar.'],
+ overview:['Resumen','Resumen','La jornada de tu clínica, en un solo lugar.'],
  payments:['Cobros','Cobros','Saldos y cobros de órdenes ficticias.'],
  patients:['Pacientes','Pacientes','Directorio sintético de la clínica.'],
  agenda:['Agenda','Agenda','Citas de demostración · semana del 18 al 24 de mayo de 2026.'],
@@ -312,8 +332,8 @@ const pages = {
  physicians:['Médicos','Médicos','Especialidades y horarios conectados a la agenda.'],
  specialties:['Especialidades','Especialidades','Referencias de especialidad del equipo ficticio.'],
  rooms:['Consultorios','Consultorios','Espacios y disponibilidad de la clínica ficticia.'],
- laboratory:['Laboratorio','Laboratorio','Tipos de estudio · solo LABORATORIO.'],
- imaging:['Imagen','Imagen','Tipos de estudio · solo IMAGEN.'],
+ laboratory:['Laboratorio','Laboratorio','Laboratorios · nombre y precio.'],
+ imaging:['Imagenología','Imagenología','Imágenes · nombre y precio.'],
  diseases:['Enfermedades','Enfermedades','Referencias de clínica, no diagnósticos de pacientes.'],
  allergyCatalog:['Alergias','Alergias','Referencias de clínica, distintas de las alergias del paciente.'],
  triage:['Triage','Triage','Configuración de clasificación y descripción · sin evaluación de pacientes'],
@@ -622,6 +642,7 @@ $('#context-form').onsubmit=event=>{
 // Catalog editing has one validation/commit path; failed or closed forms never allocate IDs.
 const catalogLabels={physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',studyTypes:'Tipos de estudio',procedures:'Procedimientos',diseases:'Enfermedades',allergyCatalog:'Alergias',triage:'Triage',patients:'Pacientes',inventory:'Inventario',roles:'Roles'};
 const catalogRoutes={physicians:'physicians',specialties:'specialties',rooms:'rooms',catalogs:'procedures',diseases:'diseases',allergyCatalog:'allergyCatalog',triage:'triage',laboratory:'studyTypes',imaging:'studyTypes'};
+function catalogLabel(kind,item) { return kind==='studyTypes' ? ((item?.mode || catalogMode())==='IMAGEN'?'Imagen':'Laboratorio') : catalogLabels[kind]; }
 function catalogMode() {return state.page==='laboratory'?'LABORATORIO':state.page==='imaging'?'IMAGEN':null;}
 let catalogKind='physicians', catalogDraft=null;
 function options(collection,selected) {
@@ -643,12 +664,12 @@ function renderCatalogs() {
  const records=state[catalogKind].filter(item=>!mode || item.mode===mode);
  const reference=['diseases','allergyCatalog'].includes(catalogKind);
  $('#view').innerHTML=`<section class="card">
-  <h2>${catalogLabels[catalogKind]}${mode?` · ${mode}`:''}</h2>
+  <h2>${catalogLabel(catalogKind)}${mode?` · ${mode}`:''}</h2>
   ${reference?'<p class="help">Referencias ficticias de la clínica: no se aplican al paciente ni modifican sus alergias o antecedentes. Sin códigos médicos ni diagnósticos inferidos.</p>':''}
-  <button type="button" id="catalog-add" class="primary">Crear · ${catalogLabels[catalogKind]}</button>
+  <button type="button" id="catalog-add" class="primary">${mode?'Crear '+catalogLabel(catalogKind):'Crear · '+catalogLabel(catalogKind)}</button>
   <div id="catalog-results" style="margin-top:24px">
    <div class="table-wrap" tabindex="0" role="region" aria-label="Registros de catálogo"><table>
-    <caption>${records.length} registros ficticios · ${catalogLabels[catalogKind]}</caption>
+    <caption>${records.length} registros ficticios · ${catalogLabel(catalogKind)}</caption>
     <thead><tr><th scope="col">${catalogKind==='triage'?'Clasificación':'Nombre'}</th><th scope="col">${catalogKind==='triage'?'Descripción':'Configuración'}</th><th scope="col">Acción</th></tr></thead>
     <tbody>${records.map(item=>`<tr><td>${escapeText(item.name)}</td><td>${escapeText(catalogDetails(catalogKind,item))}</td><td>${masterActions(catalogKind,item)}</td></tr>`).join('') || '<tr><td colspan="3">Sin registrar</td></tr>'}</tbody>
    </table></div>
@@ -668,7 +689,8 @@ function slotMarkup(slot={weekday:1,start:'08:00',end:'12:00',roomId:state.rooms
 function openCatalog(id,trigger) {
  const kind=catalogKind, item=state[kind].find(entry=>entry.id===id) || {};
  catalogDraft={kind,id,mode:catalogMode()};
- $('#catalog-title').textContent=`${id?'Editar':'Crear'} · ${catalogLabels[kind]}`;
+ $('#catalog-title').textContent=`${id?'Editar':'Crear'} · ${catalogLabel(kind,item)}`;
+ $('#catalog-form button[type=submit]').textContent=kind==='studyTypes'?`Guardar ${catalogLabel(kind,item)}`:'Guardar registro';
  let markup=field('cat-name',kind==='triage'?'Clasificación requerida':'Nombre requerido',item.name);
  if(kind==='patients') {
   markup+=`<p class="help">Documento de demo / ID inmutable: ${escapeText(item.id)}. Se conserva para mantener los vínculos del expediente.</p>`+field('cat-note','Notas de seguimiento',item.note);
@@ -754,7 +776,7 @@ function saveCatalog() {
   values.mode=catalogDraft.mode;
   if(!['LABORATORIO','IMAGEN'].includes(values.mode)) return 'Selecciona el menú Laboratorio o Imagen.';
   const existing=state.studyTypes.find(item=>item.id===id);
-  if(existing && existing.mode!==values.mode) return 'El tipo de estudio pertenece a otro menú.';
+  if(existing && existing.mode!==values.mode) return 'El Laboratorio o Imagen pertenece a otro menú.';
   values.priceCents=parseCents($('#cat-price').value,true);
   if(values.priceCents===null) return 'Introduce un precio positivo o cero, sin fracciones de centavos.';
  }
@@ -777,8 +799,8 @@ $('#catalog-form').onsubmit=event=>{
 };
 // Master-data controls never apply to clinical or financial transactions.
 function masterActions(kind,item) {
- const attrs=`data-master-kind="${kind}"`;
- return `<button type="button" ${attrs} data-master-view="${escapeText(item.id)}">Ver</button><button type="button" ${attrs} data-catalog-edit="${escapeText(item.id)}">Editar</button><button type="button" ${attrs} data-master-delete="${escapeText(item.id)}">Eliminar</button>`;
+ const attrs=`data-master-kind="${kind}"`, entity=kind==='studyTypes'?` ${catalogLabel(kind,item)}`:'';
+ return `<button type="button" ${attrs} data-master-view="${escapeText(item.id)}">Ver${entity}</button><button type="button" ${attrs} data-catalog-edit="${escapeText(item.id)}">Editar${entity}</button><button type="button" ${attrs} data-master-delete="${escapeText(item.id)}">Eliminar${entity}</button>`;
 }
 function openMasterEditor(kind,id,trigger) { catalogKind=kind; openCatalog(id,trigger); }
 function refreshMaster(kind) {
@@ -789,7 +811,8 @@ function refreshMaster(kind) {
 }
 function openMasterDetail(kind,id,trigger) {
  const item=state[kind].find(entry=>entry.id===id); if(!item) return;
- $('#master-detail-title').textContent=`Detalle · ${catalogLabels[kind]}`;
+ $('#master-detail-title').textContent=`Detalle · ${catalogLabel(kind,item)}`;
+ $('#master-detail-dialog [data-close]').textContent=kind==='studyTypes'?`Cerrar detalle ${catalogLabel(kind,item)}`:'Cerrar detalle';
  $('#master-detail-content').innerHTML=`<p><strong>${kind==='triage'?'Clasificación':'Nombre'}: ${escapeText(item.name)}</strong></p><p>ID: ${escapeText(item.id)}</p><p>${kind==='triage'?'Descripción: ':''}${escapeText(catalogDetails(kind,item))}</p>`;
  openDialog('#master-detail-dialog',trigger);
 }
@@ -801,7 +824,7 @@ function deletionBlock(kind,id) {
   const context=patientContext(id);
   if(state.appointments.some(item=>item.patient===id) || state.consultations.some(item=>item.patientId===id) || state.orders.some(item=>item.patient===id) || state.studies.some(item=>item.patientId===id) || context.habits || Object.keys(contextLabels).some(key=>context[key].length)) return 'Paciente con citas, historia clínica, órdenes o contexto registrado.';
  }
- if(kind==='studyTypes' && state.studies.some(item=>item.typeId===id)) return 'Tipo de estudio utilizado por solicitudes.';
+ if(kind==='studyTypes' && state.studies.some(item=>item.typeId===id)) return 'Laboratorio o Imagen utilizado por solicitudes.';
  if(kind==='procedures' && (state.consultations.some(item=>item.procedureIds.includes(id)) || state.orders.some(item=>item.lines.some(line=>line.kind==='PROCEDIMIENTO' && line.sourceId===id)))) return 'Arancel utilizado por consultas o líneas emitidas.';
  if(kind==='roles' && id==='ROLE-1') return 'No se puede eliminar el rol Administrador activo de la demo.';
  return '';
@@ -810,7 +833,9 @@ let deletionDraft=null;
 function openMasterDelete(kind,id,trigger) {
  const item=state[kind].find(entry=>entry.id===id); if(!item) return;
  deletionDraft={kind,id};
- $('#master-delete-summary').textContent=`Eliminar ${catalogLabels[kind]}: ${item.name}. Solo se elimina este registro libre; esta acción requiere confirmación.`;
+ $('#master-delete-summary').textContent=`Eliminar ${catalogLabel(kind,item)}: ${item.name}. Solo se elimina este registro libre; esta acción requiere confirmación.`;
+ $('#master-delete-title').textContent=`Eliminar · ${catalogLabel(kind,item)}`;
+ $('#master-delete-confirm').textContent=kind==='studyTypes'?`Eliminar ${catalogLabel(kind,item)}`:'Eliminar registro';
  $('#master-delete-error').textContent='';
  openDialog('#master-delete-dialog',trigger);
 }
@@ -978,7 +1003,7 @@ $('#study-form').onsubmit=event=>{
  event.preventDefault();
  const consultation=activeConsultation(), type=state.studyTypes.find(item=>item.id===$('#study-type').value);
  if(!consultation || consultation.status!=='EN_CURSO' || !type) {
-  $('#study-error').textContent='Selecciona un tipo de estudio válido en una consulta activa.';return;
+  $('#study-error').textContent='Selecciona un Laboratorio o Imagen válido en una consulta activa.';return;
  }
  if(state.studies.some(item=>item.consultationId===consultation.id && item.typeId===type.id && item.status!=='CANCELADO')) {
   $('#study-error').textContent='Este estudio ya está solicitado en la consulta.';return;
@@ -1192,7 +1217,80 @@ document.addEventListener('keydown',event=>{
  }
 });
 matchMedia('(max-width:760px)').addEventListener('change',()=>{document.body.classList.remove('drawer-open');syncMenuButton();});
-navigate('overview',false); syncMenuButton();
+// One presentation adapter covers both static dialogs and dynamically rendered controls.
+// Business handlers, button types, tab semantics and focusable nodes stay untouched.
+function actionIcon(button,label) {
+ if(button.dataset.move) return button.dataset.move;
+ if(button.id==='menu-toggle') return 'menu';
+ if(button.dataset.tab) return {clinic:'clinical',appearance:'appearance',navigation:'menu',roles:'patients'}[button.dataset.tab];
+ if(button.hasAttribute('data-receipt')) return 'receipt';
+ if(/QR/i.test(label) && !/confirm|venc|cancel/i.test(label)) return 'qr';
+ if(/vencimiento/i.test(label)) return 'clock';
+ if(/eliminar|quitar/i.test(label)) return 'delete';
+ if(/cancelar|cerrar/i.test(label)) return 'close';
+ if(/guardar/i.test(label)) return 'save';
+ if(/confirm|completar/i.test(label)) return 'confirm';
+ if(/editar/i.test(label)) return 'edit';
+ if(/crear|añadir|agendar|registrar paciente/i.test(label)) return 'add';
+ if(/cobro/i.test(label)) return 'payments';
+ if(/agenda/i.test(label)) return 'agenda';
+ if(/consulta|atención/i.test(label)) return 'clinical';
+ if(/solicitar|resultado/i.test(label)) return 'laboratory';
+ if(/ver/i.test(label)) return 'view';
+ throw new Error(`Acción sin icono semántico: ${label}`);
+}
+iconPaths.menu='M4 6h16M4 12h16M4 18h16';
+function decorateActions() {
+ $$('button').forEach(button=>{
+  if(button.closest('#navigation')) return;
+  const text=button.textContent.trim();
+  const label=text && !button.dataset.move ? text : button.getAttribute('aria-label');
+  if(!label) return;
+  if(button.getAttribute('aria-label')!==label) button.setAttribute('aria-label',label);
+  const key=actionIcon(button,label);
+  if(button.dataset.actionIcon!==key || text) {
+   button.innerHTML=icon(key); button.dataset.actionIcon=key; button.classList.add('icon-action');
+  }
+ });
+}
+const tip=document.createElement('div');
+tip.id='action-tooltip'; tip.className='action-tooltip'; tip.setAttribute('role','tooltip'); tip.setAttribute('popover','manual');
+document.body.append(tip);
+let tipControl=null, tooltipDismissed=false;
+function hideTooltip() {
+ if(tip.matches(':popover-open')) tip.hidePopover();
+ if(tipControl) tipControl.removeAttribute('aria-describedby');
+ tipControl=null;
+}
+function showTooltip(control) {
+ hideTooltip();
+ if(tooltipDismissed || !control || control.closest('#navigation') || control.disabled) return;
+ const label=control.getAttribute('aria-label'); if(!label) return;
+ // A dialog owns its tooltip so the native modal's inert boundary never hides it.
+ (control.closest('dialog') || document.body).append(tip);
+ tip.textContent=label; tipControl=control; control.setAttribute('aria-describedby',tip.id);
+ tip.showPopover();
+ const r=control.getBoundingClientRect(), t=tip.getBoundingClientRect();
+ tip.style.left=`${Math.max(8,Math.min(r.left+(r.width-t.width)/2,innerWidth-t.width-8))}px`;
+ tip.style.top=`${Math.max(8,r.bottom+t.height+12<innerHeight?r.bottom+8:r.top-t.height-8)}px`;
+}
+document.addEventListener('pointerover',event=>{tooltipDismissed=false;const control=event.target.closest('button');if(control && !control.contains(event.relatedTarget)) showTooltip(control);});
+document.addEventListener('pointerdown',()=>{tooltipDismissed=false;});
+document.addEventListener('pointerout',event=>{if(tipControl && !tipControl.contains(event.relatedTarget)) hideTooltip();});
+document.addEventListener('focusin',event=>showTooltip(event.target.closest('button')));
+document.addEventListener('focusout',hideTooltip);
+document.addEventListener('click',hideTooltip);
+document.addEventListener('keydown',event=>{
+ tooltipDismissed=event.key==='Escape';
+ if(tooltipDismissed) hideTooltip();
+},true);
+document.addEventListener('scroll',hideTooltip,true);
+window.addEventListener('resize',hideTooltip);
+new MutationObserver(()=>{
+ decorateActions();
+ if(tipControl && (!tipControl.isConnected || tipControl.closest('dialog:not([open])'))) hideTooltip();
+}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['aria-label']});
+navigate('overview',false); syncMenuButton(); decorateActions();
 })();
 </script>
 </body>
