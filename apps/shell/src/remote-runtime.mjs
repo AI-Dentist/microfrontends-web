@@ -20,6 +20,7 @@ export async function bounded(work, timeoutMs = 15000) {
 
 /** Load inside a host-owned root, including load/error and a bounded wait. */
 export async function loadStyles(root, href, timeoutMs = 15000) {
+  if (!href) return () => {};
   const link = root.ownerDocument.createElement('link');
   link.rel = 'stylesheet'; link.href = href;
   const ready = new Promise((resolve, reject) => {

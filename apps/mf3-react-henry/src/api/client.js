@@ -4,7 +4,7 @@ export function getBaseUrl() {
   if (typeof window !== 'undefined') {
     return '/api/expediente';
   }
-  return process.env.API_BASE_URL || 'http://localhost/api/expediente';
+  return process.env?.API_BASE_URL || import.meta.env?.VITE_API_BASE_URL || '/api/expediente';
 }
 
 /**
@@ -29,6 +29,16 @@ export function getOdontogramaBaseUrl() {
   return getBaseUrl();
 }
 
+// A capability, not a captured token: each request reads the current session.
+export function createHttpClient({ apiBaseUrl, getAccessToken } = {}) {
+  const resolvedBase = apiBaseUrl || getBaseUrl();
+  return (endpoint, options = {}) => httpClient(endpoint, {
+    ...options,
+    apiBaseUrl: options.apiBaseUrl || options.baseUrl || resolvedBase,
+    token: getAccessToken ? getAccessToken() : options.token,
+  });
+}
+
 /**
  * Cliente HTTP modular para interactuar con la API REST de expediente clínico.
  *
@@ -40,6 +50,7 @@ export function getOdontogramaBaseUrl() {
  * @param {HeadersInit} [options.headers]
  * @param {AbortSignal} [options.signal]
  * @param {string} [options.baseUrl] - URL base personalizada opcional
+ * @param {string} [options.apiBaseUrl] - URL base remota/federada opcional
  * @returns {Promise<any>}
  */
 export async function httpClient(endpoint, {
@@ -49,9 +60,19 @@ export async function httpClient(endpoint, {
   headers = {},
   signal,
   baseUrl,
+  apiBaseUrl,
 } = {}) {
-  const base = baseUrl || getBaseUrl();
-  const url = `${base}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const effectiveBase = apiBaseUrl || baseUrl || getBaseUrl();
+  const baseQueryIndex = effectiveBase.indexOf('?');
+  const basePath = baseQueryIndex === -1 ? effectiveBase : effectiveBase.slice(0, baseQueryIndex);
+  const baseQuery = baseQueryIndex === -1 ? '' : effectiveBase.slice(baseQueryIndex + 1);
+  const endpointQueryIndex = endpoint.indexOf('?');
+  const endpointPath = endpointQueryIndex === -1 ? endpoint : endpoint.slice(0, endpointQueryIndex);
+  const endpointQuery = endpointQueryIndex === -1 ? '' : endpoint.slice(endpointQueryIndex + 1);
+  // Append rather than reserialize: preserve encoding, order and repeated keys.
+  const query = [baseQuery, endpointQuery].filter(Boolean).join('&');
+  const suffix = baseQueryIndex !== -1 || endpointQueryIndex !== -1 ? `?${query}` : '';
+  const url = `${basePath.replace(/\/$/, '')}${endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`}${suffix}`;
 
   const requestHeaders = {
     Accept: 'application/json, application/problem+json',

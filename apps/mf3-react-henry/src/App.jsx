@@ -26,6 +26,7 @@ export function AppContent({ remoteContext }) {
     if (remoteContext) navigateTab(remoteContext, tab);
     else setLocalTab(tab);
   };
+  const setActiveTab = selectTab;
   const [historiaAEditarId, setHistoriaAEditarId] = useState('');
   const [historiaGestionId, setHistoriaGestionId] = useState('');
   const [gestionSubtab, setGestionSubtab] = useState('alergias');

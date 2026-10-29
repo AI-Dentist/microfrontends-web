@@ -60,7 +60,11 @@ export function bootstrap(config: PlatformConfigV1) {
         const loaded = new Promise<void>((resolve, reject) => { link.onload = () => resolve(); link.onerror = () => reject(Error('Styles unavailable')); });
         document.head.append(link);
         try { await bounded(loaded); }
-        catch (error) { link.remove(); styleReady = undefined; throw error; }
+        catch (error) {
+          link.remove();
+          styleReady = undefined;
+          console.warn('ERP stylesheet unavailable; continuing with component layout styles:', error);
+        }
         finally { link.onload = null; link.onerror = null; }
       })();
     }

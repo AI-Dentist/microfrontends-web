@@ -98,7 +98,7 @@ export function createHistoriasClinicasService(client = httpClient) {
       if (!id || !id.trim()) {
         throw new Error('El ID de la historia clínica es requerido.');
       }
-      return httpClient(`/historias-clinicas/${encodeURIComponent(id.trim())}/alergias`, {
+      return client(`/historias-clinicas/${encodeURIComponent(id.trim())}/alergias`, {
         method: 'POST',
         body: payload,
         token,
@@ -122,7 +122,7 @@ export function createHistoriasClinicasService(client = httpClient) {
       if (!sustancia || !sustancia.trim()) {
         throw new Error('La sustancia de la alergia es requerida.');
       }
-      return httpClient(
+      return client(
         `/historias-clinicas/${encodeURIComponent(id.trim())}/alergias/${encodeURIComponent(sustancia.trim())}`,
         {
           method: 'DELETE',
@@ -145,7 +145,7 @@ export function createHistoriasClinicasService(client = httpClient) {
       if (!id || !id.trim()) {
         throw new Error('El ID de la historia clínica es requerido.');
       }
-      return httpClient(`/historias-clinicas/${encodeURIComponent(id.trim())}/medicamentos`, {
+      return client(`/historias-clinicas/${encodeURIComponent(id.trim())}/medicamentos`, {
         method: 'PUT',
         body: payload,
         token,
@@ -165,7 +165,7 @@ export function createHistoriasClinicasService(client = httpClient) {
       if (!id || !id.trim()) {
         throw new Error('El ID de la historia clínica es requerido.');
       }
-      return httpClient(`/historias-clinicas/${encodeURIComponent(id.trim())}/estado`, {
+      return client(`/historias-clinicas/${encodeURIComponent(id.trim())}/estado`, {
         method: 'PATCH',
         body: payload,
         token,
@@ -173,4 +173,6 @@ export function createHistoriasClinicasService(client = httpClient) {
       });
     },
   };
+}
 
+export const historiasClinicasService = createHistoriasClinicasService();

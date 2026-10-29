@@ -1,4 +1,16 @@
-const tabs = ['consulta', 'crear', 'actualizar', 'conectividad'];
+const tabs = [
+  'consulta',
+  'crear',
+  'actualizar',
+  'conectividad',
+  'gestion',
+  'consultas',
+  'abrir-consulta',
+  'atencion-consulta',
+  'detalle-consulta',
+  'odontograma',
+  'estudios',
+];
 
 export function tabFromContext(context) {
   if (context.contractVersion !== 1) throw new Error('Unsupported contract version');

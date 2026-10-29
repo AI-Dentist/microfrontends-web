@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "oxlint",
+    "build:remote": "vite build --config vite.remote.config.js",
+    "lint": "oxlint --ignore-pattern dist-remote",
     "test": "node --test test/**/*.test.js",
     "preview": "vite preview"
   },
