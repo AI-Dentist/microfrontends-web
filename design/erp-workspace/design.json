@@ -1,12 +1,12 @@
 {
   "title": "ERP · Unified clinical workspace",
-  "brief": "One runnable Spanish-language staff ERP demo for fictional Clínica Dental Andina. The same responsive shell connects editable resources and patient antecedents to appointment creation, clinical documentation, laboratory/imaging requests and human results, one issued order, simulated cash/non-payable QR confirmations and DEMO receipts. Stable-ID in-memory records with integer-cent billing and immutable issued lines; reload resets everything. S1-S7 prototype flows covered, never real clinical/payment/backend readiness. Offline public-UI smoke: PASS 304 checks; zero HTTP/API/storage writes or page errors.",
+  "brief": "One runnable Spanish-language staff ERP demo for fictional Clínica Dental Andina. Same responsive shell with direct physicians, specialties, rooms, laboratory, imaging, disease/allergy reference catalogs and initial Triage menus. Patient-scoped explicitly saved habits and antecedents feed read-only Triage; clinical fields/protocol remain undefined, with no scoring or recommendations. Existing appointment, consultation, study, one-order, simulated cash/non-payable QR and DEMO receipt workflows retained. Stable-ID in-memory records, integer-cent billing and immutable issued lines; reload resets everything. S1-S11 prototype scope covered, never real clinical/payment/backend readiness. Offline public-UI smoke: PASS 406 checks; zero HTTP/API/storage writes or page errors.",
   "feature": "odd/tasks/erp-prototype-full-workflows.md",
   "artboards": [
     {
       "file": "01-unified-workspace.html",
       "title": "Unified business workspace",
-      "tradeoff": "Connected catalog-to-consultation-to-receipt workflow in one offline artboard; explicit simulation, no real medicine, payment provider or durable storage",
+      "tradeoff": "Direct resource/reference menus, saved patient habits and initial read-only Triage alongside the preserved catalog-to-consultation-to-receipt demo; no clinical protocol, scoring, real medicine, payment provider or durable storage",
       "width": 1440,
       "height": 1000
     }

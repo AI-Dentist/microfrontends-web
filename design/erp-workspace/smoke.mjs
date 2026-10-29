@@ -59,6 +59,11 @@ try {
   const noOverflow = async target => check(await target.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No page horizontal overflow');
   const snapshotKPIs = () => page.locator('[data-kpi]').allTextContents();
 
+  const resourceMenus = {physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',laboratory:'Laboratorio',imaging:'Imagen',diseases:'Enfermedades',allergyCatalog:'Alergias',triage:'Triage'};
+  await page.locator('#navigation [data-page="clinical"]').click();
+  console.log(`S8-S11 discovery: direct menus=${(await page.locator('#navigation button').allTextContents()).filter(label=>Object.values(resourceMenus).includes(label)).length}/8; habits=${await page.getByRole('button',{name:'Editar hábitos',exact:true}).count()}; references=${await page.locator('#navigation [data-page="diseases"],#navigation [data-page="allergyCatalog"]').count()}/2; triage=${await page.locator('#navigation [data-page="triage"]').count()}/1`);
+  await page.locator('#navigation [data-page="overview"]').click();
+  check((await page.locator('#navigation button').allTextContents()).filter(label=>Object.values(resourceMenus).includes(label)).length===8, 'S8-S11 eight direct business menus, not generic catalog tabs');
   check(await text('#page-title') === 'Flujo de caja', 'Initial dashboard');
   check(await page.locator('[data-kpi]').count() === 4, 'Four KPIs');
   check((await snapshotKPIs()).join('|') === 'Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'Initial coherent totals');
@@ -212,7 +217,14 @@ try {
 
   await go('catalogs');
   const catalogRows = () => page.locator('#catalog-results tbody tr');
-  async function catalogTab(kind) { await page.locator(`[data-catalog-tab="${kind}"]`).click(); }
+  const catalogRoutes={physicians:'physicians',specialties:'specialties',rooms:'rooms',procedures:'catalogs'};
+  async function selectCatalog(target,kind,mode='LABORATORIO') {
+    const route=catalogRoutes[kind] || (mode==='IMAGEN'?'imaging':'laboratory');
+    if(await target.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await target.locator('#menu-toggle').click();
+    await target.locator(`#navigation [data-page="${route}"]`).click();
+    if(['providers','studyTypes'].includes(kind)) await target.locator(`[data-catalog-tab="${kind}"]`).click();
+  }
+  async function catalogTab(kind,mode) { await selectCatalog(page,kind,mode); }
   async function catalogForm(values, edit=false) {
     await page.locator(edit ? '#catalog-results [data-catalog-edit]' : '#catalog-add').last().click();
     for(const [field,value] of Object.entries(values)) await page.locator(`#cat-${field}`).fill(value);
@@ -283,6 +295,7 @@ try {
   check(await rows('#agenda-results').count()===2, 'Existing room fixtures retained and filter coherent');
   await go('catalogs'); await catalogTab('providers');
   for(const [mode,name] of [['LABORATORIO','Laboratorio demo'],['IMAGEN','Imagen demo']]) {
+    await catalogTab('providers',mode);
     await catalogForm({name,contact:'Contacto ficticio'});
     await page.locator('#cat-mode').selectOption(mode); await saveCatalog();
     check((await text('#catalog-results')).includes(name) && (await text('#catalog-results')).includes(mode), `Create provider ${mode}`);
@@ -293,6 +306,7 @@ try {
   await catalogForm({name:'Imagen demo'}); await rejectCatalog('ya existe',before); await page.keyboard.press('Escape');
   await catalogTab('studyTypes');
   for(const [mode,name,provider] of [['LABORATORIO','Hemograma demo','Laboratorio demo'],['IMAGEN','Radiografía demo','Imagen demo']]) {
+    await catalogTab('studyTypes',mode);
     await catalogForm({name,price:'125.50'});
     await page.locator('#cat-mode').selectOption(mode);
     await page.locator('#cat-provider').selectOption({label:provider}); await saveCatalog();
@@ -305,11 +319,11 @@ try {
   await catalogForm({name:'Precio inválido',price:'1.001'}); await rejectCatalog('centavos',before); await page.keyboard.press('Escape');
   await catalogForm({name:'Descartar catálogo'}); await page.locator('#catalog-dialog [data-close]').click();
   check(await text('#catalog-results')===before, 'Catalog Cancel preserves list');
-  await catalogTab('providers');
+  await catalogTab('providers','IMAGEN');
   before=await text('#catalog-results');
   await catalogForm({},true); await page.locator('#cat-mode').selectOption('LABORATORIO');
   await rejectCatalog('vinculada',before); await page.keyboard.press('Escape');
-  await go('overview'); await go('catalogs');
+  await go('overview'); await catalogTab('providers','IMAGEN');
   check((await text('#catalog-results')).includes('Contacto editado'), 'Catalog edits persist across views');
   await catalogTab('physicians');
   await page.setViewportSize({width:390,height:844});
@@ -381,7 +395,7 @@ try {
     await noOverflow(mobile);
   }
   await mobile.locator('#menu-toggle').click();
-  await mobile.locator('#navigation [data-page="catalogs"]').click();
+  await mobile.locator('#navigation [data-page="physicians"]').click();
   await mobile.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
   await mobile.locator('#catalog-add').click();
   check(await mobile.locator('#catalog-dialog').isVisible(), 'Mobile physician form opens');
@@ -390,7 +404,7 @@ try {
   await noOverflow(mobile);
   await page.reload();
   check((await snapshotKPIs()).join('|') === 'Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'Reload resets all payments');
-  await go('catalogs');
+  await catalogTab('physicians');
   check(!(await text('#catalog-results')).includes('Dra. Este editada'), 'Reload resets created catalogs');
   await go('clinical'); await page.locator('#clinical-patient').selectOption('DEMO-002');
   check((await clinicalList('familyHistory').innerText()).includes('Sin registrar'), 'Reload resets clinical context');
@@ -415,9 +429,9 @@ try {
     await flow.locator('#context-form button[type=submit]').click();
   }
   await fg('catalogs');
-  const fcTab = kind => flow.locator(`[data-catalog-tab="${kind}"]`).click();
-  async function fcCreate(kind,values,configure=async()=>{}) {
-    await fcTab(kind); await flow.locator('#catalog-add').click();
+  const fcTab = (kind,mode) => selectCatalog(flow,kind,mode);
+  async function fcCreate(kind,values,configure=async()=>{},mode) {
+    await fcTab(kind,mode); await flow.locator('#catalog-add').click();
     for(const [key,value] of Object.entries(values)) await flow.locator(`#cat-${key}`).fill(value);
     await configure(); await flow.locator('#catalog-form button[type=submit]').click();
     check(!await flow.locator('#catalog-dialog').isVisible(), `Flow catalog created: ${kind}`);
@@ -434,11 +448,11 @@ try {
     await flow.locator('.slot-room').selectOption({label:'Sala flujo'});
   });
   for(const [mode,provider,study,price] of [['LABORATORIO','Lab flujo','Estudio lab flujo','100.10'],['IMAGEN','Imagen flujo','Estudio imagen flujo','200.20']]) {
-    await fcCreate('providers',{name:provider},()=>flow.locator('#cat-mode').selectOption(mode));
+    await fcCreate('providers',{name:provider},()=>flow.locator('#cat-mode').selectOption(mode),mode);
     await fcCreate('studyTypes',{name:study,price},async()=>{
       await flow.locator('#cat-mode').selectOption(mode);
       await flow.locator('#cat-provider').selectOption({label:provider});
-    });
+    },mode);
   }
   await fg('agenda');
   const appointmentBefore=await ft('#agenda-results');
@@ -695,6 +709,159 @@ try {
   await flow.reload();
   check((await flow.locator('[data-kpi]').allTextContents()).join('|')==='Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'T3 reload resets financial state');
   await fg('agenda'); check(!await flow.locator(`[data-attend="${appointmentId}"]`).count(), 'Reload removes new appointments and consultations');
+  // S8-S11 use a fresh public UI scenario, independent of the connected cash/QR flow above.
+  const expanded=await openPage({width:1440,height:1000});
+  const et=selector=>expanded.locator(selector).innerText();
+  const eg=async id=>{
+    if(await expanded.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await expanded.locator('#menu-toggle').click();
+    await expanded.locator(`#navigation [data-page="${id}"]`).click();
+  };
+  for(const [id,label] of Object.entries(resourceMenus)) {
+    await eg(id);
+    check(await et('#page-title')===label && await et('#breadcrumb')===`Clínica / ${label}` && await expanded.locator(`#navigation [data-page="${id}"]`).getAttribute('aria-current')==='page', `Own title, breadcrumb and active menu: ${label}`);
+  }
+  for(const [route,mode,other] of [['laboratory','LABORATORIO','IMAGEN'],['imaging','IMAGEN','LABORATORIO']]) {
+    await eg(route); await expanded.locator('[data-catalog-tab="providers"]').click();
+    await expanded.locator('#catalog-add').click(); await expanded.locator('#cat-name').fill(`Proveedor ${mode}`);
+    check(await expanded.locator('#cat-mode').inputValue()===mode, `Provider form defaults to own modality: ${mode}`);
+    await expanded.locator('#catalog-form button[type=submit]').click();
+    const providerBefore=await et('#catalog-results');
+    await expanded.locator('[data-catalog-edit]').click(); await expanded.locator('#cat-mode').selectOption(other);
+    await expanded.locator('#catalog-form button[type=submit]').click();
+    check((await et('#catalog-error')).includes('este menú') && await et('#catalog-results')===providerBefore, `Cross-modality save rejects without disappearing provider: ${mode}`);
+    await expanded.keyboard.press('Escape');
+    await expanded.locator('[data-catalog-tab="studyTypes"]').click(); await expanded.locator('#catalog-add').click();
+    await expanded.locator('#cat-name').fill(`Estudio ${mode}`); await expanded.locator('#cat-price').fill('12.34');
+    check((await expanded.locator('#cat-provider option').allTextContents()).join('|')===`Sin proveedor predeterminado|Proveedor ${mode}`, `Study defaults show only own providers: ${mode}`);
+    await expanded.locator('#cat-provider').selectOption({label:`Proveedor ${mode}`});
+    await expanded.locator('#catalog-form button[type=submit]').click();
+    check((await et('#catalog-results')).includes(`Estudio ${mode}`) && !(await et('#catalog-results')).includes(`Estudio ${other}`), `Own study list filters modality: ${mode}`);
+  }
+  for(const [route,mode,other] of [['laboratory','LABORATORIO','IMAGEN'],['imaging','IMAGEN','LABORATORIO']]) {
+    await eg(route); await expanded.locator('[data-catalog-tab="providers"]').click();
+    check((await et('#catalog-results')).includes(`Proveedor ${mode}`) && !(await et('#catalog-results')).includes(`Proveedor ${other}`), `Own provider list filters modality: ${mode}`);
+    await expanded.locator('[data-catalog-tab="studyTypes"]').click();
+    check((await et('#catalog-results')).includes(`Estudio ${mode}`) && !(await et('#catalog-results')).includes(`Estudio ${other}`), `Both studies retained after route switches: ${mode}`);
+  }
+  await eg('catalogs');
+  const tariffCount=await expanded.locator('[data-catalog-edit]').count();
+  await expanded.locator('[data-catalog-edit]').first().click(); await expanded.locator('#cat-price').fill('301');
+  await expanded.locator('#catalog-form button[type=submit]').click();
+  check(tariffCount===2 && (await et('#catalog-results')).includes('Bs 301,00'), 'Existing procedure tariffs remain editable via Aranceles');
+  await eg('patients'); await expanded.locator('[data-chart="DEMO-001"]').click();
+  for(const [kind,fields] of [['allergies',{substance:'Alergia ficticia Alba',reaction:'Reacción humana'}],['familyHistory',{relation:'Madre',condition:'Antecedente familiar ficticio'}],['personalHistory',{notes:'Nota personal ficticia Alba'}]]) {
+    await expanded.locator(`[data-context-add="${kind}"]`).click();
+    for(const [key,value] of Object.entries(fields)) await expanded.locator(`#context-${key}`).fill(value);
+    await expanded.locator('#context-form button[type=submit]').click();
+  }
+  const historyBefore=await expanded.locator('[data-context-history]').innerText();
+  const habits=()=>expanded.locator('[data-habits-summary]');
+  const editHabits=async value=>{
+    await expanded.getByRole('button',{name:'Editar hábitos',exact:true}).click();
+    await expanded.getByRole('textbox',{name:'Hábitos',exact:true}).fill(value);
+  };
+  check(await habits().innerText()==='Sin registrar', 'S9 habits start undocumented');
+  for(const dismissal of ['cancel','escape']) {
+    await editHabits('Borrador no guardado');
+    if(dismissal==='cancel') await expanded.locator('#habits-dialog [data-close]').click(); else await expanded.keyboard.press('Escape');
+    check(await habits().innerText()==='Sin registrar', `Habits ${dismissal} discards draft`);
+  }
+  await editHabits('x'.repeat(1000)); await expanded.locator('#habits-form button[type=submit]').click();
+  check((await habits().innerText()).length===1000, 'Habits accepts the documented 1000-character boundary');
+  const habitText='Lectura y paseo <img src=x onerror=throw(1)>';
+  await editHabits(habitText);
+  check(await expanded.getByRole('textbox',{name:'Hábitos',exact:true}).getAttribute('maxlength')==='1000' && (await et('#habits-dialog')).includes('Máximo 1000 caracteres'), 'Habits visible length limit');
+  await expanded.locator('#habits-form button[type=submit]').click();
+  check(await habits().innerText()===habitText && await expanded.locator('[data-habits-summary] img').count()===0, 'Habits explicitly save literal text');
+  for(const dismissal of ['cancel','escape']) {
+    await editHabits('Edición descartada');
+    if(dismissal==='cancel') await expanded.locator('#habits-dialog [data-close]').click(); else await expanded.keyboard.press('Escape');
+    await eg('overview'); await eg('clinical'); await expanded.locator('#clinical-patient').selectOption('DEMO-001');
+    check(await habits().innerText()===habitText, `Unsaved habits ${dismissal} then navigation preserves saved field`);
+  }
+  await expanded.locator('#clinical-patient').selectOption('DEMO-002');
+  check(await habits().innerText()==='Sin registrar', 'Habits isolated from second patient');
+  await editHabits('Solo Bruno'); await expanded.locator('#habits-form button[type=submit]').click();
+  await eg('overview'); await eg('clinical');
+  await expanded.locator('#clinical-patient').selectOption('DEMO-001');
+  check(await habits().innerText()===habitText && await expanded.locator('[data-context-history]').innerText()===historyBefore, 'Habits persist navigation without changing antecedents');
+  await editHabits('Texto editado'); await expanded.locator('#habits-form button[type=submit]').click();
+  check(await habits().innerText()==='Texto editado', 'Habits edit replaces saved text');
+  await editHabits(''); await expanded.locator('#habits-form button[type=submit]').click();
+  check(await habits().innerText()==='Sin registrar', 'Clearing habits explicitly restores undocumented');
+  await editHabits(habitText); await expanded.locator('#habits-form button[type=submit]').click();
+  await eg('triage');
+  check((await et('#view')).includes('Vista inicial de Triage · campos y protocolo por definir') && await expanded.locator('#triage-patient').count()===1 && await expanded.locator('#view input,#view textarea,#view button').count()===0, 'Triage initial read-only context, no scores or decision controls');
+  await expanded.locator('#triage-patient').selectOption('');
+  check((await et('#triage-context')).includes('Selecciona un paciente'), 'Triage empty context safe');
+  await expanded.locator('#triage-patient').selectOption('DEMO-001');
+  check((await et('#triage-context')).includes(habitText), 'Triage displays saved habits');
+  const triageText=await et('#triage-context');
+  check(['Alergia ficticia Alba','Reacción humana','Antecedente familiar ficticio','Nota personal ficticia Alba'].every(value=>triageText.includes(value)), 'Triage reads actual saved allergy, family and personal history');
+  await expanded.locator('#triage-patient').selectOption('DEMO-002');
+  check((await et('#triage-context')).includes('Solo Bruno') && !(await et('#triage-context')).includes(habitText), 'Triage patient selection isolated');
+  for(const id of ['diseases','allergyCatalog']) {
+    await eg(id);
+    check((await et('#view')).includes('no se aplican al paciente'), `Reference catalog distinguished: ${id}`);
+    const create=async(name,description)=>{
+      await expanded.locator('#catalog-add').click(); await expanded.locator('#cat-name').fill(name);
+      await expanded.locator('#cat-description').fill(description); await expanded.locator('#catalog-form button[type=submit]').click();
+    };
+    const initial=await et('#catalog-results');
+    await create('','');
+    check((await et('#catalog-error')).includes('nombre') && await et('#catalog-results')===initial, `Reference required name rejects without mutation: ${id}`);
+    await expanded.keyboard.press('Escape');
+    await create('Referencia <demo>','Texto <b>literal</b>');
+    check((await et('#catalog-results')).includes('Texto <b>literal</b>') && await expanded.locator('#catalog-results b').count()===0, `Safe reference create: ${id}`);
+    const saved=await et('#catalog-results');
+    await create(' referencia <DEMO> ','Duplicado');
+    check((await et('#catalog-error')).includes('ya existe') && await et('#catalog-results')===saved, `Reference duplicate does not mutate: ${id}`);
+    await expanded.keyboard.press('Escape');
+    await expanded.locator('[data-catalog-edit]').click(); await expanded.locator('#cat-description').fill('Descripción editada');
+    await expanded.locator('#catalog-form button[type=submit]').click();
+    check((await et('#catalog-results')).includes('Descripción editada') && await expanded.locator('[data-catalog-edit]').count()===1, `Reference edit retains identity: ${id}`);
+  }
+  await eg('clinical'); await expanded.locator('#clinical-patient').selectOption('DEMO-001');
+  check(await expanded.locator('[data-context-history]').innerText()===historyBefore && await habits().innerText()===habitText, 'Reference catalog edits never apply to patient data');
+  await eg('settings'); await expanded.getByRole('tab',{name:'Navegación',exact:true}).click();
+  for(const id of Object.keys(resourceMenus)) {
+    check(await expanded.locator(`[data-nav-id="${id}"] input`).isChecked(), `New menu configurable: ${id}`);
+    await expanded.locator(`[data-nav-id="${id}"] input`).uncheck();
+  }
+  await expanded.getByRole('button',{name:'Guardar cambios de demo',exact:true}).click();
+  check(await expanded.locator('#navigation button').count()===8, 'Hide all eight new menus without hiding core or tariffs');
+  for(const id of Object.keys(resourceMenus)) await expanded.locator(`[data-nav-id="${id}"] input`).check();
+  await expanded.locator('[data-nav-id="triage"] [data-move="up"]').click();
+  await expanded.getByRole('button',{name:'Guardar cambios de demo',exact:true}).click();
+  const menuOrder=await expanded.locator('#navigation button').evaluateAll(nodes=>nodes.map(node=>node.dataset.page));
+  check(Object.keys(resourceMenus).every(id=>menuOrder.includes(id)) && menuOrder.indexOf('triage')<menuOrder.indexOf('allergyCatalog'), 'Show and reorder new menus');
+  await eg('physicians'); await expanded.screenshot({path:fileURLToPath(new URL('desktop.png',import.meta.url)),fullPage:true});
+  await expanded.setViewportSize({width:390,height:844});
+  await expanded.waitForFunction(()=>document.querySelector('#menu-toggle').getAttribute('aria-expanded')==='false');
+  await expanded.locator('#menu-toggle').click();
+  check(await expanded.locator('#sidebar').evaluate(node=>node.getBoundingClientRect().height<=innerHeight && node.scrollHeight>node.clientHeight), 'Long mobile navigation scrolls within viewport');
+  await expanded.locator('#navigation button').last().focus(); await expanded.keyboard.press('Tab');
+  check(await expanded.locator('#navigation button').first().evaluate(node=>node===document.activeElement), 'Expanded mobile navigation wraps from last menu to first');
+  await expanded.keyboard.press('Escape');
+  for(const id of Object.keys(resourceMenus)) {
+    await eg(id); await noOverflow(expanded);
+    if(id!=='triage') {
+      await expanded.locator('#catalog-add').click();
+      check(await expanded.locator('#catalog-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth), `Mobile narrow form: ${id}`);
+      await expanded.locator('#catalog-form button[type=submit]').focus(); await expanded.keyboard.press('Tab');
+      check(await expanded.locator('#cat-name').evaluate(node=>node===document.activeElement), `Mobile form keyboard wrap: ${id}`);
+      await expanded.keyboard.press('Escape');
+    }
+  }
+  await eg('clinical'); await expanded.locator('#clinical-patient').selectOption('DEMO-001');
+  await editHabits('Borrador móvil'); await noOverflow(expanded);
+  check(await expanded.locator('#habits-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth), 'Mobile habits dialog fits');
+  await expanded.keyboard.press('Escape');
+  await eg('triage'); await expanded.locator('#triage-patient').selectOption('DEMO-001');
+  await expanded.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
+  check(await expanded.locator('[id]').evaluateAll(nodes=>new Set(nodes.map(node=>node.id)).size===nodes.length), 'Context rendering has no duplicate DOM IDs');
+  await expanded.reload(); await eg('clinical');
+  check(await habits().innerText()==='Sin registrar', 'Reload resets habits');
   for (const context of contexts) for (const item of context.pages()) check(await item.evaluate(()=>window.demoViolations.length) === 0, 'No API or storage writes');
   check(network.length === 0, `No HTTP requests: ${network.join(', ')}`);
   check(errors.length === 0, `No page errors: ${errors.join(', ')}`);

@@ -6,10 +6,24 @@ Open [`01-unified-workspace.html`](01-unified-workspace.html) directly in a mode
 
 Tradeoff: a coherent single-clinic workflow in one self-contained HTML file, **not** production clinical, accounting, payment or authorization software. Never enter real personal or medical information.
 
+## Find the new areas (S8–S11)
+
+| Sidebar entry | What it opens |
+| --- | --- |
+| **Médicos / Especialidades / Consultorios** | Each resource's existing catalog directly; physician specialties and availability still feed Agenda. |
+| **Laboratorio / Imagen** | Separate modality-filtered pages, each with **Proveedores / Tipos de estudio** subviews. Both reuse the original arrays and stable IDs used by consultation requests. Forms default to the page's modality; cross-modality saves are rejected without moving or losing the record. |
+| **Enfermedades / Alergias** | Separate, initially empty clinic reference lists: required unique name and optional description, each up to 120 characters. Create/edit only; no medical codes, diagnosis inference or automatic application to patients. Actual patient allergies remain in the chart. |
+| **Triage** | **Vista inicial de Triage · campos y protocolo por definir**. Select a patient to read their saved allergies, family/personal history and habits. Empty selection is safe. No urgency, score, recommendations, vitals or clinical-decision save workflow. |
+| **Aranceles** | Existing procedures and editable tariffs (legacy internal route `catalogs`). |
+
+**Hábitos:** open **Pacientes → Ver expediente** or the patient context in **Atención clínica**, then **Editar hábitos → Guardar hábitos**. Free text, maximum 1000 characters; clear and save to show **Sin registrar**. It is patient-specific and persists only until reload. Cancel/Escape discard edits; navigating afterward never applies the discarded draft. No presets, interpretation or automatic risk classification. Triage reads this same saved field, not another copy.
+
+All new entries participate in **Configuración → Navegación** hide/show/reorder. One shared header/sidebar remains; the long sidebar scrolls within the viewport and the mobile drawer retains keyboard trapping/Escape. No new permissions or patient login role.
+
 ## Try the complete workflow
 
-1. **Catálogos:** create a specialty and active consultorio. Create a physician, select the specialty and configure weekday/start/end/consultorio availability. Multiple windows are supported; adjacent windows are allowed, overlapping same-physician windows are rejected. The default new window is Monday 08:00–12:00. Names are required and case-insensitively unique within each catalog; optional physician documents are unique. Rooms have optional location and an active flag.
-2. **Laboratorio e imagen / Tipos de estudio:** create one LABORATORIO and one IMAGEN provider, then matching study types and prices. A matching default provider is optional in the catalog but a compatible provider is required when requesting a study. **Procedimientos** exposes editable demo tariffs (initial Consulta demo Bs 300 and Control demo Bs 600).
+1. **Especialidades / Consultorios / Médicos:** create a specialty and active consultorio. Create a physician, select the specialty and configure weekday/start/end/consultorio availability. Multiple windows are supported; adjacent windows are allowed, overlapping same-physician windows are rejected. The default new window is Monday 08:00–12:00. Names are required and case-insensitively unique within each catalog; optional physician documents are unique. Rooms have optional location and an active flag.
+2. **Laboratorio / Imagen:** open each menu's **Proveedores** and **Tipos de estudio** to create one provider and matching study types/prices per modality. A matching default provider is optional in the catalog but a compatible provider is required when requesting a study. **Aranceles → Procedimientos** exposes editable demo tariffs (initial Consulta demo Bs 300 and Control demo Bs 600).
 3. **Pacientes:** register a fictional patient (name 2–80 characters; unique demo document 3–30 Unicode letters, digits or hyphens), then **Ver expediente**. Add/edit/remove allergies (substance, reaction, recorded severity), family history (relation, condition) and personal-history notes. Empty information says **Sin registrar**, never asserts an absence of allergies. Each patient's records remain separate.
 4. **Agenda → Agendar cita:** select that patient, physician and active consultorio; use **2026-05-18**, a time inside the configured Monday window, duration 15–240 integer minutes and a reason. The entire appointment must fit one matching availability window. Doctor/room overlaps, unknown records, inactive rooms and invalid availability are rejected without creating records. Day/week, professional, consultorio and status filters remain available. A reference-date field supports other dates without consulting the current clock.
 5. **Iniciar consulta / Continuar atención:** the appointment opens its own patient context and one EN_CURSO consultation. Its linked appointment becomes **En atención** (`in_progress`) in clinical rows and the agenda filter; untouched fixtures retain Programada/Confirmada. Enter fictional human-written motivo, anamnesis, exploración and diagnóstico; select procedures. **Guardar progreso** explicitly saves fields and selections across navigation. No text or diagnosis is invented. Save before navigating away: unsaved text is not a durable draft.
@@ -24,7 +38,7 @@ Tradeoff: a coherent single-clinic workflow in one self-contained HTML file, **n
 - **Resumen / Flujo de caja:** initial Bs 700 income, Bs 250 expenses, Bs 450 net and Bs 1,400 pending. Fixture paid amounts (Bs 400 on ORD-102, Bs 300 on ORD-103) are explicitly labeled prior fixture payments without historical receipts. The five-day chart's earlier values remain independent fixtures. Only confirmed cash/QR adds income.
 - **Cobros:** search by order/patient and combine pending, partial or paid filters. On ORD-102, a Bs 200 cash payment reduces its Bs 800 balance to Bs 600 and updates income/net/pending to Bs 900/650/1,200. Empty, zero, negative, over-balance and fractional-cent payments are rejected; Cancel/Escape leave balances unchanged. Full settlement removes the cash action.
 - **Inventario:** name/code and availability filters retain coherent low-stock counts. Stock is not editable.
-- **Configuración:** clinic/contact, sourced blue/teal action color and comfortable/compact density remain editable. Navigation includes the new catalogs; hide/show/reorder controls work and Configuration cannot be hidden. Staff roles remain Administrador, Recepcionista and Médico; custom local roles and simulated permission checkboxes persist until reload. **Paciente is a record, never a login role.** Permissions are not real authorization.
+- **Configuración:** clinic/contact, sourced blue/teal action color and comfortable/compact density remain editable. Navigation includes all eight direct new menus plus Aranceles; hide/show/reorder controls work and Configuration cannot be hidden. Staff roles remain Administrador, Recepcionista and Médico; custom local roles and simulated permission checkboxes persist until reload. **Paciente is a record, never a login role.** Permissions are not real authorization.
 
 ## Accessibility and boundaries
 
@@ -42,7 +56,7 @@ node design/erp-workspace/smoke.mjs
 
 The script resolves existing Playwright using `createRequire` at `apps/mf-erp/package.json` and the existing Chromium cache at `apps/mf-erp/node_modules/.cache/playwright`. It does not install/download anything. Browser contexts close in `finally`; browser scratch stays outside the repository. Tests use file URLs and public DOM controls, never closure arrays or Git history. HTTP is blocked; API/storage writes and browser errors are trapped.
 
-Observed T3 evidence for that exact command:
+Observed evidence for that exact command:
 
 | Run | Actual result |
 | --- | --- |
@@ -52,12 +66,15 @@ Observed T3 evidence for that exact command:
 | Expanded mobile/rejection coverage | Exit 0: **PASS 304 checks**, zero HTTP/API/storage writes and zero page errors. |
 | S5 lifecycle correction RED | Exit 1: `Starting consultation marks linked appointment En atención`; no final count printed. The linked appointment still showed Programada. |
 | S5 lifecycle correction GREEN | Exit 0: **PASS 319 checks**, preserving all 304 assertions and adding linked appointment states, clinical labels, agenda filters, invalid/canceled-form invariance and reopen/order/income preservation. Zero HTTP/API/storage writes and page errors. |
+| S8–S11 RED | Exit 1 on `S8-S11 eight direct business menus, not generic catalog tabs`; discovery printed menus **0/8**, habits **0**, references **0/2**, Triage **0/1**. No final count printed. |
+| S8–S11 implementation checks | Two test-only corrections: disambiguate the Hábitos textbox from its labeled region; await the responsive menu state after resizing before opening the drawer. Existing business assertions were not removed. |
+| S8–S11 GREEN | Exit 0: **PASS 406 checks**, including all prior 319 business checks (obsolete tab-navigation helpers now click real menus). Zero HTTP/API/storage writes and page errors. |
 
 The inherited 207 checks remain, including all original 121 business/source checks. T3 adds a fresh independent context that creates patient/history/resources, rejects invalid/conflicting appointments, follows correct clinical context, saves/reopens one consultation, requests both modalities, records results, checks billing snapshots, exercises invalid/expired/canceled/confirmed/repeated/stale QR, finishes with cash and unique receipts, checks exact KPIs, reopens the closed consultation without duplicate billing, tests mobile forms/dialogs and allows pending-study completion without invented results. Reload resets everything. Palette/font plus overlay/shadow self-checks pass. No visual RED/GREEN baseline or pixel-diff test is claimed.
 
 T2 historical evidence remains: its author RED waited for absent `[data-chart="DEMO-001"]`, then GREEN passed 207 checks. The parent's old combined command printed PASS207 but timed out during shutdown; that old-candidate command was not replayed. T3 results above are separate expanded-candidate executions with observed exit codes.
 
-Current full-page screenshots: [`desktop.png`](desktop.png), dashboard after the new Bs 600.30 order is issued but before payment (1440×1000 viewport), and [`mobile.png`](mobile.png), closed consultation with results and patient antecedents (390×844 viewport). Heights can exceed the viewport. Live catalog labels can change; order/receipt lines retain their issued snapshots.
+Current full-page screenshots: [`desktop.png`](desktop.png), Médicos with the expanded direct sidebar (1440×1000 viewport), and [`mobile.png`](mobile.png), initial Triage reading saved patient habits and antecedents (390×844 viewport). Heights can exceed the viewport. Live catalog labels can change; order/receipt lines retain their issued snapshots.
 
 ## Shared model / handoff
 
@@ -65,7 +82,8 @@ Everything lives inside the existing artboard closure's `state`, not a global fa
 
 | Records | Links / representation |
 | --- | --- |
-| `patients`, `patientContexts` | Patient ID remains the demo document; per-patient allergies/familyHistory/personalHistory have stable entry IDs. Contexts allocate only on successful save. |
+| `patients`, `patientContexts` | Patient ID remains the demo document; per-patient allergies/familyHistory/personalHistory have stable entry IDs; `habits` is optional plain text on the same context. Contexts allocate only on successful save through `storedPatientContext`. |
+| `diseases`, `allergyCatalog` | Independent clinic reference lists with stable IDs, name and optional description; no patient mapping or clinical decisions. |
 | `specialties`, `physicians`, `rooms`, `availability` | Physician specialtyIds; windows carry physicianId, weekday 0–6, start/end and roomId. Catalog edits preserve IDs. |
 | `providers`, `studyTypes`, `procedures` | Provider mode/contact; study mode/nullable default providerId/priceCents; procedure name/priceCents. |
 | `appointments` | Stable id, patient, physicianId, roomId, ISO date, HH:mm time, duration, reason in service and status: scheduled/confirmed until started, in_progress during consultation, attended after completion. Closed-consultation reopening never regresses the linked status. Inherited professional/room strings are legacy metadata only. |
@@ -74,4 +92,4 @@ Everything lives inside the existing artboard closure's `state`, not a global fa
 
 **All internal money is now integer cents**, including inherited orders, expenses, confirmed payment totals, new study/procedure prices and receipt amounts. `money` converts only for display; `parseCents` validates decimal inputs. Prior fixture income is 70000 cents; `paymentTotalCents` adds only new confirmed settlements. `newId` allocates after validation. Reuse `addPatient`, `saveCatalog`, `createAppointment`, `startConsultation`, `saveConsultation` and especially the single `registerPayment` ledger/receipt path rather than adding parallel mutation shapes.
 
-Coverage: **S1–S3 preserved; S4 studies connected; S5 consultation flow; S6 simulated QR/cash/receipt; S7 same-artboard end-to-end prototype**. T4 parent verification/canvas and all real production integrations remain outside this unit.
+Coverage: **S1–S7 preserved; S8 direct resource menus and modality isolation; S9 saved per-patient habits; S10 separate clinic reference catalogs; S11 initial read-only Triage**. New public-UI checks cover menu titles/breadcrumb/active state, modality default/filter/rejection and retained studies, editable tariffs, habits save/edit/clear/1000-character boundary/cancel/navigation/isolation/reload, real antecedent summaries in Triage, safe reference create/edit/duplicate validation without patient changes, settings hide/show/order and all eight mobile pages/forms plus long-drawer keyboard/viewport containment. T4 parent verification/canvas and all real production integrations remain outside this unit.
