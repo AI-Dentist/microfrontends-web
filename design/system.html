@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Clinical design system — source sync</title>
+<style>
+/* Clinical values: apps/mf3-react-henry/src/styles/theme.css (T). */
+:root {
+  color-scheme: light;
+  --primary:#0284c7; --primary-hover:#0369a1; --primary-light:#e0f2fe; --primary-dark:#075985;
+  --secondary:#0f766e; --secondary-light:#ccfbf1;
+  --success:#15803d; --success-bg:#dcfce7; --success-border:#86efac;
+  --warning:#b45309; --warning-bg:#fef3c7; --warning-border:#fde68a;
+  --danger:#b91c1c; --danger-bg:#fee2e2; --danger-border:#fca5a5;
+  --neutral-50:#f8fafc; --neutral-100:#f1f5f9; --neutral-200:#e2e8f0;
+  --neutral-300:#cbd5e1; --neutral-400:#94a3b8; --neutral-500:#64748b;
+  --neutral-600:#475569; --neutral-700:#334155; --neutral-800:#1e293b; --neutral-900:#0f172a;
+  --bg-app:#f8fafc; --bg-surface:#ffffff; --border-color:#e2e8f0;
+  --text-primary:#0f172a; --text-secondary:#475569; --text-muted:#64748b;
+  --radius-sm:6px; --radius-md:10px; --radius-lg:16px;
+  --shadow-sm:0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md:0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg:0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  /* Font tokens: apps/mf3-react-henry/src/index.css (I). */
+  --sans:system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading:system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono:ui-monospace, Consolas, monospace;
+}
+/* 1440px is requested board geometry, not a product token.
+   All spacing/type/component dimensions below are sourced from C or I;
+   focus outline geometry (3px/3px) is from S. */
+* { box-sizing:border-box; }
+body { width:1440px; margin:0; background:var(--bg-app); color:var(--text-primary); font:14px/145% var(--sans); }
+header { background:var(--neutral-900); color:var(--bg-surface); padding:24px; }
+header .inner, main { max-width:1200px; margin:0 auto; }
+main { padding:24px 20px; }
+h1 { font:500 36px/145% var(--heading); letter-spacing:-1.68px; margin:8px 0 16px; }
+h2 { font:500 24px/118% var(--heading); letter-spacing:-0.24px; margin:0 0 8px; }
+h3 { font-size:17px; font-weight:700; margin:0 0 12px; }
+p { margin:0 0 12px; }
+a { color:var(--primary-hover); }
+header a { color:var(--bg-surface); }
+code { font:13px/135% var(--mono); overflow-wrap:anywhere; }
+section { background:var(--bg-surface); border:1px solid var(--border-color); border-radius:var(--radius-lg); padding:24px; margin-bottom:24px; box-shadow:var(--shadow-sm); }
+.kicker { font-size:12px; font-weight:700; text-transform:uppercase; }
+.note, .source { color:var(--text-secondary); }
+.source { font-size:12px; margin-top:12px; }
+.grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; }
+.swatches { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; }
+.swatch { display:flex; align-items:center; gap:10px; padding:8px; border:1px solid var(--border-color); border-radius:var(--radius-sm); }
+.chip { flex:none; width:36px; height:36px; border:1px solid var(--neutral-500); border-radius:var(--radius-sm); }
+.swatch code { display:block; font-size:12px; }
+.swatch small { color:var(--text-secondary); font-size:12px; }
+.callout { background:var(--primary-light); color:var(--primary-dark); border-radius:var(--radius-md); padding:16px 20px; margin:16px 0; }
+.row { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin:12px 0; }
+.specimen { padding:16px; border:1px solid var(--border-color); border-radius:var(--radius-md); }
+.type-row { display:flex; align-items:baseline; gap:20px; padding:8px 0; border-bottom:1px solid var(--border-color); }
+.type-row code { width:120px; flex:none; color:var(--text-secondary); }
+.space { display:flex; align-items:center; gap:16px; margin:8px 0; }
+.space code { width:48px; }
+.bar { height:12px; background:var(--secondary); }
+.radius { height:48px; background:var(--neutral-100); border:1px solid var(--neutral-500); margin-bottom:8px; }
+.elevation { background:var(--bg-surface); border:1px solid var(--border-color); padding:24px; border-radius:var(--radius-md); margin:12px 0; }
+button, input { font-family:var(--sans); font-size:14px; }
+button { cursor:pointer; font-weight:600; border-radius:var(--radius-md); }
+.primary { background:var(--primary-hover); color:var(--bg-surface); border:0; padding:10px 20px; display:inline-flex; gap:8px; align-items:center; }
+.primary:hover { background:var(--primary-dark); }
+.secondary { background:var(--neutral-100); color:var(--text-secondary); border:1px solid var(--border-color); padding:10px 16px; }
+.secondary:hover { background:var(--neutral-200); }
+.primary:disabled { opacity:0.6; cursor:not-allowed; }
+.teal { background:var(--secondary); color:var(--bg-surface); border:0; padding:10px 20px; }
+label { display:block; font-weight:600; margin-bottom:6px; }
+input { min-width:280px; padding:10px 14px; border:1px solid var(--neutral-500); border-radius:var(--radius-md); background:var(--bg-surface); color:var(--text-primary); }
+:focus-visible { outline:3px solid var(--primary-dark); outline-offset:3px; }
+header :focus-visible, .dark :focus-visible { outline-color:var(--bg-surface); }
+.dark { background:var(--neutral-900); color:var(--bg-surface); padding:16px 20px; border-radius:var(--radius-md); }
+.dark a { color:var(--bg-surface); }
+.badge { display:inline-flex; gap:6px; padding:4px 10px; border-radius:9999px; font-size:12px; font-weight:600; text-transform:uppercase; }
+.positive { background:var(--success-bg); color:var(--success); border:1px solid var(--success-border); }
+.warning { background:var(--warning-bg); color:var(--warning); border:1px solid var(--warning-border); }
+.danger { background:var(--danger-bg); color:var(--danger); border:1px solid var(--danger-border); font-weight:800; }
+.neutral { background:var(--neutral-200); color:var(--neutral-600); border:1px solid var(--neutral-300); }
+.denied { background:var(--neutral-100); color:var(--neutral-600); border:1px solid var(--neutral-300); }
+.info { background:var(--primary-light); color:var(--primary-dark); border:1px solid var(--primary); }
+table { width:100%; border-collapse:collapse; text-align:left; font-size:14px; }
+caption { text-align:left; font-weight:700; margin:0 0 12px; }
+th { background:var(--neutral-50); color:var(--text-secondary); font-weight:600; }
+th, td { padding:12px 16px; border-bottom:1px solid var(--border-color); vertical-align:top; }
+tbody tr:hover { background:var(--neutral-50); }
+footer { padding:0 24px 24px; max-width:1200px; margin:0 auto; color:var(--text-secondary); }
+@media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
+</style>
+</head>
+<body>
+<header>
+<div class="inner">
+<p class="kicker">OdontoClinic · source sync · 1440 px reference</p>
+<h1>Clinical clarity, grounded in existing CSS</h1>
+<p>Light-only reference for a single-clinic, staff-only dental ERP. This is the design-system board, not the prototype.</p>
+<a href="system.md">Read the source contract and discrepancies</a>
+</div>
+</header>
+<main id="content">
+<section aria-labelledby="authority">
+<h2 id="authority">01 / Authority and proposed semantics</h2>
+<p>Existing clinical tokens are authoritative. The role mapping is a proposal for the next prototype, not a claim that production is already consistent.</p>
+<div class="grid">
+<div class="specimen"><h3>Canonical source</h3><p>31 light color declarations · 26 unique colors · 3 radii · 3 shadows · 9 dark overrides.</p><code>T: apps/mf3-react-henry/src/styles/theme.css</code></div>
+<div class="specimen"><h3>Fonts and component rules</h3><p>3 font tokens / 2 unique stacks · 13 selected spacing values · 13 type sizes.</p><code>I: apps/mf3-react-henry/src/index.css</code><br><code>C: apps/mf3-react-henry/src/styles/components.css</code></div>
+<div class="specimen"><h3>Discrepancy evidence</h3><p>Shell chrome differs. Template violet is separate. Compiled remote CSS is not authority.</p><code>S: apps/shell/src/styles.css</code></div>
+</div>
+<div class="callout"><strong>Proposed mapping, existing values:</strong> action = primary-hover; sidebar = neutral-900; background = app; surface = white; main / secondary text = clinical text tokens; decorative border = clinical border; positive / warning / danger = status tokens; accent = secondary. Eleven roles, zero new colors.</div>
+<p class="note">No unified dark theme is ready: T auto-dark changes clinical surfaces and neutrals while I independently changes template text, violet and backgrounds. S has its own fixed chrome. This board pins light mode. No production CSS was changed.</p>
+</section>
+<section aria-labelledby="colors">
+<h2 id="colors">02 / Clinical light palette</h2>
+<p class="note">Every chip is decorative; labels remain on white. All 31 named color declarations from T are shown, including six semantic aliases.</p>
+<div class="swatches">
+<div class="swatch"><span class="chip" style="background:var(--primary)" aria-hidden="true"></span><div><code>--primary</code><small>#0284c7 · accent only</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--primary-hover)" aria-hidden="true"></span><div><code>--primary-hover</code><small>#0369a1 · proposed action</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--primary-light)" aria-hidden="true"></span><div><code>--primary-light</code><small>#e0f2fe · information tint</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--primary-dark)" aria-hidden="true"></span><div><code>--primary-dark</code><small>#075985 · information text</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--secondary)" aria-hidden="true"></span><div><code>--secondary</code><small>#0f766e · teal</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--secondary-light)" aria-hidden="true"></span><div><code>--secondary-light</code><small>#ccfbf1 · teal tint</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--success)" aria-hidden="true"></span><div><code>--success</code><small>#15803d · positive</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--success-bg)" aria-hidden="true"></span><div><code>--success-bg</code><small>#dcfce7 · positive tint</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--success-border)" aria-hidden="true"></span><div><code>--success-border</code><small>#86efac · positive border</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--warning)" aria-hidden="true"></span><div><code>--warning</code><small>#b45309 · warning</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--warning-bg)" aria-hidden="true"></span><div><code>--warning-bg</code><small>#fef3c7 · warning tint</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--warning-border)" aria-hidden="true"></span><div><code>--warning-border</code><small>#fde68a · warning border</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--danger)" aria-hidden="true"></span><div><code>--danger</code><small>#b91c1c · danger</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--danger-bg)" aria-hidden="true"></span><div><code>--danger-bg</code><small>#fee2e2 · danger tint</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--danger-border)" aria-hidden="true"></span><div><code>--danger-border</code><small>#fca5a5 · danger border</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--neutral-50)" aria-hidden="true"></span><div><code>--neutral-50</code><small>#f8fafc</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--neutral-100)" aria-hidden="true"></span><div><code>--neutral-100</code><small>#f1f5f9</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--neutral-200)" aria-hidden="true"></span><div><code>--neutral-200</code><small>#e2e8f0</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--neutral-300)" aria-hidden="true"></span><div><code>--neutral-300</code><small>#cbd5e1</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--neutral-400)" aria-hidden="true"></span><div><code>--neutral-400</code><small>#94a3b8</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--neutral-500)" aria-hidden="true"></span><div><code>--neutral-500</code><small>#64748b</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--neutral-600)" aria-hidden="true"></span><div><code>--neutral-600</code><small>#475569</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--neutral-700)" aria-hidden="true"></span><div><code>--neutral-700</code><small>#334155</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--neutral-800)" aria-hidden="true"></span><div><code>--neutral-800</code><small>#1e293b</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--neutral-900)" aria-hidden="true"></span><div><code>--neutral-900</code><small>#0f172a · proposed sidebar</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--bg-app)" aria-hidden="true"></span><div><code>--bg-app</code><small>#f8fafc · alias</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--bg-surface)" aria-hidden="true"></span><div><code>--bg-surface</code><small>#ffffff · white surface</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--border-color)" aria-hidden="true"></span><div><code>--border-color</code><small>#e2e8f0 · alias</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--text-primary)" aria-hidden="true"></span><div><code>--text-primary</code><small>#0f172a · alias</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--text-secondary)" aria-hidden="true"></span><div><code>--text-secondary</code><small>#475569 · alias</small></div></div>
+<div class="swatch"><span class="chip" style="background:var(--text-muted)" aria-hidden="true"></span><div><code>--text-muted</code><small>#64748b · alias</small></div></div>
+</div>
+<p class="source">Source T. Template violet and current shell colors are intentionally excluded from these approved swatches; their exact values are recorded in system.md.</p>
+</section>
+<section aria-labelledby="type">
+<h2 id="type">03 / Type inventory, not a mandatory page hierarchy</h2>
+<p class="note">I: sans and heading = system-ui, 'Segoe UI', Roboto, sans-serif. Mono = ui-monospace, Consolas, monospace. No font downloads.</p>
+<div class="type-row"><code>56px / I h1</code><span style="font-size:56px;font-weight:500">Clinical workspace</span></div>
+<div class="type-row"><code>40px / C icon</code><span style="font-size:40px">Empty-state size</span></div>
+<div class="type-row"><code>36px / I h1</code><span style="font-size:36px;font-weight:500">Daily overview</span></div>
+<div class="type-row"><code>24px / I h2</code><span style="font-size:24px;font-weight:500;line-height:118%">Section heading</span></div>
+<div class="type-row"><code>20px / C icon</code><span style="font-size:20px">Supporting heading</span></div>
+<div class="type-row"><code>18px / C brand</code><span style="font-size:18px;font-weight:700">OdontoClinic</span></div>
+<div class="type-row"><code>17px / C card</code><span style="font-size:17px;font-weight:700">Clinical history</span></div>
+<div class="type-row"><code>16px / C modal</code><span style="font-size:16px;font-weight:700">Appointment details</span></div>
+<div class="type-row"><code>15px / C alert</code><span style="font-size:15px;font-weight:700">Review required</span></div>
+<div class="type-row"><code>14px / C table</code><span style="font-size:14px">Operational rows and controls</span></div>
+<div class="type-row"><code>13px / C detail</code><span style="font-size:13px">Supporting clinical context</span></div>
+<div class="type-row"><code>12px / C badge</code><span style="font-size:12px;font-weight:600">CONFIRMADO</span></div>
+<div class="type-row"><code>11px / C dev</code><span style="font-size:11px;font-weight:700">DEVELOPMENT LABEL ONLY</span></div>
+<p class="source">Sources I + C. I root: 18px/145%, 0.18px tracking (16px below 1024px). I heading weight 500; clinical weights 600/700/800. Board body uses C's 14px size with I's 145% line-height. Template 56px is a specimen, not an ERP recommendation.</p>
+</section>
+<section aria-labelledby="geometry">
+<h2 id="geometry">04 / Sourced spacing, radii and elevation</h2>
+<div class="grid">
+<div><h3>Spacing / px</h3>
+<div class="space"><code>0</code><span class="bar" style="width:0" aria-hidden="true"></span><span>reset</span></div>
+<div class="space"><code>2</code><span class="bar" style="width:2px" aria-hidden="true"></span></div>
+<div class="space"><code>4</code><span class="bar" style="width:4px" aria-hidden="true"></span></div>
+<div class="space"><code>6</code><span class="bar" style="width:6px" aria-hidden="true"></span></div>
+<div class="space"><code>8</code><span class="bar" style="width:8px" aria-hidden="true"></span></div>
+<div class="space"><code>10</code><span class="bar" style="width:10px" aria-hidden="true"></span></div>
+<div class="space"><code>12</code><span class="bar" style="width:12px" aria-hidden="true"></span></div>
+<div class="space"><code>14</code><span class="bar" style="width:14px" aria-hidden="true"></span></div>
+<div class="space"><code>16</code><span class="bar" style="width:16px" aria-hidden="true"></span></div>
+<div class="space"><code>18</code><span class="bar" style="width:18px" aria-hidden="true"></span></div>
+<div class="space"><code>20</code><span class="bar" style="width:20px" aria-hidden="true"></span></div>
+<div class="space"><code>24</code><span class="bar" style="width:24px" aria-hidden="true"></span></div>
+<div class="space"><code>48</code><span class="bar" style="width:48px" aria-hidden="true"></span></div>
+<p class="source">C padding, gaps, margins: selected actual values, not an invented progression.</p></div>
+<div><h3>Radii</h3>
+<div class="radius" style="border-radius:4px"></div><p><code>4px</code> / I code</p>
+<div class="radius" style="border-radius:var(--radius-sm)"></div><p><code>6px</code> / T small</p>
+<div class="radius" style="border-radius:var(--radius-md)"></div><p><code>10px</code> / T medium</p>
+<div class="radius" style="border-radius:var(--radius-lg)"></div><p><code>16px</code> / T large</p>
+<div class="radius" style="border-radius:9999px"></div><p><code>9999px</code> / C badge</p>
+<div class="radius" style="border-radius:50%;width:48px"></div><p><code>50%</code> / C spinner, timeline</p></div>
+<div><h3>Shadows</h3>
+<div class="elevation" style="box-shadow:var(--shadow-sm)"><strong>Small</strong><br><code>0 1px 2px 0<br>rgb(0 0 0 / 0.05)</code></div>
+<div class="elevation" style="box-shadow:var(--shadow-md)"><strong>Medium</strong><br><code>0 4px 6px -1px,<br>0 2px 4px -2px<br>rgb(0 0 0 / 0.1)</code></div>
+<div class="elevation" style="box-shadow:var(--shadow-lg)"><strong>Large</strong><br><code>0 10px 15px -3px,<br>0 4px 6px -4px<br>rgb(0 0 0 / 0.1)</code></div>
+<p class="source">T exact shadow values. C card uses small; modal uses large. Main max-width 1200px; card padding 24px; modal max-width 520px.</p></div>
+</div>
+</section>
+<section aria-labelledby="components">
+<h2 id="components">05 / Core components</h2>
+<p class="note">Spanish UI specimens. Buttons show styles only: no workflow or data mutation. Tab through the examples to inspect visible focus.</p>
+<div lang="es">
+<div class="row"><button class="primary" type="button">Guardar cambios</button><button class="secondary" type="button">Cancelar</button><button class="teal" type="button">Ver historia</button><button class="primary" type="button" disabled>Guardando</button></div>
+<div class="row"><div><label for="search">Buscar historia clínica</label><input id="search" type="search" value="HC-1042" aria-describedby="search-help"><p id="search-help" class="note">Número de historia clínica</p></div></div>
+<div class="row"><span class="badge positive">Confirmado</span><span class="badge warning">Pendiente</span><span class="badge danger">Grave</span><span class="badge neutral">Archivada</span><span class="badge denied">Negado</span><span class="badge info">No evaluado</span></div>
+<table><caption>Agenda clínica · ejemplo sin datos personales</caption><thead><tr><th scope="col">Hora</th><th scope="col">Atención</th><th scope="col">Consultorio</th><th scope="col">Estado</th></tr></thead><tbody>
+<tr><td>09:00</td><td>Control odontológico</td><td>Consultorio 1</td><td><span class="badge positive">Confirmado</span></td></tr>
+<tr><td>09:30</td><td>Evaluación inicial</td><td>Consultorio 2</td><td><span class="badge warning">Pendiente</span></td></tr>
+<tr><td>10:00</td><td>Revisión de tratamiento</td><td>Consultorio 1</td><td><span class="badge info">No evaluado</span></td></tr>
+</tbody></table>
+</div>
+<p class="source">C button padding 10px 20px / 10px 16px; input 10px 14px, min 280px; table cells 12px 16px; badge 4px 10px. T medium radii for controls, large for cards. Primary background and field boundary are proposed accessibility corrections, not source defaults.</p>
+<div class="dark"><strong>Proposed sidebar material</strong><p>White on T neutral-900, not current S shell blue. Light focus ring on dark surfaces.</p><a href="#authority">Return to mapping</a></div>
+</section>
+<section aria-labelledby="accessibility">
+<h2 id="accessibility">06 / Contrast and self-check</h2>
+<p>AA normal-text threshold: 4.5:1. All active text pairs used here meet it. Decorative swatches have no overlaid text. Disabled controls are exempt.</p>
+<table><caption>Actual active text/background pairs · WCAG sRGB ratios</caption><thead><tr><th scope="col">Use</th><th scope="col">Foreground / background</th><th scope="col">Ratio</th></tr></thead><tbody>
+<tr><td>Main text / surface</td><td><code>#0f172a / #ffffff</code></td><td>17.85:1</td></tr>
+<tr><td>Main text / app, row hover</td><td><code>#0f172a / #f8fafc</code></td><td>17.06:1</td></tr>
+<tr><td>Secondary / surface</td><td><code>#475569 / #ffffff</code></td><td>7.58:1</td></tr>
+<tr><td>Secondary / table header</td><td><code>#475569 / #f8fafc</code></td><td>7.24:1</td></tr>
+<tr><td>Secondary / secondary button, denied status</td><td><code>#475569 / #f1f5f9</code></td><td>6.92:1</td></tr>
+<tr><td>Secondary / hover, archived status</td><td><code>#475569 / #e2e8f0</code></td><td>6.15:1</td></tr>
+<tr><td>Action / white, white / action</td><td><code>#0369a1 / #ffffff</code></td><td>5.93:1</td></tr>
+<tr><td>White / action hover</td><td><code>#ffffff / #075985</code></td><td>7.56:1</td></tr>
+<tr><td>White / sidebar</td><td><code>#ffffff / #0f172a</code></td><td>17.85:1</td></tr>
+<tr><td>White / teal</td><td><code>#ffffff / #0f766e</code></td><td>5.47:1</td></tr>
+<tr><td>Positive / positive tint</td><td><code>#15803d / #dcfce7</code></td><td>4.57:1</td></tr>
+<tr><td>Warning / warning tint</td><td><code>#b45309 / #fef3c7</code></td><td>4.51:1</td></tr>
+<tr><td>Danger / danger tint</td><td><code>#b91c1c / #fee2e2</code></td><td>5.30:1</td></tr>
+<tr><td>Information / information tint</td><td><code>#075985 / #e0f2fe</code></td><td>6.59:1</td></tr>
+</tbody></table>
+<div class="callout"><strong>Do not copy the unsafe default.</strong> Normal white text on source primary (#0284c7) is only 4.10:1. Use existing primary-hover (#0369a1) as the proposed action. Source decorative border is not an adequate sole input boundary; this board uses neutral-500 (4.76:1 on white).</div>
+<p class="note">Self-check inventory: 26 unique T light colors + T black shadow alpha values; I sans and mono stacks only. No template violet, shell palette, external assets, scripts, images or remote fonts. Visible 3px focus / 3px offset uses S geometry and proposed T colors; dark-primary focus on white is 7.56:1. No motion is used; reduced-motion rules are explicit.</p>
+<p class="note">Structural and contrast checks are not a browser render or runtime test. This sync does not claim production readiness, unified dark support, or a working ERP.</p>
+</section>
+</main>
+<footer><p>Source-linked, light-only design-system sync. Next: parent creates the prototype using <a href="system.md">this contract</a>, then opens the canvas. No canvas opened during sync.</p></footer>
+</body>
+</html>

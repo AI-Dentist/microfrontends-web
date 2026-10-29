@@ -1,0 +1,13 @@
+{
+  "title": "ERP · Unified clinical workspace",
+  "brief": "One runnable, Spanish-language staff ERP prototype for the synthetic Clínica Dental Andina. A single responsive shell connects cash flow, simulated payments, fictional patient records, appointments, clinical overview, inventory and in-memory settings. Self-contained HTML; no production application changes.",
+  "artboards": [
+    {
+      "file": "01-unified-workspace.html",
+      "title": "Unified business workspace",
+      "tradeoff": "Unified business workspace; simulated data, no real backend",
+      "width": 1440,
+      "height": 1000
+    }
+  ]
+}

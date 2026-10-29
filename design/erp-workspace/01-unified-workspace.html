@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Andina · Espacio de trabajo clínico · Demo</title>
+<style>
+:root { color-scheme:light; --action:#0369a1; --ink:#0f172a; --secondary:#475569; --line:#e2e8f0; --app:#f8fafc; --surface:#ffffff; --focus:#075985; --cell-y:12px; --card-pad:24px; }
+* { box-sizing:border-box; }
+body { margin:0; font:16px/1.45 system-ui,'Segoe UI',Roboto,sans-serif; color:var(--ink); background:var(--app); }
+button,input,select { font:inherit; }
+button,input,select { font-size:14px; }
+button { cursor:pointer; display:inline-flex; justify-content:center; align-items:center; gap:8px; padding:10px 16px; border:1px solid #64748b; border-radius:10px; background:#f1f5f9; color:#475569; font-weight:600; }
+button:hover { background:#e2e8f0; }
+button.primary { background:var(--action); color:#ffffff; border-color:var(--action); padding:10px 20px; }
+button.primary:hover { background:#075985; border-color:#075985; }
+button:disabled { cursor:not-allowed; }
+:focus-visible { outline:3px solid var(--focus); outline-offset:3px; }
+input,select { border:1px solid #64748b; border-radius:10px; padding:10px 14px; background:#ffffff; color:var(--ink); min-width:0; width:100%; }
+input[type=checkbox] { width:18px; height:18px; accent-color:var(--action); }
+label { display:grid; gap:6px; font-size:14px; font-weight:600; }
+label.check { display:flex; align-items:center; gap:8px; }
+h1,h2,h3,p { margin:0; }
+h1 { font-size:24px; line-height:1.18; letter-spacing:-.24px; }
+h2 { font-size:17px; }
+h3 { font-size:16px; }
+small,.small { font-size:12px; }
+.muted { color:var(--secondary); }
+svg.icon { width:20px; height:20px; flex:none; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.shell { display:grid; grid-template-columns:248px minmax(0,1fr); grid-template-rows:auto 1fr; min-height:100vh; }
+.sidebar { grid-row:1 / 3; background:#0f172a; color:#ffffff; padding:24px 16px; display:flex; flex-direction:column; gap:24px; }
+.brand { display:flex; gap:12px; align-items:center; padding:0 8px; }
+.brand-mark { width:40px; height:40px; display:grid; place-items:center; background:#0369a1; border-radius:10px; }
+.brand strong { font-size:18px; display:block; }
+.sidebar small { color:#cbd5e1; }
+.nav-label { padding:0 12px; color:#cbd5e1; font-size:12px; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
+nav { display:grid; gap:6px; }
+nav button { width:100%; justify-content:flex-start; border:0; color:#cbd5e1; background:transparent; padding:12px; }
+nav button:hover { background:#1e293b; color:#ffffff; }
+nav button[aria-current=page] { background:var(--action); color:#ffffff; }
+.sidebar :focus-visible { outline-color:#ffffff; }
+.sidebar-footer { margin-top:auto; border-top:1px solid #334155; padding:16px 8px 0; }
+.advanced { border:1px solid #334155; color:#cbd5e1; border-radius:10px; padding:12px; font-size:12px; }
+.topbar { min-width:0; background:#ffffff; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 24px; }
+.header-start { display:flex; align-items:center; gap:16px; min-width:0; }
+.clinic { font-size:16px; overflow-wrap:anywhere; }
+.header-end { display:flex; align-items:center; gap:12px; flex-shrink:0; font-size:12px; }
+.avatar { width:40px; height:40px; border-radius:50%; display:grid; place-items:center; color:#075985; background:#e0f2fe; font-weight:700; }
+.menu-button { padding:10px; }
+main { min-width:0; padding:24px 20px; width:100%; max-width:1200px; margin:0 auto; }
+.breadcrumb { font-size:12px; color:var(--secondary); margin-bottom:16px; }
+.page-heading { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:24px; }
+.page-heading p { margin-top:8px; color:var(--secondary); font-size:14px; }
+.fixture { padding:10px 16px; border:1px solid var(--line); background:#ffffff; border-radius:10px; color:var(--secondary); font-size:12px; margin-top:24px; }
+#announcement { color:#075985; background:#e0f2fe; border-radius:10px; font-size:14px; margin-bottom:16px; }
+#announcement:not(:empty) { padding:12px 16px; }
+.kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin-bottom:24px; }
+.card { padding:var(--card-pad); background:#ffffff; border:1px solid var(--line); border-radius:16px; box-shadow:0 1px 2px 0 rgb(0 0 0 / .05); min-width:0; }
+.kpi-label { color:var(--secondary); font-size:14px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.amount { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.kpi-value { font-size:24px; font-weight:700; margin:12px 0 6px; }
+.positive { color:#15803d; }
+.warning-text { color:#b45309; }
+.split { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); gap:24px; margin-bottom:24px; }
+.card-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
+.legend { display:flex; gap:16px; font-size:12px; color:var(--secondary); flex-wrap:wrap; }
+.key { display:inline-block; width:10px; height:10px; background:var(--action); border-radius:4px; margin-right:6px; }
+.key.expense { background:#64748b; }
+.chart { display:block; width:100%; height:220px; margin-top:16px; }
+.chart text { fill:#475569; font:12px system-ui,'Segoe UI',Roboto,sans-serif; }
+.chart .grid { stroke:#e2e8f0; }
+.chart .income { fill:var(--action); }
+.chart .expense { fill:#64748b; }
+.appointment { display:flex; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--line); font-size:14px; }
+.appointment:last-child { border-bottom:0; }
+.time { color:#075985; background:#e0f2fe; border-radius:6px; padding:8px; font-size:14px; font-weight:600; }
+.appointment p { font-size:12px; color:var(--secondary); margin-top:4px; }
+.table-wrap { width:100%; overflow-x:auto; padding:4px; }
+table { width:100%; border-collapse:collapse; font-size:14px; white-space:nowrap; }
+caption { text-align:left; font-size:12px; color:var(--secondary); padding:0 12px 12px; }
+th,td { padding:var(--cell-y) 16px; border-bottom:1px solid var(--line); text-align:left; }
+th { color:var(--secondary); background:#f8fafc; font-weight:600; }
+tbody tr:hover { background:#f8fafc; }
+td small { display:block; color:var(--secondary); }
+.badge { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:9999px; border:1px solid #cbd5e1; font-size:12px; font-weight:600; background:#e2e8f0; color:#475569; }
+.badge.pending,.badge.partial,.badge.low { color:#b45309; background:#fef3c7; border-color:#fde68a; }
+.badge.paid,.badge.confirmed,.badge.ok { color:#15803d; background:#dcfce7; border-color:#86efac; }
+.badge.scheduled { color:#075985; background:#e0f2fe; border-color:#0284c7; }
+.filters { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:20px; align-items:end; }
+.filters label { flex:1; min-width:160px; }
+.filters label.search { flex:2; min-width:min(280px,100%); }
+.empty { padding:24px; color:var(--secondary); text-align:center; white-space:normal; }
+.tabs { display:flex; gap:8px; border-bottom:1px solid var(--line); margin-bottom:24px; flex-wrap:wrap; }
+.tabs button { background:transparent; border:0; border-bottom:3px solid transparent; border-radius:0; padding:10px 18px; }
+.tabs button[aria-selected=true] { border-bottom-color:var(--action); color:var(--action); }
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; max-width:760px; }
+.form-section { display:grid; gap:20px; }
+.help { font-size:13px; color:var(--secondary); font-weight:400; }
+.settings-save { display:flex; align-items:center; flex-wrap:wrap; gap:16px; margin-top:24px; border-top:1px solid var(--line); padding-top:24px; }
+.nav-setting { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 4px; border-bottom:1px solid var(--line); }
+.nav-setting .moves { display:flex; gap:8px; }
+.role { padding:16px; border:1px solid var(--line); border-radius:10px; }
+.role h3 { margin-bottom:12px; }
+.permissions { display:flex; gap:16px; flex-wrap:wrap; }
+dialog { width:calc(100% - 32px); max-width:520px; max-height:90vh; padding:24px; border:1px solid var(--line); border-radius:16px; color:var(--ink); background:#ffffff; }
+dialog::backdrop { background:rgba(15,23,42,.6); backdrop-filter:blur(2px); }
+dialog h2 { font-size:16px; }
+dialog form { display:grid; gap:20px; }
+.dialog-actions { display:flex; justify-content:flex-end; gap:12px; }
+.summary { background:#f8fafc; border-radius:10px; padding:16px; font-size:14px; }
+.error { color:#b91c1c; font-size:14px; }
+.skip { position:absolute; top:8px; left:8px; background:#ffffff; padding:12px; color:#075985; z-index:10; transform:translateY(-200%); }
+.skip:focus { transform:none; }
+.scrim { display:none; }
+body.nav-collapsed .shell { grid-template-columns:minmax(0,1fr); }
+body.nav-collapsed .sidebar { display:none; }
+[hidden] { display:none !important; }
+@media(max-width:1100px) { .kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } .split { grid-template-columns:minmax(0,1fr); } .header-end .session { display:none; } }
+@media(max-width:760px) {
+ .shell,body.nav-collapsed .shell { grid-template-columns:minmax(0,1fr); }
+ .sidebar { display:none; position:fixed; inset:0 auto 0 0; width:min(300px,85vw); z-index:5; overflow-y:auto; }
+ body.drawer-open .sidebar { display:flex; }
+ body.drawer-open .scrim { display:block; position:fixed; inset:0; z-index:4; background:rgba(15,23,42,.6); }
+ .topbar { padding:12px 16px; gap:8px; }
+ .header-start { gap:12px; }
+ .header-end { display:none; }
+ main { padding:20px 16px; }
+ .page-heading { align-items:flex-start; flex-direction:column; }
+ .kpis { gap:12px; }
+ .kpis .card { padding:16px; }
+ .kpi-value { font-size:20px; }
+ .kpi-label svg { display:none; }
+ .card { padding:16px; }
+ .form-grid { grid-template-columns:minmax(0,1fr); }
+ .tabs { gap:0; }
+ .tabs button { padding:10px 12px; }
+ .card-heading { flex-wrap:wrap; }
+ .nav-setting { flex-wrap:wrap; }
+}
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Saltar al contenido</a>
+<div class="scrim" id="scrim" aria-hidden="true"></div>
+<div class="shell">
+<aside class="sidebar" id="sidebar" aria-label="Barra lateral">
+ <div class="brand"><div class="brand-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/></svg></div><div><strong>andina</strong><small>Gestión de clínica</small></div></div>
+ <div><p class="nav-label">Espacio de trabajo</p><nav id="navigation" aria-label="Navegación principal"></nav></div>
+ <div class="advanced">Herramientas avanzadas · demo<br><span aria-hidden="true">▸</span> Contraídas · no implementadas</div>
+ <div class="sidebar-footer"><strong class="small">Entorno de demostración</strong><br><small>Una clínica · equipo interno<br>Sin conexión a servicios</small></div>
+</aside>
+<header class="topbar">
+ <div class="header-start"><button id="menu-toggle" class="menu-button" aria-controls="sidebar" aria-expanded="true" aria-label="Contraer menú"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div><strong id="clinic-name" class="clinic">Clínica Dental Andina</strong><p class="muted small">Clínica sintética de demostración</p></div></div>
+ <div class="header-end"><span class="badge confirmed">Solo demo</span><div class="session"><strong>Equipo de recepción</strong><br><span class="muted">Administrador · simulado</span></div><span class="avatar" aria-hidden="true">AD</span></div>
+</header>
+<main id="main" tabindex="-1">
+ <div class="breadcrumb" id="breadcrumb">Clínica / Resumen</div>
+ <div class="page-heading"><div><h1 id="page-title">Flujo de caja</h1><p id="page-subtitle"></p></div><div id="page-actions"></div></div>
+ <p id="announcement" role="status" aria-live="polite" aria-atomic="true"></p>
+ <div id="view"></div>
+ <footer class="fixture">Prototipo · datos ficticios · sin backend · Fecha fija: lunes 18 de mayo de 2026. Los cambios se pierden al recargar.</footer>
+</main>
+</div>
+<dialog id="payment-dialog" aria-labelledby="payment-title">
+ <form id="payment-form" novalidate>
+  <h2 id="payment-title">Registrar cobro</h2>
+  <p class="help">Cobro en efectivo · simulación local. No se procesa dinero real.</p>
+  <div id="payment-summary" class="summary"></div>
+  <label for="payment-amount">Importe a registrar (Bs)<input id="payment-amount" type="number" min="0.01" step="0.01" required inputmode="decimal"></label>
+  <p id="payment-error" class="error" role="alert"></p>
+  <div class="dialog-actions"><button type="button" data-close="payment-dialog">Cancelar</button><button class="primary" type="submit">Confirmar cobro simulado</button></div>
+ </form>
+</dialog>
+<dialog id="patient-dialog" aria-labelledby="patient-title">
+ <form id="patient-form" novalidate>
+  <h2 id="patient-title">Registrar paciente ficticio</h2>
+  <p class="help">Use solo datos inventados. Registro en memoria, sin historia clínica real.</p>
+  <label for="patient-name">Nombre ficticio<input id="patient-name" maxlength="80" required autocomplete="off"></label>
+  <label for="patient-document">Documento de demo<input id="patient-document" maxlength="30" required autocomplete="off" aria-describedby="document-help"></label>
+  <p id="document-help" class="help">Entre 3 y 30 letras, números o guiones. Ejemplo: DEMO-004.</p>
+  <p id="patient-error" class="error" role="alert"></p>
+  <div class="dialog-actions"><button type="button" data-close="patient-dialog">Cancelar</button><button class="primary" type="submit">Crear registro ficticio</button></div>
+ </form>
+</dialog>
+<script>
+'use strict';
+// All fixtures and mutations live in this closure; nothing is persisted or transmitted.
+(() => {
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const escapeText = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const money = value => `Bs ${value.toLocaleString('es-BO', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+const iconPaths = {
+ overview:'M3 13h7v8H3zM14 3h7v18h-7zM3 3h7v6H3z',
+ payments:'M3 5h18v14H3zM3 9h18M7 15h3',
+ patients:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87',
+ agenda:'M4 5h16v16H4zM8 3v4M16 3v4M4 11h16M8 15h2M14 15h2',
+ clinical:'M9 3h6v6h6v6h-6v6H9v-6H3V9h6z',
+ inventory:'M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10',
+ settings:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2'
+};
+function icon(key) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${iconPaths[key]}"/></svg>`; }
+const pages = {
+ overview:['Resumen / Flujo de caja','Flujo de caja','La jornada de tu clínica, en un solo lugar.'],
+ payments:['Cobros','Cobros','Saldos y cobros de órdenes ficticias.'],
+ patients:['Pacientes','Pacientes','Directorio sintético de la clínica.'],
+ agenda:['Agenda','Agenda','Citas de demostración · semana del 18 al 24 de mayo de 2026.'],
+ clinical:['Atención clínica','Atención clínica','Resumen de consultas ficticias; no sustituye una historia clínica.'],
+ inventory:['Inventario','Inventario','Disponibilidad y alertas de insumos de demostración.'],
+ settings:['Configuración','Configuración','Personaliza este espacio. Todo se guarda solo en memoria.']
+};
+const state = {
+ page:'overview', clinic:'Clínica Dental Andina', contact:'recepcion@andina.example (ficticio)', brand:'#0369a1', density:'comfortable',
+ menu:Object.keys(pages).map(id => ({id, visible:true})),
+ roles:[{name:'Administrador', permissions:['Cobros','Agenda','Clínica']},{name:'Recepcionista', permissions:['Cobros','Agenda']},{name:'Médico', permissions:['Agenda','Clínica']}],
+ patients:[{id:'DEMO-001', name:'Alba Ejemplo', note:'Control preventivo'},{id:'DEMO-002', name:'Bruno Muestra', note:'Seguimiento'},{id:'DEMO-003', name:'Celia Prueba', note:'Consulta inicial'}],
+ orders:[{id:'ORD-101', patient:'DEMO-001', service:'Limpieza y control', total:600, paid:0, due:'18 may 2026'}, {id:'ORD-102', patient:'DEMO-002', service:'Restauración', total:1200, paid:400, due:'18 may 2026'}, {id:'ORD-103', patient:'DEMO-003', service:'Consulta inicial', total:300, paid:300, due:'18 may 2026'}],
+ appointments:[{time:'09:00', day:'18', patient:'DEMO-001', service:'Control preventivo', professional:'Dra. Norte · demo', room:'Consultorio 1', status:'confirmed'}, {time:'10:30', day:'18', patient:'DEMO-002', service:'Restauración', professional:'Dr. Sur · demo', room:'Consultorio 2', status:'scheduled'}, {time:'12:00', day:'18', patient:'DEMO-003', service:'Consulta inicial', professional:'Dra. Norte · demo', room:'Consultorio 1', status:'confirmed'}, {time:'09:30', day:'19', patient:'DEMO-001', service:'Seguimiento', professional:'Dr. Sur · demo', room:'Consultorio 2', status:'scheduled'}],
+ inventory:[{id:'INS-01',name:'Guantes de nitrilo · caja',stock:4,min:8},{id:'INS-02',name:'Resina universal · unidad',stock:12,min:5},{id:'INS-03',name:'Mascarillas · caja',stock:2,min:6},{id:'INS-04',name:'Gasas estériles · paquete',stock:18,min:10}],
+ expenses:250, paymentTotal:0
+};
+const labels = {pending:'Pendiente',partial:'Parcial',paid:'Pagado',confirmed:'Confirmada',scheduled:'Programada',low:'Stock bajo',ok:'Disponible'};
+function badge(status) { return `<span class="badge ${status}">${labels[status]}</span>`; }
+function patientName(id) { return state.patients.find(patient => patient.id === id)?.name || 'Registro ficticio'; }
+function balance(order) { return Math.round((order.total - order.paid)*100)/100; }
+function orderStatus(order) { return balance(order) === 0 ? 'paid' : order.paid > 0 ? 'partial' : 'pending'; }
+function announce(text) { $('#announcement').textContent = text; }
+function renderNav() {
+ $('#navigation').innerHTML = state.menu.filter(item => item.visible).map(item => `<button type="button" data-page="${item.id}" ${state.page === item.id ? 'aria-current="page"' : ''}>${icon(item.id)}<span>${pages[item.id][0]}</span></button>`).join('');
+}
+function setDrawer(open) {
+ document.body.classList.toggle('drawer-open', open);
+ syncMenuButton();
+ if (open) $('#navigation button').focus();
+}
+function syncMenuButton() {
+ const mobile = matchMedia('(max-width:760px)').matches;
+ const expanded = mobile ? document.body.classList.contains('drawer-open') : !document.body.classList.contains('nav-collapsed');
+ $('#menu-toggle').setAttribute('aria-expanded', String(expanded));
+ $('#menu-toggle').setAttribute('aria-label', expanded ? 'Contraer menú' : 'Abrir menú');
+ $('#sidebar').inert = !expanded;
+}
+function navigate(page, moveFocus = true) {
+ state.page = page;
+ $('#breadcrumb').textContent = `Clínica / ${pages[page][0]}`;
+ $('#page-title').textContent = pages[page][1];
+ $('#page-subtitle').textContent = pages[page][2];
+ $('#page-actions').replaceChildren();
+ announce('');
+ renderNav();
+ const renderers = {overview:renderOverview,payments:renderPayments,patients:renderPatients,agenda:renderAgenda,clinical:renderClinical,inventory:renderInventory,settings:renderSettings};
+ renderers[page]();
+ setDrawer(false);
+ if (moveFocus) $('#main').focus();
+}
+function action(label, handler) {
+ const button = document.createElement('button'); button.className = 'primary'; button.textContent = label; button.type='button'; button.onclick = handler; $('#page-actions').append(button);
+}
+function orderTable(orders, caption, allowPayment) {
+ return `<div class="table-wrap" tabindex="0" role="region" aria-label="${caption}"><table><caption>${caption}</caption><thead><tr><th scope="col">Orden / paciente ficticio</th><th scope="col">Estado</th><th scope="col">Total</th><th scope="col">Saldo</th><th scope="col">Vencimiento</th>${allowPayment?'<th scope="col">Acción</th>':''}</tr></thead><tbody>${orders.map(order => `<tr><td><strong>${order.id}</strong> · ${escapeText(patientName(order.patient))}<small>${order.service}</small></td><td>${badge(orderStatus(order))}</td><td class="amount">${money(order.total)}</td><td class="amount">${money(balance(order))}</td><td>${order.due}</td>${allowPayment?`<td>${balance(order)>0?`<button type="button" data-pay="${order.id}">Registrar cobro<span class="small"> · ${order.id}</span></button>`:'<span class="muted">Sin saldo pendiente</span>'}</td>`:''}</tr>`).join('') || `<tr><td colspan="${allowPayment?6:5}" class="empty">No hay órdenes que coincidan con estos filtros.</td></tr>`}</tbody></table></div>`;
+}
+function renderOverview() {
+ const income = 700 + state.paymentTotal;
+ const pending = state.orders.reduce((sum, order) => sum + balance(order),0);
+ const kpis = [['Ingresos de hoy',income,'Efectivo · cobros de demo','payments'],['Egresos de hoy',state.expenses,'Insumos · gasto ficticio fijo','inventory'],['Flujo neto',income-state.expenses,'Ingresos menos egresos','overview'],['Por cobrar',pending,'Saldo de 3 órdenes de demo','patients']];
+ action('Ver cobros', () => navigate('payments'));
+ $('#view').innerHTML = `<section class="kpis" aria-label="Indicadores del 18 de mayo de 2026">${kpis.map(([label,value,detail,key]) => `<article class="card"><div class="kpi-label">${label}${icon(key)}</div><p class="kpi-value amount" data-kpi="${key}">${money(value)}</p><p class="small muted">${detail}</p></article>`).join('')}</section>
+ <div class="split"><section class="card"><div class="card-heading"><div><h2>Ingresos y egresos</h2><p class="small muted">Últimos 5 días de actividad · Bs</p></div><span class="badge">14–18 may</span></div><div class="legend"><span><i class="key"></i>Ingresos</span><span><i class="key expense"></i>Egresos</span></div>${chart(income)}<p class="small muted">Hoy: ${money(income)} ingresados / ${money(state.expenses)} en egresos.</p></section>
+ <section class="card"><div class="card-heading"><h2>Agenda de hoy</h2><button type="button" data-page="agenda">Ver agenda</button></div><p class="small muted">18 de mayo · 3 citas ficticias</p>${state.appointments.filter(item => item.day==='18').map(item => `<div class="appointment"><span class="time">${item.time}</span><div><strong>${escapeText(patientName(item.patient))}</strong><p>${item.service} · ${item.room}</p></div></div>`).join('')}</section></div>
+ <section class="card"><div class="card-heading"><div><h2>Cobros pendientes</h2><p class="small muted">Prioriza el seguimiento de los saldos de hoy.</p></div><button type="button" data-page="payments">Ver todos los cobros</button></div>${orderTable(state.orders.filter(order=>balance(order)>0),'Órdenes con saldo pendiente · datos ficticios',false)}</section>`;
+}
+function chart(income) {
+ const values = [[900,300],[1200,450],[800,200],[1000,350],[income,250]];
+ const maximum = Math.max(1500,income);
+ return `<svg class="chart" viewBox="0 0 560 220" role="img" aria-label="Ingresos y egresos del 14 al 18 de mayo: ${values.map((pair,index)=>`${14+index} mayo, ingresos ${pair[0]} Bs, egresos ${pair[1]} Bs`).join('; ')}"><path class="grid" d="M44 20H550M44 100H550M44 180H550"/><text x="0" y="24">${maximum}</text><text x="10" y="104">${Math.round(maximum/2)}</text><text x="24" y="184">0</text>${values.map((pair,index)=>{ const x=70+index*98; return `<rect class="income" x="${x}" y="${180-pair[0]/maximum*160}" width="24" height="${pair[0]/maximum*160}" rx="4"/><rect class="expense" x="${x+28}" y="${180-pair[1]/maximum*160}" width="24" height="${pair[1]/maximum*160}" rx="4"/><text x="${x+4}" y="210">${14+index} may</text>`; }).join('')}</svg>`;
+}
+function renderPayments() {
+ $('#view').innerHTML = `<section class="card"><div class="filters"><label class="search">Buscar orden o paciente<input id="order-search" type="search" placeholder="Nombre ficticio u ORD-101"></label><label>Estado<select id="order-status"><option value="all">Todos los estados</option><option value="pending">Pendiente</option><option value="partial">Parcial</option><option value="paid">Pagado</option></select></label></div><div id="order-results"></div></section>`;
+ const filter = () => { const term=$('#order-search').value.toLocaleLowerCase(); const status=$('#order-status').value; $('#order-results').innerHTML=orderTable(state.orders.filter(order => `${order.id} ${patientName(order.patient)}`.toLocaleLowerCase().includes(term) && (status==='all'||status===orderStatus(order))),'Órdenes de cobro · importes en bolivianos',true); };
+ $('#order-search').oninput=filter; $('#order-status').onchange=filter; filter();
+}
+let selectedOrder = null;
+let dialogTrigger = null;
+function openDialog(id, trigger) { dialogTrigger=trigger || document.activeElement; $(id).showModal(); }
+function closeDialog(dialog) { dialog.close(); }
+function openPayment(id, trigger) {
+ selectedOrder=state.orders.find(order=>order.id===id);
+ if (!selectedOrder || balance(selectedOrder)<=0) return;
+ $('#payment-summary').textContent=`${selectedOrder.id} · ${patientName(selectedOrder.patient)} · Saldo: ${money(balance(selectedOrder))}`;
+ $('#payment-amount').value=balance(selectedOrder).toFixed(2); $('#payment-amount').max=balance(selectedOrder).toFixed(2); $('#payment-error').textContent='';
+ openDialog('#payment-dialog',trigger);
+}
+function registerPayment(order, amount) {
+ // One mutation path maintains cent precision and the dashboard's day total.
+ const cents=Math.round(amount*100);
+ if (!Number.isFinite(amount)||cents<=0||Math.abs(amount*100-cents)>0.00001||cents>Math.round(balance(order)*100)) return false;
+ order.paid=Math.round(order.paid*100+cents)/100;
+ state.paymentTotal=Math.round(state.paymentTotal*100+cents)/100;
+ return true;
+}
+$('#payment-form').onsubmit = event => {
+ event.preventDefault(); const amount=Number($('#payment-amount').value);
+ if (!registerPayment(selectedOrder,amount)) { $('#payment-error').textContent='Introduce un importe positivo de hasta el saldo pendiente, con máximo dos decimales.'; $('#payment-amount').focus(); return; }
+ const id=selectedOrder.id;
+ closeDialog($('#payment-dialog'));
+ // Update just results to preserve the current filters and the surrounding shell.
+ $('#order-search').dispatchEvent(new Event('input'));
+ announce('Cobro simulado; no se envió al backend');
+ const replacement=$(`[data-pay="${id}"]`); if(replacement) replacement.focus(); else $('#order-search').focus();
+};
+function addPatient(name, documentId) {
+ const cleanName=name.trim(), cleanId=documentId.trim();
+ if(cleanName.length<2 || !/^[\p{L}\p{N}-]{3,30}$/u.test(cleanId)) return 'Introduce un nombre ficticio de al menos 2 caracteres y un documento válido.';
+ if(state.patients.some(patient=>patient.id.toLocaleLowerCase()===cleanId.toLocaleLowerCase())) return 'Este documento de demo ya existe. Usa otro identificador ficticio.';
+ state.patients.push({id:cleanId,name:cleanName,note:'Nuevo registro ficticio'}); return '';
+}
+function renderPatients() {
+ action('Registrar paciente',()=>{ $('#patient-form').reset(); $('#patient-error').textContent=''; openDialog('#patient-dialog'); });
+ $('#view').innerHTML=`<section class="card"><div class="filters"><label class="search">Buscar paciente ficticio<input id="patient-search" type="search" placeholder="Nombre o documento de demo"></label></div><div id="patient-results"></div></section>`;
+ const filter=()=>{const term=$('#patient-search').value.toLocaleLowerCase(); const matches=state.patients.filter(patient=>`${patient.name} ${patient.id}`.toLocaleLowerCase().includes(term)); $('#patient-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Directorio de pacientes"><table><caption>${matches.length} registros ficticios · no usar datos personales</caption><thead><tr><th scope="col">Nombre ficticio</th><th scope="col">Documento de demo</th><th scope="col">Seguimiento</th></tr></thead><tbody>${matches.map(patient=>`<tr><td><strong>${escapeText(patient.name)}</strong></td><td>${escapeText(patient.id)}</td><td>${patient.note}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">No se encontraron pacientes ficticios.</td></tr>'}</tbody></table></div>`;};
+ $('#patient-search').oninput=filter; filter();
+}
+$('#patient-form').onsubmit=event=>{
+ event.preventDefault(); const error=addPatient($('#patient-name').value,$('#patient-document').value);
+ if(error) { $('#patient-error').textContent=error; return; }
+ closeDialog($('#patient-dialog')); $('#patient-search').value=''; $('#patient-search').dispatchEvent(new Event('input')); announce('Paciente ficticio creado. Solo en memoria; se pierde al recargar');
+};
+function renderAgenda() {
+ $('#view').innerHTML=`<section class="card"><div class="filters"><label>Vista<select id="agenda-period"><option value="day">Día · lunes 18 may</option><option value="week">Semana · 18–24 may</option></select></label><label>Profesional<select id="agenda-professional"><option value="all">Todo el equipo</option><option>Dra. Norte · demo</option><option>Dr. Sur · demo</option></select></label><label>Estado<select id="agenda-status"><option value="all">Todos</option><option value="confirmed">Confirmada</option><option value="scheduled">Programada</option></select></label></div><div id="agenda-results"></div></section>`;
+ const filter=()=>{const matches=state.appointments.filter(item=>($('#agenda-period').value==='week'||item.day==='18')&&($('#agenda-professional').value==='all'||item.professional===$('#agenda-professional').value)&&($('#agenda-status').value==='all'||item.status===$('#agenda-status').value)); $('#agenda-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Citas ficticias"><table><caption>${matches.length} citas ficticias · ${$('#agenda-period').value==='day'?'18 de mayo':'Semana del 18 al 24 de mayo'} de 2026</caption><thead><tr>${['Día / hora','Paciente ficticio','Motivo','Profesional','Consultorio','Estado'].map(label=>`<th scope="col">${label}</th>`).join('')}</tr></thead><tbody>${matches.map(item=>`<tr><td>${item.day} may · ${item.time}</td><td>${escapeText(patientName(item.patient))}</td><td>${item.service}</td><td>${item.professional}</td><td>${item.room}</td><td>${badge(item.status)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No hay citas para estos filtros.</td></tr>'}</tbody></table></div>`;};
+ $$('#view select').forEach(select=>select.onchange=filter); filter();
+}
+function renderClinical() {
+ $('#view').innerHTML=`<section class="card"><div class="filters"><label>Paciente ficticio<select id="clinical-patient">${state.patients.map(patient=>`<option value="${escapeText(patient.id)}">${escapeText(patient.name)} · ${escapeText(patient.id)}</option>`).join('')}</select></label></div><div id="clinical-results"></div></section>`;
+ const update=()=>{const id=$('#clinical-patient').value; const appointments=state.appointments.filter(item=>item.patient===id); $('#clinical-results').innerHTML=`<div class="summary"><h2>${escapeText(patientName(id))}</h2><p class="help">Ficha de demostración · sin diagnóstico real ni datos médicos personales.</p></div><h3 style="margin-top:24px">Consultas programadas</h3>${appointments.map(item=>`<div class="appointment"><span class="time">${item.day} may</span><div><strong>${item.service}</strong><p>${item.time} · ${item.professional} · ${item.room}</p></div>${badge(item.status)}</div>`).join('')||'<p class="empty">Este nuevo registro no tiene consultas de demostración.</p>'}<p class="help" style="margin-top:24px">Odontograma, diagnóstico, prescripción y edición clínica no implementados en este prototipo.</p>`;};
+ $('#clinical-patient').onchange=update; update();
+}
+function renderInventory() {
+ $('#view').innerHTML=`<section class="card"><div class="filters"><label class="search">Buscar insumo<input id="inventory-search" type="search" placeholder="Nombre o código"></label><label>Disponibilidad<select id="inventory-status"><option value="all">Todos los insumos</option><option value="low">Solo stock bajo</option><option value="ok">Disponibles</option></select></label></div><div id="inventory-results"></div></section>`;
+ const filter=()=>{const term=$('#inventory-search').value.toLocaleLowerCase(); const matches=state.inventory.filter(item=>`${item.id} ${item.name}`.toLocaleLowerCase().includes(term)&&($('#inventory-status').value==='all'||$('#inventory-status').value===(item.stock<item.min?'low':'ok'))); $('#inventory-results').innerHTML=`<p class="help" style="margin-bottom:16px">${matches.filter(item=>item.stock<item.min).length} insumos con stock bajo en estos resultados. Cantidades ficticias.</p><div class="table-wrap" tabindex="0" role="region" aria-label="Existencias de demo"><table><caption>${matches.length} insumos encontrados</caption><thead><tr>${['Código','Insumo','Stock','Mínimo','Estado'].map(label=>`<th scope="col">${label}</th>`).join('')}</tr></thead><tbody>${matches.map(item=>`<tr><td>${item.id}</td><td>${item.name}</td><td class="amount">${item.stock}</td><td class="amount">${item.min}</td><td>${badge(item.stock<item.min?'low':'ok')}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">No hay insumos que coincidan con estos filtros.</td></tr>'}</tbody></table></div>`;};
+ $('#inventory-search').oninput=filter; $('#inventory-status').onchange=filter; filter();
+}
+function navSetting(item) {
+ return `<div class="nav-setting" data-nav-id="${item.id}"><label class="check"><input type="checkbox" ${item.visible?'checked':''} ${item.id==='settings'?'disabled':''}>${pages[item.id][0]}${item.id==='settings'?' · acceso protegido':''}</label><div class="moves"><button type="button" data-move="up" aria-label="Subir ${pages[item.id][0]}">↑</button><button type="button" data-move="down" aria-label="Bajar ${pages[item.id][0]}">↓</button></div></div>`;
+}
+function roleMarkup(role) {
+ return `<section class="role" data-role="${escapeText(role.name)}"><h3>${escapeText(role.name)}</h3><div class="permissions">${['Cobros','Agenda','Clínica'].map(permission=>`<label class="check"><input type="checkbox" value="${permission}" ${role.permissions.includes(permission)?'checked':''}>${permission}</label>`).join('')}</div></section>`;
+}
+function addRole(name) {
+ const clean=name.trim();
+ if(clean.length<2||clean.length>40) return 'El rol debe tener entre 2 y 40 caracteres.';
+ if(clean.toLocaleLowerCase()==='paciente') return 'Paciente es un registro de negocio, no un rol del equipo.';
+ if(state.roles.some(role=>role.name.toLocaleLowerCase()===clean.toLocaleLowerCase())) return 'Este rol ya existe.';
+ state.roles.push({name:clean,permissions:[]}); return '';
+}
+function renderSettings() {
+ $('#view').innerHTML=`<section class="card"><div class="tabs" role="tablist" aria-label="Secciones de configuración">${[['clinic','Clínica'],['appearance','Apariencia'],['navigation','Navegación'],['roles','Roles']].map(([id,label],index)=>`<button type="button" role="tab" id="tab-${id}" aria-controls="panel-${id}" aria-selected="${index===0}" tabindex="${index===0?'0':'-1'}" data-tab="${id}">${label}</button>`).join('')}</div>
+ <form id="settings-form" novalidate>
+ <section id="panel-clinic" role="tabpanel" aria-labelledby="tab-clinic"><div class="form-grid"><label>Nombre de la clínica<input id="setting-clinic" maxlength="80" required value="${escapeText(state.clinic)}"></label><label>Contacto ficticio<input id="setting-contact" maxlength="100" value="${escapeText(state.contact)}"></label></div><p class="help" style="margin-top:16px">Identidad sintética: no introduzcas datos de una clínica real.</p></section>
+ <section id="panel-appearance" role="tabpanel" aria-labelledby="tab-appearance" hidden><div class="form-grid"><label>Color de acción<select id="setting-brand"><option value="#0369a1" ${state.brand==='#0369a1'?'selected':''}>Azul clínico · #0369a1</option><option value="#0f766e" ${state.brand==='#0f766e'?'selected':''}>Verde azulado · #0f766e</option></select></label><label>Densidad<select id="setting-density"><option value="comfortable" ${state.density==='comfortable'?'selected':''}>Cómoda</option><option value="compact" ${state.density==='compact'?'selected':''}>Compacta</option></select></label></div><p class="help" style="margin-top:16px">Tema claro. Solo colores de acción validados del sistema.</p></section>
+ <section id="panel-navigation" role="tabpanel" aria-labelledby="tab-navigation" hidden><p class="help">Muestra, oculta y ordena las secciones de demo. Configuración siempre queda disponible.</p><div id="nav-settings">${state.menu.map(navSetting).join('')}</div></section>
+ <section id="panel-roles" role="tabpanel" aria-labelledby="tab-roles" hidden><p class="help" style="margin-bottom:16px">Simulación visual de permisos. La autenticación y autorización reales de backend no están implementadas. Los permisos no bloquean esta demo; Configuración siempre es accesible. Pacientes son registros de negocio, no roles.</p><div class="form-section" id="role-list">${state.roles.map(roleMarkup).join('')}</div><div class="filters" style="margin-top:24px"><label>Nuevo rol local<input id="new-role" maxlength="40" placeholder="Ej. Coordinación"></label><button type="button" id="add-role">Añadir rol local</button></div><p id="role-error" class="error" role="alert"></p></section>
+ <p id="settings-error" class="error" role="alert"></p><div class="settings-save"><button class="primary" type="submit">Guardar cambios de demo</button><p class="help">Solo en memoria; se pierde al recargar</p></div></form></section>`;
+ const selectTab=id=>{ $$('[role=tab]').forEach(tab=>{const active=tab.dataset.tab===id; tab.setAttribute('aria-selected',String(active)); tab.tabIndex=active?0:-1;}); $$('[role=tabpanel]').forEach(panel=>panel.hidden=panel.id!==`panel-${id}`); };
+ $$('[role=tab]').forEach(tab=>{
+  tab.onclick=()=>selectTab(tab.dataset.tab);
+  tab.onkeydown=event=>{const tabs=$$('[role=tab]'); let index=tabs.indexOf(tab); if(event.key==='ArrowRight') index=(index+1)%tabs.length; else if(event.key==='ArrowLeft') index=(index+tabs.length-1)%tabs.length; else if(event.key==='Home') index=0; else if(event.key==='End') index=tabs.length-1; else return; event.preventDefault(); selectTab(tabs[index].dataset.tab); tabs[index].focus();};
+ });
+ function updateMoveButtons() { const rows=$$('.nav-setting'); rows.forEach((row,index)=>{ $('[data-move=up]',row).disabled=index===0; $('[data-move=down]',row).disabled=index===rows.length-1; }); }
+ $('#nav-settings').onclick=event=>{const button=event.target.closest('[data-move]'); if(!button) return; const row=button.closest('.nav-setting'); const previous=row.previousElementSibling,next=row.nextElementSibling; if(button.dataset.move==='up'&&previous) row.parentNode.insertBefore(row,previous); else if(button.dataset.move==='down'&&next) row.parentNode.insertBefore(next,row); updateMoveButtons(); if(button.disabled) $('[data-move]:not(:disabled)',row)?.focus(); else button.focus();}; updateMoveButtons();
+ $('#add-role').onclick=()=>{const error=addRole($('#new-role').value); $('#role-error').textContent=error; if(error) return; $('#role-list').insertAdjacentHTML('beforeend',roleMarkup(state.roles.at(-1))); $('#new-role').value=''; announce('Rol local añadido. Simulación visual; sin autorización real.');};
+ $('#settings-form').onsubmit=event=>{
+  event.preventDefault(); const name=$('#setting-clinic').value.trim();
+  if(name.length<2) { $('#settings-error').textContent='Introduce un nombre de clínica de al menos 2 caracteres.'; selectTab('clinic'); $('#setting-clinic').focus(); return; }
+  const brand=$('#setting-brand').value, density=$('#setting-density').value;
+  if(!['#0369a1','#0f766e'].includes(brand)||!['comfortable','compact'].includes(density)) return;
+  state.clinic=name; state.contact=$('#setting-contact').value.trim(); state.brand=brand; state.density=density;
+  state.menu=$$('.nav-setting').map(row=>({id:row.dataset.navId,visible:row.dataset.navId==='settings'||$('input',row).checked}));
+  $$('.role').forEach(row=>{const role=state.roles.find(item=>item.name===row.dataset.role); role.permissions=$$('input:checked',row).map(input=>input.value);});
+  document.documentElement.style.setProperty('--action',state.brand);
+  document.documentElement.style.setProperty('--cell-y',density==='compact'?'8px':'12px');
+  document.documentElement.style.setProperty('--card-pad',density==='compact'?'16px':'24px');
+  document.body.dataset.density=density;
+  $('#clinic-name').textContent=state.clinic; $('#settings-error').textContent=''; renderNav();
+  announce('Cambios de demo guardados. Solo en memoria; se pierde al recargar');
+ };
+}
+// Delegated public controls share the same navigation and dialog paths.
+document.addEventListener('click',event=>{
+ const pageButton=event.target.closest('[data-page]'); if(pageButton) navigate(pageButton.dataset.page);
+ const payButton=event.target.closest('[data-pay]'); if(payButton) openPayment(payButton.dataset.pay,payButton);
+ const closeButton=event.target.closest('[data-close]'); if(closeButton) closeDialog(document.getElementById(closeButton.dataset.close));
+});
+$$('dialog').forEach(dialog=>{
+ dialog.addEventListener('close',()=>{ if(dialogTrigger?.isConnected) dialogTrigger.focus(); });
+ // Keep Tab inside the modal rather than allowing a browser-chrome focus stop.
+ dialog.addEventListener('keydown',event=>{
+  if(event.key!=='Tab') return;
+  const controls=$$('button:not(:disabled),input:not(:disabled),select:not(:disabled)',dialog);
+  const first=controls[0],last=controls.at(-1);
+  if(event.shiftKey&&document.activeElement===first) {event.preventDefault();last.focus();}
+  else if(!event.shiftKey&&document.activeElement===last) {event.preventDefault();first.focus();}
+ });
+});
+$('#menu-toggle').onclick=()=>{ if(matchMedia('(max-width:760px)').matches) setDrawer(!document.body.classList.contains('drawer-open')); else {document.body.classList.toggle('nav-collapsed'); syncMenuButton();} };
+$('#scrim').onclick=()=>{setDrawer(false); $('#menu-toggle').focus();};
+document.addEventListener('keydown',event=>{
+ if(event.key==='Escape'&&document.body.classList.contains('drawer-open')) { setDrawer(false); $('#menu-toggle').focus(); }
+ if(event.key==='Tab'&&document.body.classList.contains('drawer-open')) {
+  const buttons=$$('button:not(:disabled)', $('#sidebar')); const first=buttons[0],last=buttons.at(-1);
+  if(event.shiftKey&&document.activeElement===first) {event.preventDefault();last.focus();}
+  else if(!event.shiftKey&&document.activeElement===last) {event.preventDefault();first.focus();}
+ }
+});
+matchMedia('(max-width:760px)').addEventListener('change',()=>{document.body.classList.remove('drawer-open');syncMenuButton();});
+navigate('overview',false); syncMenuButton();
+})();
+</script>
+</body>
+</html>
