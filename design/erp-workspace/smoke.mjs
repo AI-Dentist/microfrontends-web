@@ -126,6 +126,55 @@ try {
   const noOverflow = async target => check(await target.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No page horizontal overflow');
   const snapshotKPIs = () => page.locator('[data-kpi]').allTextContents();
 
+  // S22–S26: public HTTP presentation/fixture contract, before any mutations.
+  const gaps=[];
+  async function adding(target,control,label,visible='Agregar +') {
+    check(await control.innerText()===visible, `Visible Agregar +: ${label}`);
+    check(await control.getAttribute('aria-label')===label, `Contextual add name: ${label}`);
+    check(await control.evaluate(node=>{
+      const header=node.closest('.card-heading,.page-heading');
+      if(!header) return false;
+      const r=node.getBoundingClientRect(), h=header.getBoundingClientRect();
+      return Math.abs(r.right-h.right)<2 && r.top>=h.top && r.bottom<=h.bottom+1;
+    }), `Agregar at upper right of its header: ${label}`);
+  }
+  for(const route of ['patients','agenda','inventory','expenses','laboratory','imaging','diseases','allergyCatalog','triage','physicians','specialties','rooms','catalogs']) {
+    await page.locator(`#navigation [data-page="${route}"]`).click();
+    const add=page.locator('#page-actions button,#catalog-add');
+    if(await add.innerText()!=='Agregar +') gaps.push(`${route}: visible Agregar +`);
+    if(await page.locator('#view tbody td').filter({hasText:/^Sin registrar$/}).count()) gaps.push(`${route}: populated default list`);
+  }
+  await page.locator('#navigation [data-page="patients"]').click();
+  const detailGeometry=await page.locator('[data-master-view="DEMO-001"] svg').innerHTML();
+  const chartGeometry=await page.locator('[data-chart="DEMO-001"] svg').innerHTML();
+  if(detailGeometry===chartGeometry) gaps.push('distinct patient detail/chart SVG');
+  await page.locator('#navigation [data-page="settings"]').click();
+  if((await page.locator('[role=tab]').allTextContents()).join('|')!=='Clínica|Apariencia|Navegación|Roles') gaps.push('configuration text tabs');
+  if(await page.locator('#settings-form button[type=submit]').innerText()!=='Guardar cambios de demo') gaps.push('configuration text save');
+  await page.locator('#navigation [data-page="patients"]').click();
+  await page.locator('#page-actions button').click();
+  if(await page.locator('#patient-dialog [data-close]').innerText()!=='Cancelar' || !await page.locator('#patient-form button[type=submit]').innerText()) gaps.push('readable modal actions');
+  await page.keyboard.press('Escape');
+  check(gaps.length===0, `S22–S26 missing: ${gaps.join('; ')}`);
+  for(const [route,label] of [['patients','Agregar Paciente'],['agenda','Agregar cita'],['inventory','Agregar insumo'],['expenses','Agregar egreso'],['laboratory','Agregar Laboratorio'],['imaging','Agregar Imagen'],['diseases','Agregar Enfermedades'],['allergyCatalog','Agregar Alergias'],['triage','Agregar Triage'],['physicians','Agregar Médicos'],['specialties','Agregar Especialidades'],['rooms','Agregar Consultorios'],['catalogs','Agregar Procedimientos']]) {
+    await go(route); await adding(page,page.locator('#page-actions button,#catalog-add'),label);
+    check(await page.locator('#view tbody tr').count()>0 && !await page.locator('#view .empty').count(), `Populated default module: ${route}`);
+  }
+  await go('clinical'); await page.locator('#clinical-patient').selectOption('DEMO-003');
+  for(const kind of ['allergies','familyHistory','personalHistory']) {
+    await adding(page,page.locator(`[data-context-add="${kind}"]`),`Agregar ${kind==='allergies'?'Alergias':kind==='familyHistory'?'Antecedentes familiares':'Antecedentes personales'}`);
+    check((await page.locator(`#context-${kind} .summary`).count())===1, `Fictional representative context: ${kind}`);
+  }
+  await page.locator('#clinical-patient').selectOption('DEMO-001');
+  check(await page.locator('#context-allergies').innerText()==='Sin registrar', 'Seed context never applies to another patient');
+  await go('settings'); await page.getByRole('tab',{name:'Roles',exact:true}).click();
+  await adding(page,page.locator('#add-role'),'Agregar rol local');
+  check(await page.locator('.role').count()===3, 'Existing fictional role list preserved; Acceder deferred');
+  await go('physicians'); await page.locator('#catalog-add').click();
+  await adding(page,page.locator('#add-slot'),'Agregar horario','Agregar horario +');
+  await page.keyboard.press('Escape');
+  await go('overview');
+
   // S14–S16/S18 presentation checks precede business mutations.
   const presentationFailures=[];
   if(await text('#page-title')!=='Resumen' || await text('#breadcrumb')!=='Clínica / Resumen' || await page.locator('#navigation button').first().innerText()!=='Resumen') presentationFailures.push('Resumen entry/title/breadcrumb');
@@ -137,8 +186,14 @@ try {
   const navGeometry=await page.locator('#navigation button svg').evaluateAll(nodes=>nodes.map(svg=>svg.innerHTML));
   if(navGeometry.length!==17 || new Set(navGeometry).size!==17) presentationFailures.push('17 distinct semantic navigation geometries');
   async function iconButtons(target) {
-    const invalid=await target.locator('button:visible').evaluateAll(nodes=>nodes.filter(button=>!button.querySelector('svg path') || (!button.closest('#navigation') && (button.textContent.trim() || !button.getAttribute('aria-label')))).map(button=>button.id || button.outerHTML));
-    check(invalid.length===0, `Named SVG-only actions, labeled navigation: ${invalid.join(', ')}`);
+    const invalid=await target.locator('button:visible').evaluateAll(nodes=>nodes.filter(button=>{
+      const textException=button.closest('dialog,.settings-save') || button.hasAttribute('data-tab') || button.matches('#catalog-add,#add-role,#add-slot,#request-study,[data-context-add]') || (button.closest('#page-actions') && button.textContent==='Agregar +');
+      if(textException) return !button.textContent.trim() || button.querySelector('svg') || button.classList.contains('icon-action') || !button.getAttribute('aria-label');
+      return !button.querySelector('svg path') || (!button.closest('#navigation') && (button.textContent.trim() || !button.getAttribute('aria-label')));
+    }).map(button=>button.id || button.outerHTML));
+    check(invalid.length===0, `Contextual text exceptions; other named SVG-only actions: ${invalid.join(', ')}`);
+    const unreadable=await target.locator('dialog[open] button,[data-tab],.settings-save button').evaluateAll(nodes=>nodes.filter(button=>button.textContent.trim().replace(/ \+$/,'')!==button.getAttribute('aria-label')).map(button=>button.outerHTML));
+    check(unreadable.length===0, `Modal/configuration visible text matches accessible labels: ${unreadable.join(', ')}`);
   }
   async function tooltip(target,control,label) {
     await control.hover();
@@ -151,13 +206,13 @@ try {
   }
   for(const [route,entity] of [['laboratory','Laboratorio'],['imaging','Imagen']]) {
     await go(route);
-    if(await page.locator('#catalog-add').getAttribute('aria-label')!==`Crear ${entity}` || /tipo[s]? de estudio/i.test(await text('#view'))) presentationFailures.push(`${entity} entity-specific create and heading`);
+    if(await page.locator('#catalog-add').getAttribute('aria-label')!==`Agregar ${entity}` || /tipo[s]? de estudio/i.test(await text('#view'))) presentationFailures.push(`${entity} entity-specific create and heading`);
   }
   const initialAction=page.locator('#catalog-add');
-  if(!await initialAction.getAttribute('aria-label') || await initialAction.innerText()) presentationFailures.push('icon-only named actions');
+  if(!await initialAction.getAttribute('aria-label') || await initialAction.innerText()!=='Agregar +') presentationFailures.push('icon-only named actions');
   check(presentationFailures.length===0, `T2 presentation: ${presentationFailures.join('; ')}`);
   await iconButtons(page);
-  await tooltip(page,initialAction,'Crear Imagen');
+  await tooltip(page,initialAction,'Agregar Imagen');
   await initialAction.click();
   check(await text('#catalog-title')==='Crear · Imagen', 'Imagen create dialog names entity');
   await iconButtons(page);
@@ -238,7 +293,7 @@ try {
   check(await rows('#order-results').count() === 2 && !await page.locator('[data-pay="ORD-102"]').count(), 'Exact remaining balance marks paid');
 
   await go('patients');
-  await page.getByRole('button',{name:'Registrar paciente',exact:true}).click();
+  await page.getByRole('button',{name:'Agregar Paciente',exact:true}).click();
   await page.locator('#patient-form button[type=submit]').click();
   check((await text('#patient-error')).includes('nombre ficticio'), 'Required patient fields validated');
   await page.locator('#patient-name').fill('Nombre de prueba');
@@ -256,9 +311,9 @@ try {
   check(await page.locator('#patient-results img').count() === 0, 'No HTML execution');
   await page.locator('#patient-search').fill('missing');
   check((await text('#patient-results')).includes('No se encontraron'), 'Patient empty state');
-  await page.getByRole('button',{name:'Registrar paciente',exact:true}).click();
+  await page.getByRole('button',{name:'Agregar Paciente',exact:true}).click();
   await page.keyboard.press('Escape');
-  check(await page.getByRole('button',{name:'Registrar paciente',exact:true}).evaluate(node=>node===document.activeElement), 'Patient Escape focus restoration');
+  check(await page.getByRole('button',{name:'Agregar Paciente',exact:true}).evaluate(node=>node===document.activeElement), 'Patient Escape focus restoration');
 
   await go('agenda');
   check(await rows('#agenda-results').count() === 3, 'Daily agenda');
@@ -523,13 +578,15 @@ try {
     await noProviderUI(flow);
   };
   await fg('agenda');
-  check(await flow.getByRole('button',{name:'Agendar cita',exact:true}).count()===1, 'T3 discoverable appointment creation');
+  check(await flow.getByRole('button',{name:'Agregar cita',exact:true}).count()===1, 'T3 discoverable appointment creation');
   await fg('patients');
-  await flow.getByRole('button',{name:'Registrar paciente',exact:true}).click();
+  await flow.getByRole('button',{name:'Agregar Paciente',exact:true}).click();
   await flow.locator('#patient-name').fill('Dalia Flujo demo');
   await flow.locator('#patient-document').fill('FLOW-001');
   await flow.locator('#patient-form button[type=submit]').click();
   await flow.locator('[data-chart="FLOW-001"]').click();
+  for(const kind of ['allergies','familyHistory','personalHistory']) check(await flow.locator(`#context-${kind}`).innerText()==='Sin registrar', `New patient has no seeded ${kind}`);
+  check(await flow.locator('[data-habits-summary]').innerText()==='Sin registrar', 'New patient habits remain empty');
   for(const [kind,values] of [['allergies',{substance:'Alergia Dalia',reaction:'Reacción ficticia'}],['familyHistory',{relation:'Hermana',condition:'Antecedente Dalia'}]]) {
     await flow.locator(`[data-context-add="${kind}"]`).click();
     for(const [key,value] of Object.entries(values)) await flow.locator(`#context-${key}`).fill(value);
@@ -561,7 +618,7 @@ try {
   }
   await fg('agenda');
   const appointmentBefore=await ft('#agenda-results');
-  await flow.getByRole('button',{name:'Agendar cita',exact:true}).click();
+  await flow.getByRole('button',{name:'Agregar cita',exact:true}).click();
   await flow.locator('#appointment-patient').selectOption('FLOW-001');
   await flow.locator('#appointment-physician').selectOption({label:'Dra. Flujo'});
   await flow.locator('#appointment-room').selectOption({label:'Sala flujo'});
@@ -580,22 +637,22 @@ try {
   await flow.locator('#appointment-patient').selectOption(''); await submitAppointment();
   check((await ft('#appointment-error')).includes('válidos') && await ft('#agenda-results')===appointmentBefore, 'Unknown/empty patient rejected without mutation');
   await flow.keyboard.press('Escape');
-  check(await flow.getByRole('button',{name:'Agendar cita',exact:true}).evaluate(node=>node===document.activeElement), 'Appointment Escape restores focus');
-  await flow.getByRole('button',{name:'Agendar cita',exact:true}).click();
+  check(await flow.getByRole('button',{name:'Agregar cita',exact:true}).evaluate(node=>node===document.activeElement), 'Appointment Escape restores focus');
+  await flow.getByRole('button',{name:'Agregar cita',exact:true}).click();
   await flow.locator('#appointment-reason').fill('Borrador descartado');
   await flow.locator('#appointment-dialog [data-close]').click();
   check(await ft('#agenda-results')===appointmentBefore, 'Appointment Cancel leaves records unchanged');
   await fg('catalogs'); await fcTab('rooms');
   await flow.locator('#catalog-results tbody tr').filter({hasText:'Sala flujo'}).getByRole('button',{name:'Editar',exact:true}).click();
   await flow.locator('#cat-active').uncheck(); await flow.locator('#catalog-form button[type=submit]').click();
-  await fg('agenda'); await flow.getByRole('button',{name:'Agendar cita',exact:true}).click();
+  await fg('agenda'); await flow.getByRole('button',{name:'Agregar cita',exact:true}).click();
   check(await flow.locator('#appointment-room option').filter({hasText:'Sala flujo'}).count()===0, 'Inactive room excluded from new appointment choices');
   await flow.keyboard.press('Escape');
   await fg('catalogs'); await fcTab('rooms');
   await flow.locator('#catalog-results tbody tr').filter({hasText:'Sala flujo'}).getByRole('button',{name:'Editar',exact:true}).click();
   await flow.locator('#cat-active').check(); await flow.locator('#catalog-form button[type=submit]').click();
   await fg('agenda');
-  await flow.getByRole('button',{name:'Agendar cita',exact:true}).click();
+  await flow.getByRole('button',{name:'Agregar cita',exact:true}).click();
   await flow.locator('#appointment-patient').selectOption('FLOW-001');
   await flow.locator('#appointment-physician').selectOption({label:'Dra. Flujo'});
   await flow.locator('#appointment-room').selectOption({label:'Sala flujo'});
@@ -611,7 +668,7 @@ try {
   const clinicalAppointmentBadge=()=>flow.locator(`#clinical-results .appointment:has([data-attend="${appointmentId}"]) .badge`);
   const validAgenda=await ft('#agenda-results');
   for(const doctor of ['Dra. Flujo','Dr. Alterno']) {
-    await flow.getByRole('button',{name:'Agendar cita',exact:true}).click();
+    await flow.getByRole('button',{name:'Agregar cita',exact:true}).click();
     await flow.locator('#appointment-patient').selectOption('FLOW-001');
     await flow.locator('#appointment-physician').selectOption({label:doctor});
     await flow.locator('#appointment-room').selectOption({label:'Sala flujo'});
@@ -631,6 +688,7 @@ try {
   const consultationId=await flow.locator('#consultation-record').getAttribute('data-consultation-id');
   check((await ft('#consultation-record')).includes('Dalia Flujo demo') && (await ft('#clinical-results')).includes('Alergia Dalia') && (await ft('#clinical-results')).includes('Antecedente Dalia'), 'Consultation routes to correct patient and history');
   check(await flow.locator('#consultation-diagnosis').inputValue()==='', 'No fabricated diagnosis');
+  await adding(flow,flow.locator('#request-study'),'Agregar Laboratorio / Imagen');
   check(await clinicalAppointmentBadge().innerText()==='En atención', 'Starting consultation marks linked appointment En atención');
   check(await flow.getByRole('heading',{name:'Citas y consultas',exact:true}).count()===1, 'Clinical heading includes all appointment lifecycle states');
   await flow.locator('#complete-consultation').click();
@@ -783,7 +841,7 @@ try {
     check(await flow.locator(dialog).evaluate(node=>node.scrollWidth<=node.clientWidth), `Mobile ${dialog} internal width`);
     await noOverflow(flow); await flow.keyboard.press('Escape');
   }
-  await fg('agenda'); await flow.getByRole('button',{name:'Agendar cita',exact:true}).click();
+  await fg('agenda'); await flow.getByRole('button',{name:'Agregar cita',exact:true}).click();
   await noOverflow(flow);
   await flow.locator('#appointment-form button[type=submit]').focus(); await flow.keyboard.press('Tab');
   check(await flow.locator('#appointment-patient').evaluate(node=>node===document.activeElement), 'Mobile appointment Tab wraps');
@@ -872,6 +930,8 @@ try {
   const modalityIds=new Map();
   for(const [route,mode,other] of [['laboratory','LABORATORIO','IMAGEN'],['imaging','IMAGEN','LABORATORIO']]) {
     await eg(route);
+    // Free fictional fixtures are removed via the public confirmation to retain empty/CRUD coverage.
+    await expanded.locator('[data-master-delete]').click(); await expanded.locator('#master-delete-confirm').click();
     check(await expanded.locator('#view [role="tab"]').count()===0, `No resource subtabs in ${mode}`);
     await expanded.locator('#catalog-add').click();
     await expanded.locator('#cat-name').fill(`Estudio ${mode}`); await expanded.locator('#cat-price').fill('12.34');
@@ -942,6 +1002,7 @@ try {
   check(await habits().innerText()==='Sin registrar', 'Clearing habits explicitly restores undocumented');
   await editHabits(habitText); await expanded.locator('#habits-form button[type=submit]').click();
   await eg('triage');
+  await expanded.locator('[data-master-delete="FIX-TRI"]').click(); await expanded.locator('#master-delete-confirm').click();
   check(await expanded.locator('#triage-patient').count()===0 && (await et('#catalog-results')).includes('Sin registrar'), 'Triage configuration empty state without patient controls');
   const triageCreate=async(name,description)=>{
     await expanded.locator('#catalog-add').click();
@@ -1003,6 +1064,7 @@ try {
   check((await et('#catalog-results')).includes('Sin registrar'), 'Triage confirmed delete restores empty state');
   for(const id of ['diseases','allergyCatalog']) {
     await eg(id);
+    await expanded.locator('[data-master-delete]').click(); await expanded.locator('#master-delete-confirm').click();
     check((await et('#view')).includes('no se aplican al paciente'), `Reference catalog distinguished: ${id}`);
     const create=async(name,description)=>{
       await expanded.locator('#catalog-add').click(); await expanded.locator('#cat-name').fill(name);
@@ -1047,7 +1109,10 @@ try {
   for(const id of Object.keys(resourceMenus)) {
     await eg(id); await noOverflow(expanded);
     {
+      await adding(expanded,expanded.locator('#catalog-add'),`Agregar ${id==='laboratory'?'Laboratorio':id==='imaging'?'Imagen':id==='physicians'?'Médicos':id==='specialties'?'Especialidades':id==='rooms'?'Consultorios':id==='diseases'?'Enfermedades':id==='allergyCatalog'?'Alergias':'Triage'}`);
       await expanded.locator('#catalog-add').click();
+      await iconButtons(expanded);
+      check(await expanded.locator('#catalog-form .dialog-actions').evaluate(node=>[...node.querySelectorAll('button')].every(button=>{const r=button.getBoundingClientRect(), d=node.closest('dialog').getBoundingClientRect(); return button.textContent.trim() && r.left>=d.left && r.right<=d.right && button.scrollWidth<=button.clientWidth;})), `Mobile text modal footer wraps without clipping: ${id}`);
       check(await expanded.locator('#catalog-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth), `Mobile narrow form: ${id}`);
       await expanded.locator('#catalog-form button[type=submit]').focus(); await expanded.keyboard.press('Tab');
       check(await expanded.locator('#cat-name').evaluate(node=>node===document.activeElement), `Mobile form keyboard wrap: ${id}`);
@@ -1148,7 +1213,7 @@ try {
   check(await createCounter('Contador B')===firstCounter+1, 'Rejected/abandoned saves and referenced deletion allocate no IDs');
   // Patient CRUD includes an empty stored context (the only permitted context cleanup).
   await mg('patients'); const directoryBefore=await mt('#patient-results');
-  await masters.getByRole('button',{name:'Registrar paciente',exact:true}).click();
+  await masters.getByRole('button',{name:'Agregar Paciente',exact:true}).click();
   await masters.locator('#patient-name').fill('Paciente libre'); await masters.locator('#patient-document').fill('FREE-001'); await masters.locator('#patient-form button[type=submit]').click();
   let patientRow=masters.locator('#patient-results tbody tr').filter({hasText:'FREE-001'});
   await detailMaster(patientRow,'Paciente libre','FREE-001');
@@ -1160,13 +1225,13 @@ try {
   await mg('patients'); await deleteFree(patientRow,'#patient-results','Paciente libre editado');
   check(await mt('#patient-results')===directoryBefore, 'Free patient CRUD restores original directory');
   // Context-only dependency blocks deletion even without appointments or orders.
-  await masters.getByRole('button',{name:'Registrar paciente',exact:true}).click(); await masters.locator('#patient-name').fill('Solo contexto'); await masters.locator('#patient-document').fill('CONTEXT-001'); await masters.locator('#patient-form button[type=submit]').click();
+  await masters.getByRole('button',{name:'Agregar Paciente',exact:true}).click(); await masters.locator('#patient-name').fill('Solo contexto'); await masters.locator('#patient-document').fill('CONTEXT-001'); await masters.locator('#patient-form button[type=submit]').click();
   await masters.locator('[data-chart="CONTEXT-001"]').click(); await masters.locator('[data-habits-edit]').click(); await masters.locator('#habits-text').fill('Hábito humano'); await masters.locator('#habits-form button[type=submit]').click();
   await mg('patients'); const contextDirectory=await mt('#patient-results'); await masters.locator('[data-master-delete="CONTEXT-001"]').click(); await masters.locator('#master-delete-confirm').click();
   check((await mt('#master-delete-error')).includes('contexto') && await mt('#patient-results')===contextDirectory, 'Context-only patient deletion is protected'); await masters.keyboard.press('Escape');
   await masters.locator('[data-chart="CONTEXT-001"]').click(); check((await mt('[data-habits-summary]'))==='Hábito humano', 'Blocked deletion retains patient habits');
   await mg('inventory'); const inventoryBefore=await mt('#inventory-results');
-  await masters.getByRole('button',{name:'Crear insumo',exact:true}).click();
+  await masters.getByRole('button',{name:'Agregar insumo',exact:true}).click();
   await masters.locator('#cat-name').fill('Insumo <demo>'); await masters.locator('#cat-code').fill('FREE-INS');
   for(const [key,value] of [['stock','-1'],['stock','1.5'],['min','-1'],['min','2.5']]) {
     await masters.locator('#cat-stock').fill('2'); await masters.locator('#cat-min').fill('3'); await masters.locator(`#cat-${key}`).fill(value); await submitMaster();
@@ -1210,7 +1275,7 @@ try {
   await masters.setViewportSize({width:390,height:844}); await noOverflow(masters);
   await iconButtons(masters);
   await masters.locator('.table-wrap').evaluate(node=>node.scrollLeft=node.scrollWidth);
-  await tooltip(masters,masters.locator('[data-master-delete]'),'Eliminar');
+  await tooltip(masters,masters.locator('[data-master-delete]').last(),'Eliminar');
   await noOverflow(masters);
   await masters.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
   // S17/S19/S20 independent public-UI acceptance; legacy journeys above still enter visibly.
@@ -1243,7 +1308,7 @@ try {
   await sg('expenses');
   check(await st('#page-title')==='Pagos' && (await st('#expense-results')).includes('Bs 250,00') && await session.locator('[data-expense-detail]').count()===1, 'Pagos has exactly one seeded outgoing fixture, separate from Cobros');
   const expenseOpen=async(concept='Gasto ficticio',amount='100',category='INSUMOS',note='')=>{
-    await session.getByRole('button',{name:'Registrar egreso',exact:true}).click();
+    await session.getByRole('button',{name:'Agregar egreso',exact:true}).click();
     await session.locator('#expense-concept').fill(concept); await session.locator('#expense-amount').fill(amount);
     if(category==='UNKNOWN') await session.locator('#expense-category').evaluate(node=>node.add(new Option('Desconocida','UNKNOWN')));
     await session.locator('#expense-category').selectOption(category); await session.locator('#expense-note').fill(note);
@@ -1261,13 +1326,13 @@ try {
     await noOverflow(session); await sg('expenses');
   }
   await expectTotals(baseline,250);
-  await tooltip(session,session.getByRole('button',{name:'Registrar egreso',exact:true}),'Registrar egreso');
+  await tooltip(session,session.getByRole('button',{name:'Agregar egreso',exact:true}),'Agregar egreso');
   await expenseOpen('<img onerror=throw(1)> Insumos','100','INSUMOS','Nota <b>literal</b>');
   check(await session.locator('#expense-date').inputValue()==='2026-05-18' && await session.locator('#expense-date').getAttribute('readonly')!==null, 'Expense date is visibly fixed and readonly');
   check(await session.locator('#expense-concept').getAttribute('maxlength')==='120' && await session.locator('#expense-note').getAttribute('maxlength')==='500', 'Concept and optional note have visible bounds');
   await iconButtons(session);
   await tooltip(session,session.locator('#expense-dialog [data-close]'),'Cancelar');
-  check(await session.getByRole('button',{name:'Registrar egreso',exact:true}).evaluate(node=>node===document.activeElement), 'Expense Escape restores initiating focus');
+  check(await session.getByRole('button',{name:'Agregar egreso',exact:true}).evaluate(node=>node===document.activeElement), 'Expense Escape restores initiating focus');
   await expenseOpen('<img onerror=throw(1)> Insumos','100','INSUMOS','Nota <b>literal</b>');
   await session.locator('#expense-form button[type=submit]').dblclick();
   check(await st('#announcement')==='Egreso simulado registrado. Solo en memoria; sin dinero real.' && !await session.locator('#expense-dialog').isVisible(), 'Posting has exact simulated status and closes dialog');
@@ -1287,7 +1352,7 @@ try {
     ['Gasto','10','OTROS','n'.repeat(501),'La nota admite hasta 500 caracteres.']
   ]) {
     // Remove only public field length constraints to exercise submit-time validation.
-    await session.getByRole('button',{name:'Registrar egreso',exact:true}).click();
+    await session.getByRole('button',{name:'Agregar egreso',exact:true}).click();
     await session.locator('#expense-concept,#expense-note').evaluateAll(nodes=>nodes.forEach(node=>node.removeAttribute('maxlength')));
     await session.locator('#expense-concept').fill(concept); await session.locator('#expense-amount').fill(amount);
     if(category==='UNKNOWN') await session.locator('#expense-category').evaluate(node=>node.add(new Option('Desconocida','UNKNOWN')));
@@ -1323,6 +1388,7 @@ try {
   await session.setViewportSize({width:390,height:844}); await noOverflow(session);
   await expenseOpen('Borrador móvil','20'); await iconButtons(session); await noOverflow(session);
   check(await session.locator('#expense-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth), 'Mobile expense dialog fits');
+  check(await session.locator('#expense-dialog .dialog-actions').evaluate(node=>[...node.querySelectorAll('button')].every(button=>{const r=button.getBoundingClientRect(), d=node.closest('dialog').getBoundingClientRect();return r.left>=d.left&&r.right<=d.right&&button.textContent.trim()===button.getAttribute('aria-label')&&button.scrollWidth<=button.clientWidth;})), 'Mobile financial footer retains readable text with no clipping');
   check(await session.locator('#expense-form button[type=submit]').evaluate(node=>{const r=node.getBoundingClientRect(),d=node.closest('dialog').getBoundingClientRect();return r.top>=d.top&&r.bottom<=d.bottom&&r.width>=44&&r.height>=44;}), 'Mobile expense confirmation remains visible with a touch-sized sticky action bar');
   await session.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true}); await session.keyboard.press('Escape');
   await session.setViewportSize({width:1440,height:1000});
@@ -1331,7 +1397,7 @@ try {
   await expenseOpen('Alto egreso','5000','OTROS'); await expenseSubmit();
   await expectTotals('Bs 700,00|Bs 6.400,25|Bs -5.700,25|Bs 1.400,00',6400.25);
   // Mutate each major state family, then logout must discard everything, including pending QR.
-  await sg('patients'); await session.getByRole('button',{name:'Registrar paciente',exact:true}).click();
+  await sg('patients'); await session.getByRole('button',{name:'Agregar Paciente',exact:true}).click();
   await session.locator('#patient-name').fill('Sesión ficticia'); await session.locator('#patient-document').fill('SESSION-001'); await session.locator('#patient-form button[type=submit]').click();
   await sg('laboratory'); await session.locator('#catalog-add').click(); await session.locator('#cat-name').fill('Laboratorio sesión'); await session.locator('#catalog-form button[type=submit]').click();
   await sg('settings'); await session.locator('#setting-clinic').fill('Clínica sesión');
@@ -1351,7 +1417,7 @@ try {
   check((await session.locator('.role h3').allTextContents()).join('|')==='Administrador|Recepcionista|Médico', 'Logout resets custom roles and preserves baseline administrator');
   await sg('expenses'); check(await session.locator('[data-expense-detail]').count()===1, 'Logout discards all posted expenses');
   await sg('patients'); check(!(await st('#patient-results')).includes('SESSION-001') && await session.locator('#patient-results tbody tr').count()===3, 'Logout discards patient creation');
-  await sg('laboratory'); check((await st('#catalog-results')).includes('Sin registrar'), 'Logout discards catalog changes');
+  await sg('laboratory'); check(!(await st('#catalog-results')).includes('Laboratorio sesión') && await session.locator('[data-catalog-edit="FIX-LAB"]').count()===1, 'Logout discards changes and restores the fictional catalog baseline');
   await sg('payments'); check(await session.locator('[data-receipt]').count()===0 && (await st('#order-results')).includes('Bs 800,00'), 'Logout discards cash payments and receipts');
   await session.locator('[data-qr="ORD-102"]').click(); check(await session.locator('#qr-intent-id').count()===0 && (await st('#qr-state')).includes('No hay un intento'), 'Logout discards pending QR without confirming it'); await session.keyboard.press('Escape');
   await session.setViewportSize({width:390,height:844});

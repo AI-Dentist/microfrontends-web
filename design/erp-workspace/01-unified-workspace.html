@@ -24,7 +24,12 @@ button:hover { background:#e2e8f0; }
 button.primary { background:var(--action); color:#ffffff; border-color:var(--action); padding:10px 20px; }
 button.primary:hover { background:#075985; border-color:#075985; }
 button:disabled { cursor:not-allowed; }
+button { min-height:44px; max-width:100%; }
 button.icon-action,button.primary.icon-action { min-width:44px; min-height:44px; padding:10px; }
+#page-actions { margin-left:auto; }
+.section-add-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+#panel-roles > .card-heading { margin-top:24px; }
+#catalog-add,#add-role,#add-slot,#request-study,[data-context-add] { margin-left:auto; flex-shrink:0; }
 .action-tooltip { position:fixed; inset:auto; margin:0; max-width:calc(100vw - 16px); padding:8px 12px; border:1px solid #334155; border-radius:6px; background:#0f172a; color:#ffffff; font-size:12px; pointer-events:none; overflow-wrap:anywhere; box-shadow:0 4px 6px -1px rgb(0 0 0 / .1); }
 :focus-visible { outline:3px solid var(--focus); outline-offset:3px; }
 input,select { border:1px solid #64748b; border-radius:10px; padding:10px 14px; background:#ffffff; color:var(--ink); min-width:0; width:100%; }
@@ -165,7 +170,8 @@ body.nav-collapsed .sidebar { display:none; }
  .header-start { gap:12px; }
  .header-end { display:none; }
  main { padding:20px 16px; }
- .page-heading { align-items:flex-start; flex-direction:column; }
+ .page-heading { align-items:flex-start; flex-wrap:wrap; }
+ #page-actions { margin-left:auto; }
  .kpis { gap:12px; }
  .kpis .card { padding:16px; }
  .kpi-value { font-size:20px; }
@@ -375,6 +381,7 @@ const iconPaths = {
  allergyCatalog:'M12 3C9 8 5 11 5 15a7 7 0 0 0 14 0c0-4-4-7-7-12M12 10v5M12 18h.01',
  triage:'M8 4H5v17h14V4h-3M8 3h8v4H8zM8 12h2M13 12h3M8 16h2M13 16h3',
  add:'M12 4v16M4 12h16', edit:'M4 16l12-12 4 4L8 20H4zM14 6l4 4',
+ record:'M5 3h10l4 4v14H5zM15 3v5h4M9 11h6M9 15h6M9 18h3',
  view:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6',
  delete:'M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7',
  save:'M4 3h13l4 4v14H3V3zM7 3v6h9V3M7 21v-8h10v8',
@@ -433,7 +440,12 @@ const state = {
   {id:'AV-2',physicianId:'PH-2',weekday:1,start:'08:00',end:'17:00',roomId:'RM-2'},
   {id:'AV-3',physicianId:'PH-2',weekday:2,start:'08:00',end:'17:00',roomId:'RM-2'}
  ],
- studyTypes:[], diseases:[], allergyCatalog:[], triage:[], patientContexts:[], nextId:10
+ // Clearly fictional, free catalog examples; IDs never consume the mutation counter.
+ studyTypes:[{id:'FIX-LAB',name:'Laboratorio de muestra · ficticio',mode:'LABORATORIO',priceCents:10000},{id:'FIX-IMG',name:'Imagen de muestra · ficticia',mode:'IMAGEN',priceCents:20000}],
+ diseases:[{id:'FIX-DIS',name:'Enfermedad de ejemplo ficticia',description:'Referencia educativa de demo; no se aplica a pacientes.'}],
+ allergyCatalog:[{id:'FIX-ALG',name:'Alergia de ejemplo ficticia',description:'Referencia de catálogo, no una alergia del paciente.'}],
+ triage:[{id:'FIX-TRI',name:'Clasificación de ejemplo ficticia',description:'Ejemplo configurable; no evalúa ni clasifica pacientes.'}],
+ patientContexts:[], nextId:10
 };
 // Preserve every inherited fixture while moving references to stable resource IDs.
 state.appointments.forEach((item,index) => {
@@ -448,6 +460,12 @@ state.orders.forEach(order=>{
  order.revision=0;
  order.priorPaidCents=order.paidCents;
  order.lines=[{kind:'FIXTURE',name:order.service,amountCents:order.totalCents}];
+});
+// Reuse the sole context allocator; only Celia has explicitly fictional history.
+Object.assign(storedPatientContext('DEMO-003'), {
+ allergies:[{id:'FIX-CX-A',substance:'Sustancia ficticia',reaction:'Reacción de ejemplo',severity:'Sin registrar'}],
+ familyHistory:[{id:'FIX-CX-F',relation:'Familiar ficticio',condition:'Antecedente de demostración'}],
+ personalHistory:[{id:'FIX-CX-P',notes:'Nota ficticia registrada por el equipo de demo.'}]
 });
 const resourceName = (collection,id) => state[collection].find(item=>item.id===id)?.name || 'Sin registrar';
 const weekdayNames=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -775,9 +793,8 @@ function renderCatalogs() {
  const records=state[catalogKind].filter(item=>!mode || item.mode===mode);
  const reference=['diseases','allergyCatalog'].includes(catalogKind);
  $('#view').innerHTML=`<section class="card">
-  <h2>${catalogLabel(catalogKind)}${mode?` · ${mode}`:''}</h2>
+  <div class="card-heading"><h2>${catalogLabel(catalogKind)}${mode?` · ${mode}`:''}</h2><button type="button" id="catalog-add" class="primary">Agregar ${catalogLabel(catalogKind)}</button></div>
   ${reference?'<p class="help">Referencias ficticias de la clínica: no se aplican al paciente ni modifican sus alergias o antecedentes. Sin códigos médicos ni diagnósticos inferidos.</p>':''}
-  <button type="button" id="catalog-add" class="primary">${mode?'Crear '+catalogLabel(catalogKind):'Crear · '+catalogLabel(catalogKind)}</button>
   <div id="catalog-results" style="margin-top:24px">
    <div class="table-wrap" tabindex="0" role="region" aria-label="Registros de catálogo"><table>
     <caption>${records.length} registros ficticios · ${catalogLabel(catalogKind)}</caption>
@@ -814,7 +831,7 @@ function openCatalog(id,trigger) {
   markup+=field('cat-document','Documento de demo (opcional, único)',item.document)+
    `<fieldset><legend>Especialidades (al menos una)</legend>${state.specialties.map(specialty=>`<label class="check"><input type="checkbox" name="specialty" value="${specialty.id}" ${item.specialtyIds?.includes(specialty.id)?'checked':''}>${escapeText(specialty.name)}</label>`).join('') || '<p>Crea primero una especialidad.</p>'}</fieldset>`;
   const slots=state.availability.filter(slot=>slot.physicianId===id);
-  markup+=`<div id="availability-slots" class="form-section">${(slots.length?slots:[undefined]).map(slot=>slotMarkup(slot)).join('')}</div><button type="button" id="add-slot">Añadir horario</button>`;
+  markup+=`<div class="card-heading"><h3>Disponibilidad</h3><button type="button" id="add-slot">Agregar horario</button></div><div id="availability-slots" class="form-section">${(slots.length?slots:[undefined]).map(slot=>slotMarkup(slot)).join('')}</div>`;
  } else if(kind==='diseases' || kind==='allergyCatalog' || kind==='triage') {
   markup+=field('cat-description',kind==='triage'?'Descripción requerida':'Descripción (opcional)',item.description);
  } else if(kind==='rooms') {
@@ -1049,8 +1066,8 @@ function renderConsultation() {
     <fieldset><legend>Procedimientos / tarifas de demo</legend>${state.procedures.map(procedure=>`<label class="check"><input type="checkbox" name="procedure" value="${procedure.id}" ${consultation.procedureIds.includes(procedure.id)?'checked':''}>${escapeText(procedure.name)} · ${money(procedure.priceCents)}</label>`).join('')}</fieldset>
     <p id="consultation-error" class="error" role="alert"></p>
     <div class="workflow-actions"><button type="submit" id="save-consultation">Guardar progreso</button><button type="button" class="primary" id="complete-consultation">Completar consulta demo</button></div>
-   </form><button type="button" id="request-study">Solicitar laboratorio / imagen</button>`}
-  <h3 style="margin-top:24px">Estudios de esta consulta</h3><div id="consultation-studies"></div>
+   </form>`}
+  <div class="card-heading" style="margin-top:24px"><h3>Estudios de esta consulta</h3>${closed?'':'<button type="button" id="request-study">Agregar Laboratorio / Imagen</button>'}</div><div id="consultation-studies"></div>
  </section>`;
  renderStudies();
  if(closed) {
@@ -1243,7 +1260,7 @@ function renderSettings() {
  <section id="panel-clinic" role="tabpanel" aria-labelledby="tab-clinic"><div class="form-grid"><label>Nombre de la clínica<input id="setting-clinic" maxlength="80" required value="${escapeText(state.clinic)}"></label><label>Contacto ficticio<input id="setting-contact" maxlength="100" value="${escapeText(state.contact)}"></label></div><p class="help" style="margin-top:16px">Identidad sintética: no introduzcas datos de una clínica real.</p></section>
  <section id="panel-appearance" role="tabpanel" aria-labelledby="tab-appearance" hidden><div class="form-grid"><label>Color de acción<select id="setting-brand"><option value="#0369a1" ${state.brand==='#0369a1'?'selected':''}>Azul clínico · #0369a1</option><option value="#0f766e" ${state.brand==='#0f766e'?'selected':''}>Verde azulado · #0f766e</option></select></label><label>Densidad<select id="setting-density"><option value="comfortable" ${state.density==='comfortable'?'selected':''}>Cómoda</option><option value="compact" ${state.density==='compact'?'selected':''}>Compacta</option></select></label></div><p class="help" style="margin-top:16px">Tema claro. Solo colores de acción validados del sistema.</p></section>
  <section id="panel-navigation" role="tabpanel" aria-labelledby="tab-navigation" hidden><p class="help">Muestra, oculta y ordena las secciones de demo. Configuración siempre queda disponible.</p><div id="nav-settings">${state.menu.map(navSetting).join('')}</div></section>
- <section id="panel-roles" role="tabpanel" aria-labelledby="tab-roles" hidden><p class="help" style="margin-bottom:16px">Simulación visual de permisos. La autenticación y autorización reales de backend no están implementadas. Los permisos no bloquean esta demo; Configuración siempre es accesible. Pacientes son registros de negocio, no roles.</p><div class="form-section" id="role-list">${state.roles.map(roleMarkup).join('')}</div><div class="filters" style="margin-top:24px"><label>Nuevo rol local<input id="new-role" maxlength="40" placeholder="Ej. Coordinación"></label><button type="button" id="add-role">Añadir rol local</button></div><p id="role-error" class="error" role="alert"></p></section>
+ <section id="panel-roles" role="tabpanel" aria-labelledby="tab-roles" hidden><p class="help" style="margin-bottom:16px">Simulación visual de permisos. La autenticación y autorización reales de backend no están implementadas. Los permisos no bloquean esta demo; Configuración siempre es accesible. Pacientes son registros de negocio, no roles.</p><div class="form-section" id="role-list">${state.roles.map(roleMarkup).join('')}</div><div class="card-heading"><label>Nuevo rol local<input id="new-role" maxlength="40" placeholder="Ej. Coordinación"></label><button type="button" id="add-role">Agregar rol local</button></div><p id="role-error" class="error" role="alert"></p></section>
  <p id="settings-error" class="error" role="alert"></p><div class="settings-save"><button class="primary" type="submit">Guardar cambios de demo</button><p class="help">Solo en memoria; se pierde al recargar</p></div></form></section>`;
  const selectTab=id=>{ $$('[role=tab]').forEach(tab=>{const active=tab.dataset.tab===id; tab.setAttribute('aria-selected',String(active)); tab.tabIndex=active?0:-1;}); $$('[role=tabpanel]').forEach(panel=>panel.hidden=panel.id!==`panel-${id}`); };
  $$('[role=tab]').forEach(tab=>{
@@ -1333,6 +1350,7 @@ matchMedia('(max-width:760px)').addEventListener('change',()=>{document.body.cla
 // One presentation adapter covers both static dialogs and dynamically rendered controls.
 // Business handlers, button types, tab semantics and focusable nodes stay untouched.
 function actionIcon(button,label) {
+ if(button.hasAttribute('data-chart')) return 'record';
  if(button.dataset.move) return button.dataset.move;
  if(button.id==='menu-toggle') return 'menu';
  if(button.id==='login-enter') return 'login';
@@ -1356,16 +1374,39 @@ function actionIcon(button,label) {
  throw new Error(`Acción sin icono semántico: ${label}`);
 }
 iconPaths.menu='M4 6h16M4 12h16M4 18h16';
+// Explicit presentation exceptions; all other actions retain semantic icons/tooltips.
+function actionPresentation(button,label) {
+ const moduleAdds={patients:'Paciente',agenda:'cita',inventory:'insumo',expenses:'egreso'};
+ let addLabel=null;
+ if(button.id==='catalog-add') addLabel=`Agregar ${catalogLabel(catalogKind)}`;
+ else if(button.closest('#page-actions') && moduleAdds[state.page]) addLabel=`Agregar ${moduleAdds[state.page]}`;
+ else if(button.hasAttribute('data-context-add')) addLabel=`Agregar ${contextLabels[button.dataset.contextAdd]}`;
+ else if(button.id==='add-role') addLabel='Agregar rol local';
+ else if(button.id==='add-slot') addLabel='Agregar horario';
+ else if(button.id==='request-study') addLabel='Agregar Laboratorio / Imagen';
+ if(addLabel) return {label:addLabel,text:button.id==='add-slot'?'Agregar horario +':'Agregar +'};
+ if(button.closest('dialog') || button.dataset.tab || button.closest('.settings-save')) return {label,text:label};
+ return {label,text:null};
+}
 function decorateActions() {
  $$('button').forEach(button=>{
   if(button.closest('#navigation')) return;
   const text=button.textContent.trim();
-  const label=text && !button.dataset.move ? text : button.getAttribute('aria-label');
-  if(!label) return;
-  if(button.getAttribute('aria-label')!==label) button.setAttribute('aria-label',label);
-  const key=actionIcon(button,label);
-  if(button.dataset.actionIcon!==key || text) {
-   button.innerHTML=icon(key); button.dataset.actionIcon=key; button.classList.add('icon-action');
+  const original=text && text!==button.dataset.presentationText && !button.dataset.move ? text : button.getAttribute('aria-label');
+  if(!original) return;
+  const presentation=actionPresentation(button,original);
+  if(button.getAttribute('aria-label')!==presentation.label) button.setAttribute('aria-label',presentation.label);
+  if(presentation.text!==null) {
+   if(text!==presentation.text) button.textContent=presentation.text;
+   button.dataset.presentationText=presentation.text;
+   button.classList.remove('icon-action');
+   delete button.dataset.actionIcon;
+  } else {
+   const key=actionIcon(button,presentation.label);
+   if(button.dataset.actionIcon!==key || text) {
+    button.innerHTML=icon(key); button.dataset.actionIcon=key; button.classList.add('icon-action');
+   }
+   delete button.dataset.presentationText;
   }
  });
 }
