@@ -103,6 +103,7 @@ try {
   check(!await page.locator('#payment-dialog').isVisible(), 'Payment confirmed');
   check((await text('#order-results')).includes('Bs 600,00'), 'Payment reduces balance');
   check(await text('#announcement') === 'Cobro simulado; no se envió al backend', 'Exact simulated-payment status');
+  check(await page.locator('#order-results [data-receipt]').count()===1, 'Inherited cash flow now issues a receipt without changing previous outcomes');
   await go('overview');
   check((await snapshotKPIs()).join('|') === 'Bs 900,00|Bs 250,00|Bs 650,00|Bs 1.200,00', 'Payment updates income, net and pending, no rejected-payment effects');
   await go('payments');
@@ -393,6 +394,307 @@ try {
   check(!(await text('#catalog-results')).includes('Dra. Este editada'), 'Reload resets created catalogs');
   await go('clinical'); await page.locator('#clinical-patient').selectOption('DEMO-002');
   check((await clinicalList('familyHistory').innerText()).includes('Sin registrar'), 'Reload resets clinical context');
+  // T3 acceptance starts with independent fixtures, not the earlier mutation scenario.
+  const flow = await openPage({width:1440,height:1000});
+  const ft = selector => flow.locator(selector).innerText();
+  const fg = async id => {
+    if(await flow.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await flow.locator('#menu-toggle').click();
+    await flow.locator(`#navigation [data-page="${id}"]`).click();
+  };
+  await fg('agenda');
+  check(await flow.getByRole('button',{name:'Agendar cita',exact:true}).count()===1, 'T3 discoverable appointment creation');
+  await fg('patients');
+  await flow.getByRole('button',{name:'Registrar paciente',exact:true}).click();
+  await flow.locator('#patient-name').fill('Dalia Flujo demo');
+  await flow.locator('#patient-document').fill('FLOW-001');
+  await flow.locator('#patient-form button[type=submit]').click();
+  await flow.locator('[data-chart="FLOW-001"]').click();
+  for(const [kind,values] of [['allergies',{substance:'Alergia Dalia',reaction:'Reacción ficticia'}],['familyHistory',{relation:'Hermana',condition:'Antecedente Dalia'}]]) {
+    await flow.locator(`[data-context-add="${kind}"]`).click();
+    for(const [key,value] of Object.entries(values)) await flow.locator(`#context-${key}`).fill(value);
+    await flow.locator('#context-form button[type=submit]').click();
+  }
+  await fg('catalogs');
+  const fcTab = kind => flow.locator(`[data-catalog-tab="${kind}"]`).click();
+  async function fcCreate(kind,values,configure=async()=>{}) {
+    await fcTab(kind); await flow.locator('#catalog-add').click();
+    for(const [key,value] of Object.entries(values)) await flow.locator(`#cat-${key}`).fill(value);
+    await configure(); await flow.locator('#catalog-form button[type=submit]').click();
+    check(!await flow.locator('#catalog-dialog').isVisible(), `Flow catalog created: ${kind}`);
+  }
+  await fcCreate('specialties',{name:'Especialidad flujo'});
+  await fcCreate('rooms',{name:'Sala flujo',location:'Ala demo'});
+  await fcCreate('physicians',{name:'Dra. Flujo',document:'MED-FLOW'},async()=>{
+    await flow.getByLabel('Especialidad flujo',{exact:true}).check();
+    await flow.locator('.slot-room').selectOption({label:'Sala flujo'});
+  });
+  // A second doctor shares the room to exercise room conflict independently.
+  await fcCreate('physicians',{name:'Dr. Alterno'},async()=>{
+    await flow.getByLabel('Especialidad flujo',{exact:true}).check();
+    await flow.locator('.slot-room').selectOption({label:'Sala flujo'});
+  });
+  for(const [mode,provider,study,price] of [['LABORATORIO','Lab flujo','Estudio lab flujo','100.10'],['IMAGEN','Imagen flujo','Estudio imagen flujo','200.20']]) {
+    await fcCreate('providers',{name:provider},()=>flow.locator('#cat-mode').selectOption(mode));
+    await fcCreate('studyTypes',{name:study,price},async()=>{
+      await flow.locator('#cat-mode').selectOption(mode);
+      await flow.locator('#cat-provider').selectOption({label:provider});
+    });
+  }
+  await fg('agenda');
+  const appointmentBefore=await ft('#agenda-results');
+  await flow.getByRole('button',{name:'Agendar cita',exact:true}).click();
+  await flow.locator('#appointment-patient').selectOption('FLOW-001');
+  await flow.locator('#appointment-physician').selectOption({label:'Dra. Flujo'});
+  await flow.locator('#appointment-room').selectOption({label:'Sala flujo'});
+  await flow.locator('#appointment-reason').fill('Motivo humano ficticio');
+  const submitAppointment=()=>flow.locator('#appointment-form button[type=submit]').click();
+  for(const [date,time,duration,error] of [
+    ['2026-05-19','09:00','30','disponibilidad'],
+    ['2026-05-18','07:30','30','disponibilidad'],
+    ['2026-05-18','11:45','30','disponibilidad'],
+    ['2026-05-18','09:00','0','duración']
+  ]) {
+    await flow.locator('#appointment-date').fill(date); await flow.locator('#appointment-time').fill(time);
+    await flow.locator('#appointment-duration').fill(duration); await submitAppointment();
+    check((await ft('#appointment-error')).includes(error) && await ft('#agenda-results')===appointmentBefore, `Reject appointment ${date}/${time}/${duration} without list mutation`);
+  }
+  await flow.locator('#appointment-patient').selectOption(''); await submitAppointment();
+  check((await ft('#appointment-error')).includes('válidos') && await ft('#agenda-results')===appointmentBefore, 'Unknown/empty patient rejected without mutation');
+  await flow.keyboard.press('Escape');
+  check(await flow.getByRole('button',{name:'Agendar cita',exact:true}).evaluate(node=>node===document.activeElement), 'Appointment Escape restores focus');
+  await flow.getByRole('button',{name:'Agendar cita',exact:true}).click();
+  await flow.locator('#appointment-reason').fill('Borrador descartado');
+  await flow.locator('#appointment-dialog [data-close]').click();
+  check(await ft('#agenda-results')===appointmentBefore, 'Appointment Cancel leaves records unchanged');
+  await fg('catalogs'); await fcTab('rooms');
+  await flow.locator('#catalog-results tbody tr').filter({hasText:'Sala flujo'}).getByRole('button',{name:'Editar',exact:true}).click();
+  await flow.locator('#cat-active').uncheck(); await flow.locator('#catalog-form button[type=submit]').click();
+  await fg('agenda'); await flow.getByRole('button',{name:'Agendar cita',exact:true}).click();
+  check(await flow.locator('#appointment-room option').filter({hasText:'Sala flujo'}).count()===0, 'Inactive room excluded from new appointment choices');
+  await flow.keyboard.press('Escape');
+  await fg('catalogs'); await fcTab('rooms');
+  await flow.locator('#catalog-results tbody tr').filter({hasText:'Sala flujo'}).getByRole('button',{name:'Editar',exact:true}).click();
+  await flow.locator('#cat-active').check(); await flow.locator('#catalog-form button[type=submit]').click();
+  await fg('agenda');
+  await flow.getByRole('button',{name:'Agendar cita',exact:true}).click();
+  await flow.locator('#appointment-patient').selectOption('FLOW-001');
+  await flow.locator('#appointment-physician').selectOption({label:'Dra. Flujo'});
+  await flow.locator('#appointment-room').selectOption({label:'Sala flujo'});
+  await flow.locator('#appointment-date').fill('2026-05-18');
+  await flow.locator('#appointment-time').fill('09:00');
+  await flow.locator('#appointment-reason').fill('Motivo humano ficticio');
+  await submitAppointment();
+  check(!await flow.locator('#appointment-dialog').isVisible(), 'Valid appointment using all newly created resources');
+  const appointmentRow=flow.locator('#agenda-results tbody tr').filter({hasText:'Dalia Flujo demo'});
+  const appointmentId=await appointmentRow.locator('[data-attend]').getAttribute('data-attend');
+  check((await appointmentRow.innerText()).includes('Dra. Flujo') && (await appointmentRow.innerText()).includes('Sala flujo'), 'Appointment context rendered via IDs');
+  check(await appointmentRow.locator('.badge').innerText()==='Programada', 'New appointment starts Programada');
+  const clinicalAppointmentBadge=()=>flow.locator(`#clinical-results .appointment:has([data-attend="${appointmentId}"]) .badge`);
+  const validAgenda=await ft('#agenda-results');
+  for(const doctor of ['Dra. Flujo','Dr. Alterno']) {
+    await flow.getByRole('button',{name:'Agendar cita',exact:true}).click();
+    await flow.locator('#appointment-patient').selectOption('FLOW-001');
+    await flow.locator('#appointment-physician').selectOption({label:doctor});
+    await flow.locator('#appointment-room').selectOption({label:'Sala flujo'});
+    await flow.locator('#appointment-time').fill('09:15'); await flow.locator('#appointment-reason').fill('Conflicto');
+    await submitAppointment();
+    check((await ft('#appointment-error')).includes('ocupado') && await ft('#agenda-results')===validAgenda, `Reject ${doctor} physician/room conflict without mutation`);
+    await flow.keyboard.press('Escape');
+  }
+  await fg('catalogs'); await fcTab('physicians');
+  await flow.locator('#catalog-results tbody tr').filter({hasText:'Dra. Flujo'}).getByRole('button',{name:'Editar',exact:true}).click();
+  await flow.locator('#cat-name').fill('Dra. Flujo renombrada'); await flow.locator('#catalog-form button[type=submit]').click();
+  await fcTab('rooms'); await flow.locator('#catalog-results tbody tr').filter({hasText:'Sala flujo'}).getByRole('button',{name:'Editar',exact:true}).click();
+  await flow.locator('#cat-name').fill('Sala renombrada'); await flow.locator('#catalog-form button[type=submit]').click();
+  await fg('agenda');
+  check((await ft('#agenda-results')).includes('Dra. Flujo renombrada') && (await ft('#agenda-results')).includes('Sala renombrada'), 'Catalog edits update appointment labels through stable references');
+  await flow.locator(`[data-attend="${appointmentId}"]`).click();
+  const consultationId=await flow.locator('#consultation-record').getAttribute('data-consultation-id');
+  check((await ft('#consultation-record')).includes('Dalia Flujo demo') && (await ft('#clinical-results')).includes('Alergia Dalia') && (await ft('#clinical-results')).includes('Antecedente Dalia'), 'Consultation routes to correct patient and history');
+  check(await flow.locator('#consultation-diagnosis').inputValue()==='', 'No fabricated diagnosis');
+  check(await clinicalAppointmentBadge().innerText()==='En atención', 'Starting consultation marks linked appointment En atención');
+  check(await flow.getByRole('heading',{name:'Citas y consultas',exact:true}).count()===1, 'Clinical heading includes all appointment lifecycle states');
+  await flow.locator('#complete-consultation').click();
+  check((await ft('#consultation-error')).includes('Completa') && (await ft('#consultation-status'))==='EN_CURSO', 'Incomplete consultation rejected');
+  check(await clinicalAppointmentBadge().innerText()==='En atención', 'Invalid completion leaves linked appointment En atención');
+  for(const [field,value] of Object.entries({reason:'Motivo documentado',anamnesis:'Anamnesis ficticia',exploration:'Exploración ficticia',diagnosis:'Texto humano ficticio <sin IA>'})) await flow.locator(`#consultation-${field}`).fill(value);
+  await flow.locator('#complete-consultation').click();
+  check((await ft('#consultation-error')).includes('facturable'), 'Completion requires billables');
+  check(await clinicalAppointmentBadge().innerText()==='En atención', 'Missing billables do not mark appointment attended');
+  await flow.locator('input[name=procedure]').first().check();
+  await flow.locator('#save-consultation').click();
+  await fg('agenda');
+  await flow.locator('#agenda-status').selectOption('in_progress');
+  check(await flow.locator('#agenda-results tbody tr').count()===1 && await flow.locator(`#agenda-results [data-attend="${appointmentId}"]`).count()===1 && await appointmentRow.locator('.badge').innerText()==='En atención', 'Agenda En atención filter selects the linked started appointment');
+  await flow.locator('#agenda-status').selectOption('scheduled');
+  check(!await flow.locator(`#agenda-results [data-attend="${appointmentId}"]`).count(), 'Started appointment no longer appears as Programada');
+  await flow.locator('#agenda-status').selectOption('in_progress');
+  await flow.locator(`[data-attend="${appointmentId}"]`).click();
+  check(await flow.locator('#consultation-record').getAttribute('data-consultation-id')===consultationId && await flow.locator('#consultation-diagnosis').inputValue()==='Texto humano ficticio <sin IA>', 'Continue uses one consultation and saved human text');
+  await flow.locator('#request-study').click();
+  const noStudies=await ft('#consultation-studies');
+  await flow.locator('#study-form button[type=submit]').click();
+  check((await ft('#study-error')).includes('compatible') && await ft('#consultation-studies')===noStudies, 'Unknown study/provider rejected without request mutation');
+  await flow.keyboard.press('Escape');
+  for(const study of ['Estudio lab flujo','Estudio imagen flujo']) {
+    await flow.locator('#request-study').click();
+    await flow.locator('#study-type').selectOption({label:study});
+    const compatible=await flow.locator('#study-provider option').allTextContents();
+    check(compatible.join('|')===(study.includes('lab')?'Lab flujo':'Imagen flujo'), 'Request provider choices match lab/image modality');
+    await flow.locator('#study-form button[type=submit]').click();
+    check((await ft('#consultation-studies')).includes(study) && (await ft('#consultation-studies')).includes('PENDIENTE'), `Request ${study}`);
+    const studyRow=flow.locator('[data-study-row]').filter({hasText:study});
+    await studyRow.getByRole('button',{name:'Registrar resultado',exact:true}).click();
+    await flow.locator('#result-form button[type=submit]').click();
+    check((await ft('#result-error')).includes('resultado') && (await studyRow.innerText()).includes('PENDIENTE'), 'Empty result rejected without study mutation');
+    await flow.locator('#result-text').fill(`Resultado humano: ${study}`);
+    await flow.locator('#result-reference').fill('REF-DEMO');
+    await flow.locator('#result-form button[type=submit]').click();
+    check((await studyRow.innerText()).includes('COMPLETADO') && (await studyRow.innerText()).includes(`Resultado humano: ${study}`), `Record ${study} result`);
+    const completedStudies=await ft('#consultation-studies');
+    await flow.locator('#request-study').click(); await flow.locator('#study-type').selectOption({label:study});
+    await flow.locator('#study-form button[type=submit]').click();
+    check((await ft('#study-error')).includes('ya está solicitado') && await ft('#consultation-studies')===completedStudies, 'Duplicate study rejects without changes');
+    await flow.keyboard.press('Escape');
+  }
+  await fg('clinical');
+  await flow.locator('#clinical-patient').selectOption('DEMO-001');
+  check(!await flow.locator('#consultation-record').count() && !(await ft('#clinical-results')).includes('Resultado humano'), 'Consultation/results remain patient-specific');
+  await fg('agenda'); await flow.locator(`[data-attend="${appointmentId}"]`).click();
+  check((await ft('#consultation-studies')).includes('REF-DEMO'), 'Study findings persist on return');
+  await flow.locator('#complete-consultation').click();
+  check(await ft('#consultation-status')==='CERRADA' && !await flow.locator('#consultation-form').count(), 'Completed consultation read-only');
+  check(await clinicalAppointmentBadge().innerText()==='Atendida', 'Successful completion marks clinical appointment Atendida');
+  await fg('agenda'); await flow.locator('#agenda-status').selectOption('attended');
+  check(await flow.locator('#agenda-results tbody tr').count()===1 && await flow.locator(`#agenda-results [data-attend="${appointmentId}"]`).count()===1 && await appointmentRow.locator('.badge').innerText()==='Atendida', 'Agenda Atendida filter selects the linked completed appointment');
+  await flow.locator('#agenda-status').selectOption('in_progress');
+  check(!await flow.locator(`#agenda-results [data-attend="${appointmentId}"]`).count(), 'Completed appointment no longer appears En atención');
+  await flow.locator('#agenda-status').selectOption('attended');
+  await flow.locator(`[data-attend="${appointmentId}"]`).click();
+  check(await clinicalAppointmentBadge().innerText()==='Atendida', 'Reopening closed consultation cannot regress appointment state');
+  const issuedOrder=await flow.locator('#consultation-order').getAttribute('data-order-id');
+  await flow.locator('#consultation-order').click();
+  const flowOrder=()=>flow.locator('#order-results tbody tr').filter({hasText:issuedOrder});
+  check((await flowOrder().innerText()).includes('Bs 600,30'), 'Procedure 300 + lab100.10 + image200.20 exact order sum');
+  await flowOrder().locator('[data-order-detail]').click();
+  const immutableLines=await ft('#order-detail-lines');
+  check(immutableLines.includes('Estudio lab flujo') && immutableLines.includes('Estudio imagen flujo') && immutableLines.includes('Bs 300,00'), 'Explicit order price/name snapshots');
+  await flow.keyboard.press('Escape');
+  await fg('overview');
+  check((await flow.locator('[data-kpi]').allTextContents()).join('|')==='Bs 700,00|Bs 250,00|Bs 450,00|Bs 2.000,30', 'Order increases pending, not income');
+  await flow.screenshot({path:fileURLToPath(new URL('desktop.png',import.meta.url)),fullPage:true});
+  await fg('catalogs'); await fcTab('studyTypes');
+  await flow.locator('#catalog-results tbody tr').filter({hasText:'Estudio lab flujo'}).getByRole('button',{name:'Editar',exact:true}).click();
+  await flow.locator('#cat-name').fill('Estudio lab renombrado'); await flow.locator('#cat-price').fill('999');
+  await flow.locator('#catalog-form button[type=submit]').click();
+  await fg('payments'); await flowOrder().locator('[data-order-detail]').click();
+  check(await ft('#order-detail-lines')===immutableLines, 'Historic order unchanged after catalog edits'); await flow.keyboard.press('Escape');
+  async function openQr() { await flowOrder().locator('[data-qr]').click(); }
+  async function generateQr(amount) {
+    await flow.locator('#qr-amount').fill(amount); await flow.locator('#qr-form button[type=submit]').click();
+  }
+  async function paymentSnapshot() { return {row:await flowOrder().innerText(),receipts:await flowOrder().locator('[data-receipt]').count()}; }
+  await openQr();
+  for(const amount of ['0','-1','600.31','1.001']) {
+    await generateQr(amount);
+    check((await ft('#qr-error')).includes('importe positivo') && !await flow.locator('#qr-intent-id').count(), `Reject QR ${amount} with no intent`);
+  }
+  await generateQr('100.10');
+  check((await ft('#qr-state')).includes('PENDIENTE') && (await ft('#qr-state')).includes('QR de demostración · NO PAGABLE') && (await ft('#qr-state')).includes('Bs 100,10'), 'QR pending amount and explicit non-payable art');
+  let paymentBefore=await paymentSnapshot();
+  await flow.locator('#expire-qr').click();
+  check((await ft('#qr-state')).includes('VENCIDO') && JSON.stringify(await paymentSnapshot())===JSON.stringify(paymentBefore), 'QR expiry never settles money or receipt');
+  await flow.locator('#confirm-qr').click();
+  check((await ft('#qr-error')).includes('terminal') && JSON.stringify(await paymentSnapshot())===JSON.stringify(paymentBefore), 'Expired intent cannot be confirmed');
+  await generateQr('100.10'); await flow.locator('#cancel-qr').click();
+  check((await ft('#qr-state')).includes('CANCELADO') && JSON.stringify(await paymentSnapshot())===JSON.stringify(paymentBefore), 'QR cancellation never settles money or receipt');
+  await flow.locator('#confirm-qr').click();
+  check((await ft('#qr-error')).includes('terminal') && JSON.stringify(await paymentSnapshot())===JSON.stringify(paymentBefore), 'Canceled intent cannot be confirmed');
+  await generateQr('100.10');
+  await flow.locator('#confirm-qr').click();
+  check((await ft('#qr-state')).includes('CONFIRMADO') && (await flowOrder().innerText()).includes('Bs 500,20'), 'Partial QR confirms explicitly');
+  check(await flowOrder().locator('[data-receipt]').count()===1, 'QR creates exactly one receipt');
+  paymentBefore=await paymentSnapshot();
+  await flow.locator('#confirm-qr').click(); await flow.locator('#confirm-qr').focus(); await flow.keyboard.press('Enter');
+  check(JSON.stringify(await paymentSnapshot())===JSON.stringify(paymentBefore), 'Repeated click/Enter QR confirmation is idempotent');
+  await flow.keyboard.press('Escape'); await openQr(); await flow.locator('#confirm-qr').click();
+  check(JSON.stringify(await paymentSnapshot())===JSON.stringify(paymentBefore), 'Reopened terminal QR is idempotent');
+  await flow.keyboard.press('Escape');
+  await flowOrder().locator('[data-receipt]').click();
+  const qrReceipt=await ft('#receipt-content');
+  check(qrReceipt.includes('Sin validez fiscal · DEMO') && qrReceipt.includes('Dalia Flujo demo') && qrReceipt.includes('QR') && qrReceipt.includes('Bs 100,10') && qrReceipt.includes('Bs 500,20') && qrReceipt.includes('Clínica Dental Andina') && qrReceipt.includes('2026-05-18'), 'QR demo receipt contains patient, clinic, method, date, payment and remaining');
+  await flow.keyboard.press('Escape');
+  await openQr(); await generateQr('100');
+  const staleId=await ft('#qr-intent-id');
+  await flow.keyboard.press('Escape');
+  await flowOrder().locator('[data-pay]').click(); await flow.locator('#payment-amount').fill('200.10');
+  await flow.locator('#payment-form button[type=submit]').click();
+  check(await flowOrder().locator('[data-receipt]').count()===2 && (await flowOrder().innerText()).includes('Bs 300,10'), 'Cash uses shared cent ledger and issues its own receipt');
+  paymentBefore=await paymentSnapshot();
+  await openQr(); check(await ft('#qr-intent-id')===staleId, 'Pending intent can be reopened after cash');
+  await flow.locator('#confirm-qr').click();
+  check((await ft('#qr-error')).includes('obsoleto') && JSON.stringify(await paymentSnapshot())===JSON.stringify(paymentBefore), 'Stale QR revision rejects without money/receipt mutation');
+  await flow.keyboard.press('Escape');
+  await flowOrder().locator('[data-pay]').click(); await flow.locator('#payment-amount').fill('300.10'); await flow.locator('#payment-form button[type=submit]').click();
+  check((await flowOrder().innerText()).includes('Pagado') && !await flowOrder().locator('[data-pay]').count() && await flowOrder().locator('[data-receipt]').count()===3, 'Final cash fully pays with three unique receipts');
+  const receiptIds=await flowOrder().locator('[data-receipt]').allTextContents();
+  check(new Set(receiptIds).size===3 && receiptIds.every(id=>id.includes('DEMO-')), 'Receipt identifiers unique and explicitly demo');
+  await flowOrder().locator('[data-receipt]').last().click();
+  check((await ft('#receipt-content')).includes('EFECTIVO') && (await ft('#receipt-content')).includes('Bs 0,00'), 'Final cash receipt shows no remaining balance');
+  await flow.keyboard.press('Escape');
+  await fg('overview');
+  check((await flow.locator('[data-kpi]').allTextContents()).join('|')==='Bs 1.300,30|Bs 250,00|Bs 1.050,30|Bs 1.400,00', 'Only confirmed cash/QR affects income/net; original pending restored');
+  await fg('agenda'); await flow.locator(`[data-attend="${appointmentId}"]`).click();
+  check(await flow.locator('#consultation-record').getAttribute('data-consultation-id')===consultationId && await ft('#consultation-status')==='CERRADA', 'Closed consultation reopens same read-only record');
+  check(await clinicalAppointmentBadge().innerText()==='Atendida', 'Closed paid consultation still has an Atendida appointment');
+  await flow.locator('#consultation-order').click();
+  await flow.locator('#order-search').fill('');
+  check(await flow.locator('#order-results tbody tr').count()===4, 'Closed consultation never issues duplicate order');
+  await fg('overview');
+  check((await flow.locator('[data-kpi]').allTextContents()).join('|')==='Bs 1.300,30|Bs 250,00|Bs 1.050,30|Bs 1.400,00', 'Reopening closed appointment has no income, pending or order effects');
+  await fg('payments');
+  await flow.setViewportSize({width:390,height:844});
+  await noOverflow(flow);
+  for(const [selector,dialog] of [['[data-order-detail]','#order-detail-dialog'],['[data-qr]','#qr-dialog'],['[data-receipt]','#receipt-dialog']]) {
+    await flowOrder().locator(selector).first().click();
+    check(await flow.locator(dialog).evaluate(node=>node.scrollWidth<=node.clientWidth), `Mobile ${dialog} internal width`);
+    await noOverflow(flow); await flow.keyboard.press('Escape');
+  }
+  await fg('agenda'); await flow.getByRole('button',{name:'Agendar cita',exact:true}).click();
+  await noOverflow(flow);
+  await flow.locator('#appointment-form button[type=submit]').focus(); await flow.keyboard.press('Tab');
+  check(await flow.locator('#appointment-patient').evaluate(node=>node===document.activeElement), 'Mobile appointment Tab wraps');
+  await flow.keyboard.press('Shift+Tab');
+  check(await flow.locator('#appointment-form button[type=submit]').evaluate(node=>node===document.activeElement), 'Mobile appointment reverse Tab wraps');
+  await flow.keyboard.press('Escape');
+  await flow.locator(`[data-attend="${appointmentId}"]`).click(); await noOverflow(flow);
+  await flow.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
+  // All new clinical controls also work at mobile width, including a pending-study close.
+  await fg('agenda'); await flow.locator('[data-attend="AP-1"]').click();
+  await noOverflow(flow);
+  check(!(await ft('#clinical-results')).includes('Alergia Dalia'), 'Starting another appointment does not leak patient history');
+  await flow.locator('#request-study').click(); await noOverflow(flow);
+  check(await flow.locator('#study-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth), 'Mobile study dialog internal width');
+  await flow.locator('#study-type').selectOption({label:'Estudio lab renombrado'});
+  await flow.locator('#study-form button[type=submit]').click();
+  const pendingStudy=await ft('#consultation-studies');
+  for(const dismiss of ['cancel','escape']) {
+    await flow.locator('[data-result]').click(); await noOverflow(flow);
+    check(await flow.locator('#result-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth), 'Mobile result dialog internal width');
+    await flow.locator('#result-text').fill('Descartar resultado');
+    await flow.locator('#result-form button[type=submit]').focus(); await flow.keyboard.press('Tab');
+    check(await flow.locator('#result-text').evaluate(node=>node===document.activeElement), 'Result textarea participates in focus wrap');
+    if(dismiss==='cancel') await flow.locator('#result-dialog [data-close]').click(); else await flow.keyboard.press('Escape');
+    check(await ft('#consultation-studies')===pendingStudy, `Result ${dismiss} preserves pending state`);
+    check(await flow.locator('#clinical-results .appointment:has([data-attend="AP-1"]) .badge').innerText()==='En atención', `Result ${dismiss} does not change linked appointment lifecycle`);
+  }
+  for(const key of ['reason','anamnesis','exploration','diagnosis']) await flow.locator(`#consultation-${key}`).fill('Texto ficticio explícito');
+  await flow.locator('#complete-consultation').click();
+  check(await ft('#consultation-status')==='CERRADA' && (await ft('#consultation-studies')).includes('PENDIENTE'), 'Pending studies explicitly allowed at completion without invented results');
+  await noOverflow(flow);
+  await flow.reload();
+  check((await flow.locator('[data-kpi]').allTextContents()).join('|')==='Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'T3 reload resets financial state');
+  await fg('agenda'); check(!await flow.locator(`[data-attend="${appointmentId}"]`).count(), 'Reload removes new appointments and consultations');
   for (const context of contexts) for (const item of context.pages()) check(await item.evaluate(()=>window.demoViolations.length) === 0, 'No API or storage writes');
   check(network.length === 0, `No HTTP requests: ${network.join(', ')}`);
   check(errors.length === 0, `No page errors: ${errors.join(', ')}`);

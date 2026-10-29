@@ -9,8 +9,16 @@
 :root { color-scheme:light; --action:#0369a1; --ink:#0f172a; --secondary:#475569; --line:#e2e8f0; --app:#f8fafc; --surface:#ffffff; --focus:#075985; --cell-y:12px; --card-pad:24px; }
 * { box-sizing:border-box; }
 body { margin:0; font:16px/1.45 system-ui,'Segoe UI',Roboto,sans-serif; color:var(--ink); background:var(--app); }
-button,input,select { font:inherit; }
-button,input,select { font-size:14px; }
+button,input,select,textarea { font:inherit; }
+button,input,select,textarea { font-size:14px; }
+textarea { width:100%; min-height:90px; resize:vertical; padding:10px 14px; border:1px solid #64748b; border-radius:10px; color:var(--ink); background:#ffffff; }
+.summary { overflow-wrap:anywhere; }
+.workflow-actions { display:flex; flex-wrap:wrap; gap:12px; margin:16px 0; }
+.qr-art { display:block; width:100%; max-width:260px; height:auto; margin:16px auto; }
+#consultation-record { margin-top:24px; }
+.appointment { flex-wrap:wrap; }
+.dialog-actions { flex-wrap:wrap; }
+#receipt-dialog,#order-detail-dialog { max-width:700px; }
 button { cursor:pointer; display:inline-flex; justify-content:center; align-items:center; gap:8px; padding:10px 16px; border:1px solid #64748b; border-radius:10px; background:#f1f5f9; color:#475569; font-weight:600; }
 button:hover { background:#e2e8f0; }
 button.primary { background:var(--action); color:#ffffff; border-color:var(--action); padding:10px 20px; }
@@ -89,8 +97,8 @@ tbody tr:hover { background:#f8fafc; }
 td small { display:block; color:var(--secondary); }
 .badge { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:9999px; border:1px solid #cbd5e1; font-size:12px; font-weight:600; background:#e2e8f0; color:#475569; }
 .badge.pending,.badge.partial,.badge.low { color:#b45309; background:#fef3c7; border-color:#fde68a; }
-.badge.paid,.badge.confirmed,.badge.ok { color:#15803d; background:#dcfce7; border-color:#86efac; }
-.badge.scheduled { color:#075985; background:#e0f2fe; border-color:#0284c7; }
+.badge.paid,.badge.confirmed,.badge.ok,.badge.attended { color:#15803d; background:#dcfce7; border-color:#86efac; }
+.badge.scheduled,.badge.in_progress { color:#075985; background:#e0f2fe; border-color:#0284c7; }
 .filters { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:20px; align-items:end; }
 .filters label { flex:1; min-width:160px; }
 .filters label.search { flex:2; min-width:min(280px,100%); }
@@ -206,6 +214,51 @@ body.nav-collapsed .sidebar { display:none; }
   <div class="dialog-actions"><button type="button" data-close="catalog-dialog">Cancelar</button><button type="submit" class="primary">Guardar registro</button></div>
  </form>
 </dialog>
+<dialog id="appointment-dialog" aria-labelledby="appointment-title">
+ <form id="appointment-form" novalidate>
+  <h2 id="appointment-title">Agendar cita ficticia</h2>
+  <p class="help">Disponibilidad y conflictos locales · fecha de referencia: 18 de mayo de 2026.</p>
+  <div id="appointment-fields" class="form-section"></div>
+  <p id="appointment-error" class="error" role="alert"></p>
+  <div class="dialog-actions"><button type="button" data-close="appointment-dialog">Cancelar</button><button type="submit" class="primary">Crear cita demo</button></div>
+ </form>
+</dialog>
+<dialog id="study-dialog" aria-labelledby="study-title">
+ <form id="study-form" novalidate>
+  <h2 id="study-title">Solicitar estudio ficticio</h2><p id="study-context" class="help"></p>
+  <label>Tipo de estudio<select id="study-type"></select></label>
+  <label>Proveedor compatible<select id="study-provider"></select></label>
+  <p id="study-error" class="error" role="alert"></p>
+  <div class="dialog-actions"><button type="button" data-close="study-dialog">Cancelar</button><button type="submit" class="primary">Solicitar estudio demo</button></div>
+ </form>
+</dialog>
+<dialog id="result-dialog" aria-labelledby="result-title">
+ <form id="result-form" novalidate>
+  <h2 id="result-title">Registrar resultado ficticio</h2><p id="result-context" class="help"></p>
+  <label>Resultado escrito por el equipo<textarea id="result-text" maxlength="2000"></textarea></label>
+  <label>Referencia opcional (sin archivos)<input id="result-reference" maxlength="120"></label>
+  <p id="result-error" class="error" role="alert"></p>
+  <div class="dialog-actions"><button type="button" data-close="result-dialog">Cancelar</button><button type="submit" class="primary">Guardar resultado demo</button></div>
+ </form>
+</dialog>
+<dialog id="order-detail-dialog" aria-labelledby="order-detail-title">
+ <h2 id="order-detail-title">Detalle de orden demo</h2><div id="order-detail-lines"></div>
+ <button type="button" data-close="order-detail-dialog">Cerrar</button>
+</dialog>
+<dialog id="qr-dialog" aria-labelledby="qr-title">
+ <h2 id="qr-title">Cobro QR · simulación local</h2><p class="help">Sin proveedor, webhook ni dinero real. Cerrar no confirma el pago.</p>
+ <form id="qr-form" novalidate>
+  <p id="qr-summary" class="summary"></p>
+  <label>Importe QR (Bs)<input id="qr-amount" type="number" step="0.01" min="0.01" inputmode="decimal"></label>
+  <button type="submit" class="primary">Generar QR demo</button>
+ </form>
+ <p id="qr-error" class="error" role="alert"></p><div id="qr-state" aria-live="polite"></div>
+ <button type="button" data-close="qr-dialog">Cerrar</button>
+</dialog>
+<dialog id="receipt-dialog" aria-labelledby="receipt-title">
+ <h2 id="receipt-title">Recibo simulado</h2><div id="receipt-content"></div>
+ <button type="button" data-close="receipt-dialog">Cerrar</button>
+</dialog>
 <script>
 'use strict';
 // All fixtures and mutations live in this closure; nothing is persisted or transmitted.
@@ -213,7 +266,15 @@ body.nav-collapsed .sidebar { display:none; }
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escapeText = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-const money = value => `Bs ${value.toLocaleString('es-BO', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+// All stored money is integer cents. Convert to Bs only at input/output boundaries.
+const money = cents => `Bs ${(cents/100).toLocaleString('es-BO', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+function parseCents(raw,allowZero=false) {
+ const text=String(raw).trim();
+ if(!/^\d+(\.\d{1,2})?$/.test(text)) return null;
+ const [whole,fraction='']=text.split('.');
+ const cents=Number(whole)*100+Number(fraction.padEnd(2,'0'));
+ return Number.isSafeInteger(cents) && (allowZero?cents>=0:cents>0) ? cents : null;
+}
 const iconPaths = {
  overview:'M3 13h7v8H3zM14 3h7v18h-7zM3 3h7v6H3z',
  payments:'M3 5h18v14H3zM3 9h18M7 15h3',
@@ -240,10 +301,16 @@ const state = {
  menu:Object.keys(pages).map(id => ({id, visible:true})),
  roles:[{name:'Administrador', permissions:['Cobros','Agenda','Clínica']},{name:'Recepcionista', permissions:['Cobros','Agenda']},{name:'Médico', permissions:['Agenda','Clínica']}],
  patients:[{id:'DEMO-001', name:'Alba Ejemplo', note:'Control preventivo'},{id:'DEMO-002', name:'Bruno Muestra', note:'Seguimiento'},{id:'DEMO-003', name:'Celia Prueba', note:'Consulta inicial'}],
- orders:[{id:'ORD-101', patient:'DEMO-001', service:'Limpieza y control', total:600, paid:0, due:'18 may 2026'}, {id:'ORD-102', patient:'DEMO-002', service:'Restauración', total:1200, paid:400, due:'18 may 2026'}, {id:'ORD-103', patient:'DEMO-003', service:'Consulta inicial', total:300, paid:300, due:'18 may 2026'}],
+ orders:[
+  {id:'ORD-101',patient:'DEMO-001',service:'Limpieza y control',totalCents:60000,paidCents:0,due:'18 may 2026'},
+  {id:'ORD-102',patient:'DEMO-002',service:'Restauración',totalCents:120000,paidCents:40000,due:'18 may 2026'},
+  {id:'ORD-103',patient:'DEMO-003',service:'Consulta inicial',totalCents:30000,paidCents:30000,due:'18 may 2026'}
+ ],
  appointments:[{time:'09:00', day:'18', patient:'DEMO-001', service:'Control preventivo', professional:'Dra. Norte · demo', room:'Consultorio 1', status:'confirmed'}, {time:'10:30', day:'18', patient:'DEMO-002', service:'Restauración', professional:'Dr. Sur · demo', room:'Consultorio 2', status:'scheduled'}, {time:'12:00', day:'18', patient:'DEMO-003', service:'Consulta inicial', professional:'Dra. Norte · demo', room:'Consultorio 1', status:'confirmed'}, {time:'09:30', day:'19', patient:'DEMO-001', service:'Seguimiento', professional:'Dr. Sur · demo', room:'Consultorio 2', status:'scheduled'}],
  inventory:[{id:'INS-01',name:'Guantes de nitrilo · caja',stock:4,min:8},{id:'INS-02',name:'Resina universal · unidad',stock:12,min:5},{id:'INS-03',name:'Mascarillas · caja',stock:2,min:6},{id:'INS-04',name:'Gasas estériles · paquete',stock:18,min:10}],
- expenses:250, paymentTotal:0,
+ expensesCents:25000, paymentTotalCents:0,
+ procedures:[{id:'PR-1',name:'Consulta demo',priceCents:30000},{id:'PR-2',name:'Control demo',priceCents:60000}],
+ consultations:[], studies:[], payments:[], receipts:[], qrIntents:[],
  // Stable IDs connect these catalogs to appointments and the forthcoming consultation flow.
  specialties:[{id:'SP-1',name:'Odontología general'}],
  physicians:[
@@ -261,17 +328,24 @@ const state = {
 // Preserve every inherited fixture while moving references to stable resource IDs.
 state.appointments.forEach((item,index) => {
  item.id=`AP-${index+1}`;
+ item.date=`2026-05-${item.day}`;
+ item.duration=30;
  item.physicianId=state.physicians.find(doctor=>doctor.name===item.professional).id;
  item.roomId=state.rooms.find(room=>room.name===item.room).id;
+});
+state.orders.forEach(order=>{
+ order.revision=0;
+ order.priorPaidCents=order.paidCents;
+ order.lines=[{kind:'FIXTURE',name:order.service,amountCents:order.totalCents}];
 });
 const resourceName = (collection,id) => state[collection].find(item=>item.id===id)?.name || 'Sin registrar';
 const weekdayNames=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 function newId(prefix) { return `${prefix}-${state.nextId++}`; }
-const labels = {pending:'Pendiente',partial:'Parcial',paid:'Pagado',confirmed:'Confirmada',scheduled:'Programada',low:'Stock bajo',ok:'Disponible'};
+const labels = {pending:'Pendiente',partial:'Parcial',paid:'Pagado',confirmed:'Confirmada',scheduled:'Programada',in_progress:'En atención',attended:'Atendida',low:'Stock bajo',ok:'Disponible'};
 function badge(status) { return `<span class="badge ${status}">${labels[status]}</span>`; }
 function patientName(id) { return state.patients.find(patient => patient.id === id)?.name || 'Registro ficticio'; }
-function balance(order) { return Math.round((order.total - order.paid)*100)/100; }
-function orderStatus(order) { return balance(order) === 0 ? 'paid' : order.paid > 0 ? 'partial' : 'pending'; }
+function balance(order) { return order.totalCents-order.paidCents; }
+function orderStatus(order) { return balance(order)===0?'paid':order.paidCents>0?'partial':'pending'; }
 function announce(text) { $('#announcement').textContent = text; }
 function renderNav() {
  $('#navigation').innerHTML = state.menu.filter(item => item.visible).map(item => `<button type="button" data-page="${item.id}" ${state.page === item.id ? 'aria-current="page"' : ''}>${icon(item.id)}<span>${pages[item.id][0]}</span></button>`).join('');
@@ -304,23 +378,33 @@ function navigate(page, moveFocus = true) {
 function action(label, handler) {
  const button = document.createElement('button'); button.className = 'primary'; button.textContent = label; button.type='button'; button.onclick = handler; $('#page-actions').append(button);
 }
-function orderTable(orders, caption, allowPayment) {
- return `<div class="table-wrap" tabindex="0" role="region" aria-label="${caption}"><table><caption>${caption}</caption><thead><tr><th scope="col">Orden / paciente ficticio</th><th scope="col">Estado</th><th scope="col">Total</th><th scope="col">Saldo</th><th scope="col">Vencimiento</th>${allowPayment?'<th scope="col">Acción</th>':''}</tr></thead><tbody>${orders.map(order => `<tr><td><strong>${order.id}</strong> · ${escapeText(patientName(order.patient))}<small>${order.service}</small></td><td>${badge(orderStatus(order))}</td><td class="amount">${money(order.total)}</td><td class="amount">${money(balance(order))}</td><td>${order.due}</td>${allowPayment?`<td>${balance(order)>0?`<button type="button" data-pay="${order.id}">Registrar cobro<span class="small"> · ${order.id}</span></button>`:'<span class="muted">Sin saldo pendiente</span>'}</td>`:''}</tr>`).join('') || `<tr><td colspan="${allowPayment?6:5}" class="empty">No hay órdenes que coincidan con estos filtros.</td></tr>`}</tbody></table></div>`;
+function orderTable(orders,caption,allowPayment) {
+ return `<div class="table-wrap" tabindex="0" role="region" aria-label="${caption}"><table>
+  <caption>${caption}</caption><thead><tr>${['Orden / paciente ficticio','Estado','Total','Saldo','Vencimiento',...(allowPayment?['Acción']:[])].map(label=>`<th scope="col">${label}</th>`).join('')}</tr></thead>
+  <tbody>${orders.map(order=>`<tr>
+   <td><strong>${order.id}</strong> · ${escapeText(patientName(order.patient))}<small>${escapeText(order.service)}</small>${order.priorPaidCents?`<small>Pago previo de fixture: ${money(order.priorPaidCents)} · sin recibo histórico</small>`:''}</td>
+   <td>${badge(orderStatus(order))}</td><td class="amount">${money(order.totalCents)}</td><td class="amount">${money(balance(order))}</td><td>${escapeText(order.due)}</td>
+   ${allowPayment?`<td>${balance(order)>0?`<button type="button" data-pay="${order.id}">Registrar cobro<span class="small"> · ${order.id}</span></button>`:'<span class="muted">Sin saldo pendiente</span>'}
+    <button type="button" data-qr="${order.id}">QR demo</button><button type="button" data-order-detail="${order.id}">Ver detalle</button>
+    ${state.receipts.filter(receipt=>receipt.orderId===order.id).map(receipt=>`<button type="button" data-receipt="${receipt.id}">${receipt.id}</button>`).join('')}
+   </td>`:''}
+  </tr>`).join('') || `<tr><td colspan="${allowPayment?6:5}" class="empty">No hay órdenes que coincidan con estos filtros.</td></tr>`}</tbody>
+ </table></div>`;
 }
 function renderOverview() {
- const income = 700 + state.paymentTotal;
+ const income = 70000 + state.paymentTotalCents;
  const pending = state.orders.reduce((sum, order) => sum + balance(order),0);
- const kpis = [['Ingresos de hoy',income,'Efectivo · cobros de demo','payments'],['Egresos de hoy',state.expenses,'Insumos · gasto ficticio fijo','inventory'],['Flujo neto',income-state.expenses,'Ingresos menos egresos','overview'],['Por cobrar',pending,'Saldo de 3 órdenes de demo','patients']];
+ const kpis = [['Ingresos de hoy',income,'Efectivo y QR · cobros de demo','payments'],['Egresos de hoy',state.expensesCents,'Insumos · gasto ficticio fijo','inventory'],['Flujo neto',income-state.expensesCents,'Ingresos menos egresos','overview'],['Por cobrar',pending,`Saldo de ${state.orders.length} órdenes de demo`,'patients']];
  action('Ver cobros', () => navigate('payments'));
  $('#view').innerHTML = `<section class="kpis" aria-label="Indicadores del 18 de mayo de 2026">${kpis.map(([label,value,detail,key]) => `<article class="card"><div class="kpi-label">${label}${icon(key)}</div><p class="kpi-value amount" data-kpi="${key}">${money(value)}</p><p class="small muted">${detail}</p></article>`).join('')}</section>
- <div class="split"><section class="card"><div class="card-heading"><div><h2>Ingresos y egresos</h2><p class="small muted">Últimos 5 días de actividad · Bs</p></div><span class="badge">14–18 may</span></div><div class="legend"><span><i class="key"></i>Ingresos</span><span><i class="key expense"></i>Egresos</span></div>${chart(income)}<p class="small muted">Hoy: ${money(income)} ingresados / ${money(state.expenses)} en egresos.</p></section>
- <section class="card"><div class="card-heading"><h2>Agenda de hoy</h2><button type="button" data-page="agenda">Ver agenda</button></div><p class="small muted">18 de mayo · 3 citas ficticias</p>${state.appointments.filter(item => item.day==='18').map(item => `<div class="appointment"><span class="time">${item.time}</span><div><strong>${escapeText(patientName(item.patient))}</strong><p>${escapeText(item.service)} · ${escapeText(resourceName('rooms',item.roomId))}</p></div></div>`).join('')}</section></div>
+ <div class="split"><section class="card"><div class="card-heading"><div><h2>Ingresos y egresos</h2><p class="small muted">Últimos 5 días de actividad · Bs</p></div><span class="badge">14–18 may</span></div><div class="legend"><span><i class="key"></i>Ingresos</span><span><i class="key expense"></i>Egresos</span></div>${chart(income)}<p class="small muted">Hoy: ${money(income)} ingresados / ${money(state.expensesCents)} en egresos.</p></section>
+ <section class="card"><div class="card-heading"><h2>Agenda de hoy</h2><button type="button" data-page="agenda">Ver agenda</button></div><p class="small muted">18 de mayo · ${state.appointments.filter(item=>item.date==='2026-05-18').length} citas ficticias</p>${state.appointments.filter(item => item.date==='2026-05-18').map(item => `<div class="appointment"><span class="time">${item.time}</span><div><strong>${escapeText(patientName(item.patient))}</strong><p>${escapeText(item.service)} · ${escapeText(resourceName('rooms',item.roomId))}</p></div></div>`).join('')}</section></div>
  <section class="card"><div class="card-heading"><div><h2>Cobros pendientes</h2><p class="small muted">Prioriza el seguimiento de los saldos de hoy.</p></div><button type="button" data-page="payments">Ver todos los cobros</button></div>${orderTable(state.orders.filter(order=>balance(order)>0),'Órdenes con saldo pendiente · datos ficticios',false)}</section>`;
 }
 function chart(income) {
- const values = [[900,300],[1200,450],[800,200],[1000,350],[income,250]];
- const maximum = Math.max(1500,income);
- return `<svg class="chart" viewBox="0 0 560 220" role="img" aria-label="Ingresos y egresos del 14 al 18 de mayo: ${values.map((pair,index)=>`${14+index} mayo, ingresos ${pair[0]} Bs, egresos ${pair[1]} Bs`).join('; ')}"><path class="grid" d="M44 20H550M44 100H550M44 180H550"/><text x="0" y="24">${maximum}</text><text x="10" y="104">${Math.round(maximum/2)}</text><text x="24" y="184">0</text>${values.map((pair,index)=>{ const x=70+index*98; return `<rect class="income" x="${x}" y="${180-pair[0]/maximum*160}" width="24" height="${pair[0]/maximum*160}" rx="4"/><rect class="expense" x="${x+28}" y="${180-pair[1]/maximum*160}" width="24" height="${pair[1]/maximum*160}" rx="4"/><text x="${x+4}" y="210">${14+index} may</text>`; }).join('')}</svg>`;
+ const values = [[90000,30000],[120000,45000],[80000,20000],[100000,35000],[income,25000]];
+ const maximum = Math.max(150000,income);
+ return `<svg class="chart" viewBox="0 0 560 220" role="img" aria-label="Ingresos y egresos del 14 al 18 de mayo: ${values.map((pair,index)=>`${14+index} mayo, ingresos ${pair[0]/100} Bs, egresos ${pair[1]/100} Bs`).join('; ')}"><path class="grid" d="M44 20H550M44 100H550M44 180H550"/><text x="0" y="24">${maximum/100}</text><text x="10" y="104">${Math.round(maximum/200)}</text><text x="24" y="184">0</text>${values.map((pair,index)=>{ const x=70+index*98; return `<rect class="income" x="${x}" y="${180-pair[0]/maximum*160}" width="24" height="${pair[0]/maximum*160}" rx="4"/><rect class="expense" x="${x+28}" y="${180-pair[1]/maximum*160}" width="24" height="${pair[1]/maximum*160}" rx="4"/><text x="${x+4}" y="210">${14+index} may</text>`; }).join('')}</svg>`;
 }
 function renderPayments() {
  $('#view').innerHTML = `<section class="card"><div class="filters"><label class="search">Buscar orden o paciente<input id="order-search" type="search" placeholder="Nombre ficticio u ORD-101"></label><label>Estado<select id="order-status"><option value="all">Todos los estados</option><option value="pending">Pendiente</option><option value="partial">Parcial</option><option value="paid">Pagado</option></select></label></div><div id="order-results"></div></section>`;
@@ -335,19 +419,28 @@ function openPayment(id, trigger) {
  selectedOrder=state.orders.find(order=>order.id===id);
  if (!selectedOrder || balance(selectedOrder)<=0) return;
  $('#payment-summary').textContent=`${selectedOrder.id} · ${patientName(selectedOrder.patient)} · Saldo: ${money(balance(selectedOrder))}`;
- $('#payment-amount').value=balance(selectedOrder).toFixed(2); $('#payment-amount').max=balance(selectedOrder).toFixed(2); $('#payment-error').textContent='';
+ $('#payment-amount').value=(balance(selectedOrder)/100).toFixed(2); $('#payment-amount').max=(balance(selectedOrder)/100).toFixed(2); $('#payment-error').textContent='';
  openDialog('#payment-dialog',trigger);
 }
-function registerPayment(order, amount) {
- // One mutation path maintains cent precision and the dashboard's day total.
- const cents=Math.round(amount*100);
- if (!Number.isFinite(amount)||cents<=0||Math.abs(amount*100-cents)>0.00001||cents>Math.round(balance(order)*100)) return false;
- order.paid=Math.round(order.paid*100+cents)/100;
- state.paymentTotal=Math.round(state.paymentTotal*100+cents)/100;
+function registerPayment(order,cents,method='EFECTIVO',expectedRevision=order?.revision) {
+ // The only settlement path. Validate everything before allocating any ledger/receipt ID.
+ if(!order || !Number.isSafeInteger(cents) || cents<=0 || cents>balance(order) || order.revision!==expectedRevision) return false;
+ if(!Number.isSafeInteger(order.paidCents+cents) || !Number.isSafeInteger(70000+state.paymentTotalCents+cents)) return false;
+ const payment={id:newId('PAY'),orderId:order.id,amountCents:cents,method,date:'2026-05-18'};
+ order.paidCents+=cents;
+ order.revision++;
+ state.paymentTotalCents+=cents;
+ state.payments.push(payment);
+ state.receipts.push({
+  id:newId('DEMO-REC'),paymentId:payment.id,orderId:order.id,method,date:payment.date,
+  patientName:patientName(order.patient),clinicName:state.clinic,amountCents:cents,
+  totalCents:order.totalCents,paidCents:order.paidCents,remainingCents:balance(order),
+  lines:order.lines.map(line=>({...line}))
+ });
  return true;
 }
 $('#payment-form').onsubmit = event => {
- event.preventDefault(); const amount=Number($('#payment-amount').value);
+ event.preventDefault(); const amount=parseCents($('#payment-amount').value);
  if (!registerPayment(selectedOrder,amount)) { $('#payment-error').textContent='Introduce un importe positivo de hasta el saldo pendiente, con máximo dos decimales.'; $('#payment-amount').focus(); return; }
  const id=selectedOrder.id;
  closeDialog($('#payment-dialog'));
@@ -373,14 +466,52 @@ $('#patient-form').onsubmit=event=>{
  if(error) { $('#patient-error').textContent=error; return; }
  closeDialog($('#patient-dialog')); $('#patient-search').value=''; $('#patient-search').dispatchEvent(new Event('input')); announce('Paciente ficticio creado. Solo en memoria; se pierde al recargar');
 };
-function renderAgenda() {
- $('#view').innerHTML=`<section class="card"><div class="filters"><label>Vista<select id="agenda-period"><option value="day">Día · lunes 18 may</option><option value="week">Semana · 18–24 may</option></select></label><label>Profesional<select id="agenda-professional"><option value="all">Todo el equipo</option>${state.physicians.map(doctor=>`<option>${escapeText(doctor.name)}</option>`).join('')}</select></label><label>Consultorio<select id="agenda-room"><option value="all">Todos los consultorios</option>${state.rooms.map(room=>`<option value="${room.id}">${escapeText(room.name)}${room.active?'':' · inactivo'}</option>`).join('')}</select></label><label>Estado<select id="agenda-status"><option value="all">Todos</option><option value="confirmed">Confirmada</option><option value="scheduled">Programada</option></select></label></div><div id="agenda-results"></div></section>`;
- const filter=()=>{const matches=state.appointments.filter(item=>($('#agenda-period').value==='week'||item.day==='18')&&($('#agenda-professional').value==='all'||resourceName('physicians',item.physicianId)===$('#agenda-professional').value)&&($('#agenda-room').value==='all'||item.roomId===$('#agenda-room').value)&&($('#agenda-status').value==='all'||item.status===$('#agenda-status').value)); $('#agenda-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Citas ficticias"><table><caption>${matches.length} citas ficticias · ${$('#agenda-period').value==='day'?'18 de mayo':'Semana del 18 al 24 de mayo'} de 2026</caption><thead><tr>${['Día / hora','Paciente ficticio','Motivo','Profesional','Consultorio','Estado'].map(label=>`<th scope="col">${label}</th>`).join('')}</tr></thead><tbody>${matches.map(item=>`<tr><td>${item.day} may · ${item.time}</td><td>${escapeText(patientName(item.patient))}</td><td>${item.service}</td><td>${escapeText(resourceName('physicians',item.physicianId))}</td><td>${escapeText(resourceName('rooms',item.roomId))}</td><td>${badge(item.status)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No hay citas para estos filtros.</td></tr>'}</tbody></table></div>`;};
- $$('#view select').forEach(select=>select.onchange=filter); filter();
+function attendButton(appointment) {
+ const consultation=state.consultations.find(item=>item.appointmentId===appointment.id);
+ return `<button type="button" data-attend="${appointment.id}">${consultation?(consultation.status==='CERRADA'?'Ver consulta cerrada':'Continuar atención'):'Iniciar consulta'}</button>`;
 }
+function renderAgenda() {
+ action('Agendar cita',openAppointment);
+ $('#view').innerHTML=`<section class="card"><div class="filters">
+  <label>Vista<select id="agenda-period"><option value="day">Día · lunes 18 may</option><option value="week">Semana · 18–24 may</option></select></label>
+  <label>Fecha de referencia<input id="agenda-date" type="date" value="2026-05-18"></label>
+  <label>Profesional<select id="agenda-professional"><option value="all">Todo el equipo</option>${state.physicians.map(doctor=>`<option>${escapeText(doctor.name)}</option>`).join('')}</select></label>
+  <label>Consultorio<select id="agenda-room"><option value="all">Todos los consultorios</option>${state.rooms.map(room=>`<option value="${room.id}">${escapeText(room.name)}${room.active?'':' · inactivo'}</option>`).join('')}</select></label>
+  <label>Estado<select id="agenda-status"><option value="all">Todos</option><option value="confirmed">Confirmada</option><option value="scheduled">Programada</option><option value="in_progress">En atención</option><option value="attended">Atendida</option></select></label>
+ </div><div id="agenda-results"></div></section>`;
+ const filter=()=>{
+  const date=$('#agenda-date').value, week=$('#agenda-period').value==='week';
+  const anchor=new Date(`${date}T00:00:00Z`), weekday=(anchor.getUTCDay()+6)%7;
+  const monday=new Date(anchor.getTime()-weekday*86400000).toISOString().slice(0,10);
+  const sunday=new Date(anchor.getTime()+(6-weekday)*86400000).toISOString().slice(0,10);
+  const matches=state.appointments.filter(item=>(week?item.date>=monday&&item.date<=sunday:item.date===date)
+   && ($('#agenda-professional').value==='all'||resourceName('physicians',item.physicianId)===$('#agenda-professional').value)
+   && ($('#agenda-room').value==='all'||item.roomId===$('#agenda-room').value)
+   && ($('#agenda-status').value==='all'||item.status===$('#agenda-status').value));
+  $('#agenda-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Citas ficticias"><table>
+   <caption>${matches.length} citas ficticias · ${week?`${monday} / ${sunday}`:date}</caption>
+   <thead><tr>${['Día / hora','Paciente ficticio','Motivo','Profesional','Consultorio','Estado','Atención'].map(label=>`<th scope="col">${label}</th>`).join('')}</tr></thead>
+   <tbody>${matches.map(item=>`<tr><td>${item.date} · ${item.time} (${item.duration} min)</td><td>${escapeText(patientName(item.patient))}</td><td>${escapeText(item.service)}</td><td>${escapeText(resourceName('physicians',item.physicianId))}</td><td>${escapeText(resourceName('rooms',item.roomId))}</td><td>${badge(item.status)}</td><td>${attendButton(item)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No hay citas para estos filtros.</td></tr>'}</tbody>
+  </table></div>`;
+ };
+ $$('#view select,#agenda-date').forEach(control=>control.onchange=()=>{if($('#agenda-date').value) filter();}); filter();
+}
+let activeConsultationId=null;
+function activeConsultation() { return state.consultations.find(item=>item.id===activeConsultationId); }
 function renderClinical() {
- $('#view').innerHTML=`<section class="card"><div class="filters"><label>Paciente ficticio<select id="clinical-patient">${state.patients.map(patient=>`<option value="${escapeText(patient.id)}">${escapeText(patient.name)} · ${escapeText(patient.id)}</option>`).join('')}</select></label></div><div id="clinical-results"></div></section>`;
- const update=()=>{const id=$('#clinical-patient').value; const appointments=state.appointments.filter(item=>item.patient===id); $('#clinical-results').innerHTML=`<div class="summary"><h2>${escapeText(patientName(id))}</h2><p class="help">Ficha de demostración · sin diagnóstico real ni datos médicos personales.</p></div><h3 style="margin-top:24px">Consultas programadas</h3>${appointments.map(item=>`<div class="appointment"><span class="time">${item.day} may</span><div><strong>${item.service}</strong><p>${item.time} · ${escapeText(resourceName('physicians',item.physicianId))} · ${escapeText(resourceName('rooms',item.roomId))}</p></div>${badge(item.status)}</div>`).join('')||'<p class="empty">Este nuevo registro no tiene consultas de demostración.</p>'}${clinicalContextMarkup(id)}<p class="help" style="margin-top:24px">Odontograma, diagnóstico, prescripción y cierre de consulta pendientes. Solo antecedentes ficticios editables.</p>`;};
+ const current=activeConsultation();
+ $('#view').innerHTML=`<section class="card"><div class="filters"><label>Paciente ficticio<select id="clinical-patient">${state.patients.map(patient=>`<option value="${escapeText(patient.id)}" ${current?.patientId===patient.id?'selected':''}>${escapeText(patient.name)} · ${escapeText(patient.id)}</option>`).join('')}</select></label></div><div id="clinical-results"></div></section>`;
+ const update=()=>{
+  const id=$('#clinical-patient').value;
+  if(activeConsultation()?.patientId!==id) activeConsultationId=null;
+  const appointments=state.appointments.filter(item=>item.patient===id);
+  $('#clinical-results').innerHTML=`<div class="summary"><h2>${escapeText(patientName(id))}</h2><p class="help">Ficha de demostración · sin diagnóstico real ni datos médicos personales.</p></div>
+   <h3 style="margin-top:24px">Citas y consultas</h3>
+   ${appointments.map(item=>`<div class="appointment"><span class="time">${item.date}</span><div><strong>${escapeText(item.service)}</strong><p>${item.time} · ${escapeText(resourceName('physicians',item.physicianId))} · ${escapeText(resourceName('rooms',item.roomId))}</p></div>${badge(item.status)}${attendButton(item)}</div>`).join('') || '<p class="empty">Este nuevo registro no tiene consultas de demostración.</p>'}
+   <div id="consultation-container"></div>${clinicalContextMarkup(id)}
+   <p class="help" style="margin-top:24px">Solo texto humano ficticio. Sin diagnóstico automático, prescripción real ni análisis de imágenes.</p>`;
+  renderConsultation();
+ };
  $('#clinical-patient').onchange=update; update();
 }
 // Clinical context: no medical assertions are inferred from an empty record.
@@ -435,7 +566,7 @@ $('#context-form').onsubmit=event=>{
 };
 
 // Catalog editing has one validation/commit path; failed or closed forms never allocate IDs.
-const catalogLabels={physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',providers:'Laboratorio e imagen',studyTypes:'Tipos de estudio'};
+const catalogLabels={physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',providers:'Laboratorio e imagen',studyTypes:'Tipos de estudio',procedures:'Procedimientos'};
 let catalogKind='physicians', catalogDraft=null;
 function options(collection,selected,empty=false) {
  return `${empty?'<option value="">Sin proveedor predeterminado</option>':''}${collection.map(item=>`<option value="${item.id}" ${item.id===selected?'selected':''}>${escapeText(item.name)}</option>`).join('')}`;
@@ -444,7 +575,8 @@ function catalogDetails(kind,item) {
  if(kind==='physicians') return `${item.specialtyIds.map(id=>resourceName('specialties',id)).join(', ')} · ${item.document || 'Sin documento'} · ${state.availability.filter(slot=>slot.physicianId===item.id).map(slot=>`${weekdayNames[slot.weekday]} ${slot.start}–${slot.end} · ${resourceName('rooms',slot.roomId)}`).join('; ')}`;
  if(kind==='rooms') return `${item.location || 'Sin ubicación'} · ${item.active?'Activo':'Inactivo'}`;
  if(kind==='providers') return `${item.mode} · ${item.contact || 'Sin contacto'}`;
- if(kind==='studyTypes') return `${item.mode} · ${money(item.priceCents/100)} · ${item.providerId?resourceName('providers',item.providerId):'Sin proveedor predeterminado'}`;
+ if(kind==='procedures') return money(item.priceCents);
+ if(kind==='studyTypes') return `${item.mode} · ${money(item.priceCents)} · ${item.providerId?resourceName('providers',item.providerId):'Sin proveedor predeterminado'}`;
  return 'Especialidad de demo';
 }
 function renderCatalogs() {
@@ -457,7 +589,7 @@ function renderCatalogs() {
     <thead><tr><th scope="col">Nombre</th><th scope="col">Configuración</th><th scope="col">Acción</th></tr></thead>
     <tbody>${state[catalogKind].map(item=>`<tr><td>${escapeText(item.name)}</td><td>${escapeText(catalogDetails(catalogKind,item))}</td><td><button type="button" data-catalog-edit="${item.id}">Editar</button></td></tr>`).join('') || '<tr><td colspan="3">Sin registrar</td></tr>'}</tbody>
    </table></div>
-  </div><p class="help" style="margin-top:24px">Configuración de demo. Solicitudes, resultados y consulta completa pendientes; sin análisis de imágenes ni conexión externa.</p>
+  </div><p class="help" style="margin-top:24px">Configuración conectada a agenda, consulta y estudios de demo. Sin análisis de imágenes ni conexión externa.</p>
  </section>`;
  $('#catalog-add').onclick=()=>openCatalog();
  $$('[data-catalog-tab]').forEach(tab=>{
@@ -490,6 +622,8 @@ function openCatalog(id,trigger) {
   markup+=`<div id="availability-slots" class="form-section">${(slots.length?slots:[undefined]).map(slot=>slotMarkup(slot)).join('')}</div><button type="button" id="add-slot">Añadir horario</button>`;
  } else if(kind==='rooms') {
   markup+=field('cat-location','Ubicación (opcional)',item.location)+`<label class="check"><input id="cat-active" type="checkbox" ${item.active!==false?'checked':''}>Activo</label>`;
+ } else if(kind==='procedures') {
+  markup+=field('cat-price','Precio del procedimiento (Bs)',((item.priceCents || 0)/100).toFixed(2),'number');
  } else if(kind==='providers' || kind==='studyTypes') {
   markup+=`<label>Modalidad<select id="cat-mode">${['LABORATORIO','IMAGEN'].map(mode=>`<option ${item.mode===mode?'selected':''}>${mode}</option>`).join('')}</select></label>`;
   if(kind==='providers') markup+=field('cat-contact','Contacto ficticio (opcional)',item.contact);
@@ -527,14 +661,17 @@ function saveCatalog() {
   if(slots.some((slot,index)=>slots.slice(index+1).some(other=>slot.weekday===other.weekday && slot.start<other.end && other.start<slot.end))) return 'No se permiten horarios superpuestos para el mismo médico.';
  } else if(kind==='rooms') {
   values.location=$('#cat-location').value.trim(); values.active=$('#cat-active').checked;
+ } else if(kind==='procedures') {
+  values.priceCents=parseCents($('#cat-price').value,true);
+  if(values.priceCents===null) return 'Introduce un precio positivo o cero, sin fracciones de centavos.';
  } else if(kind==='providers' || kind==='studyTypes') {
   values.mode=$('#cat-mode').value;
   if(!['LABORATORIO','IMAGEN'].includes(values.mode)) return 'Selecciona una modalidad válida.';
   if(kind==='providers') values.contact=$('#cat-contact').value.trim();
   else {
    const price=$('#cat-price').value;
-   if(!/^\d+(\.\d{1,2})?$/.test(price) || !Number.isSafeInteger(Math.round(Number(price)*100))) return 'Introduce un precio positivo o cero, sin fracciones de centavos.';
-   values.priceCents=Math.round(Number(price)*100); values.providerId=$('#cat-provider').value || null;
+   if(parseCents(price,true)===null) return 'Introduce un precio positivo o cero, sin fracciones de centavos.';
+   values.priceCents=parseCents(price,true); values.providerId=$('#cat-provider').value || null;
    if(values.providerId && !state.providers.some(provider=>provider.id===values.providerId && provider.mode===values.mode)) return 'El proveedor debe corresponder a la modalidad.';
   }
   // Existing study defaults cannot silently become incompatible after a provider edit.
@@ -556,6 +693,264 @@ $('#catalog-form').onsubmit=event=>{
  if(error) {$('#catalog-error').textContent=error;return;}
  closeDialog($('#catalog-dialog')); renderCatalogs(); $('#catalog-add').focus();
  announce('Catálogo de demo guardado. Solo en memoria.');
+};
+// Scheduling is deterministic against the fixed demo calendar, never today's clock.
+function timeMinutes(time) {
+ if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return NaN;
+ const [hour,minute]=time.split(':').map(Number);
+ return hour*60+minute;
+}
+function openAppointment() {
+ $('#appointment-fields').innerHTML=`
+  <label>Paciente ficticio<select id="appointment-patient"><option value="">Seleccionar paciente</option>${state.patients.map(patient=>`<option value="${escapeText(patient.id)}">${escapeText(patient.name)}</option>`).join('')}</select></label>
+  <label>Médico<select id="appointment-physician">${options(state.physicians)}</select></label>
+  <label>Consultorio activo<select id="appointment-room">${options(state.rooms.filter(room=>room.active))}</select></label>
+  ${field('appointment-date','Fecha','2026-05-18','date')}
+  ${field('appointment-time','Hora de inicio','09:00','time')}
+  ${field('appointment-duration','Duración (15–240 minutos)','30','number')}
+  ${field('appointment-reason','Motivo ficticio')}`;
+ $('#appointment-error').textContent='';
+ openDialog('#appointment-dialog');
+}
+function createAppointment(values) {
+ const {patient,physicianId,roomId,date,time,duration,service}=values;
+ if(!state.patients.some(item=>item.id===patient) || !state.physicians.some(item=>item.id===physicianId) || !state.rooms.some(item=>item.id===roomId&&item.active)) return 'Selecciona paciente, médico y consultorio activo válidos.';
+ const parsed=new Date(`${date}T00:00:00Z`), start=timeMinutes(time), end=start+duration;
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0,10)!==date || !Number.isFinite(start)) return 'Introduce fecha y hora válidas.';
+ if(!Number.isInteger(duration) || duration<15 || duration>240) return 'La duración debe estar entre 15 y 240 minutos enteros.';
+ if(!service) return 'Introduce un motivo ficticio para la cita.';
+ const available=state.availability.some(slot=>slot.physicianId===physicianId && slot.roomId===roomId && slot.weekday===parsed.getUTCDay() && start>=timeMinutes(slot.start) && end<=timeMinutes(slot.end));
+ if(!available) return 'La cita debe quedar dentro de la disponibilidad del médico en ese consultorio y día.';
+ const conflict=state.appointments.some(item=>item.date===date && (item.physicianId===physicianId || item.roomId===roomId) && start<timeMinutes(item.time)+item.duration && timeMinutes(item.time)<end);
+ if(conflict) return 'Médico o consultorio ocupado en ese horario.';
+ state.appointments.push({id:newId('AP'),patient,physicianId,roomId,date,time,duration,service,day:date.slice(-2),status:'scheduled'});
+ return '';
+}
+$('#appointment-form').onsubmit=event=>{
+ event.preventDefault();
+ const values={patient:$('#appointment-patient').value,physicianId:$('#appointment-physician').value,roomId:$('#appointment-room').value,
+  date:$('#appointment-date').value,time:$('#appointment-time').value,duration:Number($('#appointment-duration').value),service:$('#appointment-reason').value.trim()};
+ const error=createAppointment(values);
+ if(error) {$('#appointment-error').textContent=error;return;}
+ closeDialog($('#appointment-dialog'));
+ // Preserve the existing agenda filters while revealing the created date.
+ $('#agenda-date').value=values.date;
+ $('#agenda-date').dispatchEvent(new Event('change'));
+ announce('Cita ficticia creada. Inicia la consulta desde su fila.');
+};
+
+const documentationFields={reason:'Motivo',anamnesis:'Anamnesis',exploration:'Exploración',diagnosis:'Diagnóstico escrito por el equipo'};
+function startConsultation(appointmentId) {
+ const appointment=state.appointments.find(item=>item.id===appointmentId);
+ if(!appointment) return;
+ let consultation=state.consultations.find(item=>item.appointmentId===appointmentId);
+ if(!consultation) {
+  consultation={id:newId('CONS'),appointmentId,patientId:appointment.patient,status:'EN_CURSO',reason:'',anamnesis:'',exploration:'',diagnosis:'',procedureIds:[],orderId:null};
+  state.consultations.push(consultation);
+ }
+ appointment.status=consultation.status==='CERRADA'?'attended':'in_progress';
+ activeConsultationId=consultation.id;
+ navigate('clinical');
+ $('#consultation-record').focus();
+}
+function consultationLines(consultation) {
+ const procedures=consultation.procedureIds.map(id=>state.procedures.find(item=>item.id===id)).filter(Boolean);
+ const studies=state.studies.filter(item=>item.consultationId===consultation.id && item.status!=='CANCELADO');
+ return [
+  ...procedures.map(item=>({kind:'PROCEDIMIENTO',sourceId:item.id,name:item.name,amountCents:item.priceCents})),
+  ...studies.map(study=>{
+   const type=state.studyTypes.find(item=>item.id===study.typeId);
+   return {kind:study.mode,sourceId:study.id,name:type.name,amountCents:type.priceCents};
+  })
+ ];
+}
+function renderConsultation() {
+ const consultation=activeConsultation();
+ if(!consultation || !$('#consultation-container')) return;
+ const appointment=state.appointments.find(item=>item.id===consultation.appointmentId);
+ const closed=consultation.status==='CERRADA';
+ $('#consultation-container').innerHTML=`<section id="consultation-record" class="summary" tabindex="-1" data-consultation-id="${consultation.id}" aria-label="Consulta ficticia">
+  <h2>${consultation.id} · ${escapeText(patientName(consultation.patientId))}</h2>
+  <p>${appointment.date} · ${appointment.time} · ${escapeText(resourceName('physicians',appointment.physicianId))} · ${escapeText(resourceName('rooms',appointment.roomId))}</p>
+  <p>Estado: <strong id="consultation-status">${consultation.status}</strong></p>
+  <p class="help">Documentación humana ficticia. Completar exige los cuatro campos y al menos una línea facturable con total positivo. Los estudios pendientes no bloquean el cierre.</p>
+  ${closed?`<div class="form-section" style="margin-top:20px">${Object.entries(documentationFields).map(([key,label])=>`<div><h3>${label}</h3><p>${escapeText(consultation[key]) || 'Sin registrar'}</p></div>`).join('')}</div>
+   <button type="button" id="consultation-order" data-order-id="${consultation.orderId}">Ver cobro · ${consultation.orderId}</button>`:
+   `<form id="consultation-form" class="form-section" style="margin-top:20px" novalidate>
+    ${Object.entries(documentationFields).map(([key,label])=>`<label>${label}<textarea id="consultation-${key}" maxlength="2000">${escapeText(consultation[key])}</textarea></label>`).join('')}
+    <fieldset><legend>Procedimientos / tarifas de demo</legend>${state.procedures.map(procedure=>`<label class="check"><input type="checkbox" name="procedure" value="${procedure.id}" ${consultation.procedureIds.includes(procedure.id)?'checked':''}>${escapeText(procedure.name)} · ${money(procedure.priceCents)}</label>`).join('')}</fieldset>
+    <p id="consultation-error" class="error" role="alert"></p>
+    <div class="workflow-actions"><button type="submit" id="save-consultation">Guardar progreso</button><button type="button" class="primary" id="complete-consultation">Completar consulta demo</button></div>
+   </form><button type="button" id="request-study">Solicitar laboratorio / imagen</button>`}
+  <h3 style="margin-top:24px">Estudios de esta consulta</h3><div id="consultation-studies"></div>
+ </section>`;
+ renderStudies();
+ if(closed) {
+  $('#consultation-order').onclick=()=>{
+   const id=consultation.orderId;
+   navigate('payments'); $('#order-search').value=id; $('#order-search').dispatchEvent(new Event('input'));
+  };
+ } else {
+  $('#consultation-form').onsubmit=event=>{event.preventDefault();saveConsultation(false);};
+  $('#complete-consultation').onclick=()=>saveConsultation(true);
+  $('#request-study').onclick=openStudy;
+ }
+}
+function saveConsultation(complete) {
+ const consultation=activeConsultation();
+ if(!consultation || consultation.status==='CERRADA') return;
+ const values=Object.fromEntries(Object.keys(documentationFields).map(key=>[key,$(`#consultation-${key}`).value.trim()]));
+ values.procedureIds=$$('input[name=procedure]:checked').map(input=>input.value);
+ const candidate={...consultation,...values};
+ if(complete && Object.keys(documentationFields).some(key=>!values[key])) {
+  $('#consultation-error').textContent='Completa motivo, anamnesis, exploración y diagnóstico humano ficticio.';return;
+ }
+ const lines=consultationLines(candidate), totalCents=lines.reduce((sum,line)=>sum+line.amountCents,0);
+ if(complete && (!lines.length || !Number.isSafeInteger(totalCents) || totalCents<=0)) {
+  $('#consultation-error').textContent='Selecciona al menos un procedimiento o estudio facturable con total positivo.';return;
+ }
+ Object.assign(consultation,values);
+ if(complete) {
+  // Exactly one issue path. A closed consultation never reaches this allocation again.
+  const order={id:newId('ORD'),patient:consultation.patientId,consultationId:consultation.id,service:`Consulta ${consultation.id}`,lines:lines.map(line=>({...line})),totalCents,paidCents:0,priorPaidCents:0,revision:0,due:'18 may 2026'};
+  state.orders.push(order);
+  consultation.orderId=order.id;
+  consultation.status='CERRADA';
+  state.appointments.find(item=>item.id===consultation.appointmentId).status='attended';
+ }
+ renderClinical();
+ $('#consultation-record').focus();
+ announce(complete?'Consulta demo cerrada. Una orden emitida; ningún pago confirmado.':'Progreso guardado · EN_CURSO · solo en memoria.');
+}
+function renderStudies() {
+ const consultation=activeConsultation();
+ if(!consultation || !$('#consultation-studies')) return;
+ const studies=state.studies.filter(item=>item.consultationId===consultation.id);
+ $('#consultation-studies').innerHTML=studies.map(study=>`<article data-study-row="${study.id}" style="margin-top:16px">
+  <h3>${study.id} · ${escapeText(resourceName('studyTypes',study.typeId))}</h3>
+  <p>${study.mode} · ${escapeText(resourceName('providers',study.providerId))} · ${study.status}</p>
+  <p class="help">${escapeText(patientName(consultation.patientId))} · ${consultation.id}</p>
+  <p>${escapeText(study.result) || 'Resultado sin registrar'}${study.reference?` · ${escapeText(study.reference)}`:''}</p>
+  ${study.status==='PENDIENTE' && consultation.status==='EN_CURSO'?`<button type="button" data-result="${study.id}">Registrar resultado</button>`:''}
+ </article>`).join('') || '<p class="help">Sin solicitudes registradas.</p>';
+ $$('[data-result]').forEach(button=>button.onclick=()=>openResult(button.dataset.result,button));
+}
+function openStudy() {
+ const consultation=activeConsultation();
+ if(!consultation || consultation.status!=='EN_CURSO') return;
+ $('#study-context').textContent=`${consultation.id} · ${patientName(consultation.patientId)} · Sin análisis automático ni archivos.`;
+ $('#study-type').innerHTML='<option value="">Seleccionar estudio</option>'+options(state.studyTypes);
+ const update=()=>{
+  const type=state.studyTypes.find(item=>item.id===$('#study-type').value);
+  $('#study-provider').innerHTML=type?options(state.providers.filter(provider=>provider.mode===type.mode),type.providerId):'';
+ };
+ $('#study-type').onchange=update; update();
+ $('#study-error').textContent=''; openDialog('#study-dialog');
+}
+$('#study-form').onsubmit=event=>{
+ event.preventDefault();
+ const consultation=activeConsultation(), type=state.studyTypes.find(item=>item.id===$('#study-type').value);
+ const provider=state.providers.find(item=>item.id===$('#study-provider').value);
+ if(!consultation || consultation.status!=='EN_CURSO' || !type || !provider || provider.mode!==type.mode) {
+  $('#study-error').textContent='Selecciona un estudio y proveedor compatible en una consulta activa.';return;
+ }
+ if(state.studies.some(item=>item.consultationId===consultation.id && item.typeId===type.id && item.status!=='CANCELADO')) {
+  $('#study-error').textContent='Este estudio ya está solicitado en la consulta.';return;
+ }
+ state.studies.push({id:newId('ST'),consultationId:consultation.id,patientId:consultation.patientId,typeId:type.id,providerId:provider.id,mode:type.mode,status:'PENDIENTE',result:'',reference:''});
+ closeDialog($('#study-dialog')); renderStudies(); $('#request-study').focus();
+};
+let resultStudyId=null;
+function openResult(id,trigger) {
+ const study=state.studies.find(item=>item.id===id);
+ if(!study || study.status!=='PENDIENTE' || activeConsultation()?.status!=='EN_CURSO') return;
+ resultStudyId=id;
+ $('#result-context').textContent=`${patientName(study.patientId)} · ${study.consultationId} · ${resourceName('studyTypes',study.typeId)}`;
+ $('#result-form').reset(); $('#result-error').textContent=''; openDialog('#result-dialog',trigger);
+}
+$('#result-form').onsubmit=event=>{
+ event.preventDefault();
+ const study=state.studies.find(item=>item.id===resultStudyId), result=$('#result-text').value.trim();
+ if(!study || study.status!=='PENDIENTE' || activeConsultation()?.id!==study.consultationId || activeConsultation()?.status!=='EN_CURSO' || !result) {
+  $('#result-error').textContent='Introduce un resultado ficticio en un estudio pendiente de esta consulta activa.';return;
+ }
+ study.result=result; study.reference=$('#result-reference').value.trim(); study.status='COMPLETADO';
+ closeDialog($('#result-dialog')); renderStudies(); $('#request-study').focus();
+};
+
+function lineTable(lines) {
+ return `<div class="table-wrap" tabindex="0" role="region" aria-label="Líneas de cobro"><table><caption>Precios fijados al emitir la orden</caption><thead><tr><th scope="col">Concepto</th><th scope="col">Tipo</th><th scope="col">Importe</th></tr></thead><tbody>${lines.map(line=>`<tr><td>${escapeText(line.name)}</td><td>${escapeText(line.kind)}</td><td>${money(line.amountCents)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function openOrderDetail(id,trigger) {
+ const order=state.orders.find(item=>item.id===id);
+ if(!order) return;
+ $('#order-detail-lines').innerHTML=`<p>${order.id} · ${escapeText(patientName(order.patient))}</p>${lineTable(order.lines)}<p>Total de orden: ${money(order.totalCents)}</p>`;
+ openDialog('#order-detail-dialog',trigger);
+}
+function openReceipt(id,trigger) {
+ const receipt=state.receipts.find(item=>item.id===id);
+ if(!receipt) return;
+ $('#receipt-content').innerHTML=`<div class="summary"><h3>${receipt.id}</h3><p><strong>Sin validez fiscal · DEMO</strong></p>
+  <p>${escapeText(receipt.clinicName)} · ${receipt.date}</p><p>Paciente ficticio: ${escapeText(receipt.patientName)}</p>
+  <p>Orden ${receipt.orderId} · Método ${receipt.method}</p></div>${lineTable(receipt.lines)}
+  <p>Total orden: ${money(receipt.totalCents)} · Pagado acumulado: ${money(receipt.paidCents)}</p>
+  <p>Este pago simulado: <strong>${money(receipt.amountCents)}</strong> · Saldo tras este pago: ${money(receipt.remainingCents)}</p>
+  <p class="help">Registro local sin validez legal, fiscal ni bancaria. Se pierde al recargar.</p>`;
+ openDialog('#receipt-dialog',trigger);
+}
+let qrOrderId=null, qrIntentId=null;
+function openQr(id,trigger) {
+ const order=state.orders.find(item=>item.id===id);
+ if(!order) return;
+ qrOrderId=id;
+ qrIntentId=state.qrIntents.filter(item=>item.orderId===id).at(-1)?.id || null;
+ $('#qr-amount').value=(balance(order)/100).toFixed(2);
+ $('#qr-error').textContent=''; renderQr(); openDialog('#qr-dialog',trigger);
+}
+function renderQr() {
+ const order=state.orders.find(item=>item.id===qrOrderId);
+ const intent=state.qrIntents.find(item=>item.id===qrIntentId);
+ $('#qr-summary').textContent=`${order.id} · ${patientName(order.patient)} · Saldo: ${money(balance(order))}`;
+ $('#qr-state').innerHTML=intent?`<section class="summary" style="margin:16px 0">
+  <p>Intento <strong id="qr-intent-id">${intent.id}</strong> · ${intent.status}</p>
+  <p>${money(intent.amountCents)} · ${intent.orderId} · revisión ${intent.orderRevision}</p>
+  <svg class="qr-art" viewBox="0 0 240 200" role="img" aria-label="Patrón ilustrativo, QR de demostración no pagable">
+   <rect x="20" y="10" width="200" height="150" fill="#ffffff" stroke="#64748b"/>
+   <path d="M40 30h40v40H40zM160 30h40v40h-40zM40 100h40v40H40zM100 30h20v20h-20zM100 80h40v20h-40zM160 110h20v30h-20z" fill="#0f172a"/>
+   <rect x="20" y="76" width="200" height="30" fill="#fef3c7"/>
+   <text x="120" y="96" text-anchor="middle" fill="#b45309">DEMO · NO PAGABLE</text>
+  </svg><p><strong>QR de demostración · NO PAGABLE</strong></p>
+  <p class="help">${intent.status==='PENDIENTE'?'Esperando una confirmación explícita simulada.':'Intento terminal; no se vuelve a liquidar.'}</p>
+  <div class="workflow-actions"><button type="button" id="confirm-qr">Simular confirmación (demo)</button><button type="button" id="expire-qr" ${intent.status!=='PENDIENTE'?'disabled':''}>Simular vencimiento</button><button type="button" id="cancel-qr" ${intent.status!=='PENDIENTE'?'disabled':''}>Cancelar intento</button></div>
+ </section>`:'<p class="help">No hay un intento QR. Generar no registra ingresos.</p>';
+ if(!intent) return;
+ $('#confirm-qr').onclick=()=>{
+  $('#qr-error').textContent='';
+  if(intent.status==='CONFIRMADO') {$('#qr-error').textContent='Intento ya confirmado; no se duplica el pago ni el recibo.';return;}
+  if(intent.status!=='PENDIENTE') {$('#qr-error').textContent='Intento terminal; genera un nuevo QR demo.';return;}
+  if(order.revision!==intent.orderRevision) {
+   intent.status='OBSOLETO'; renderQr(); $('#qr-error').textContent='Intento obsoleto: cambió el saldo. Genera uno nuevo.';return;
+  }
+  if(!registerPayment(order,intent.amountCents,'QR',intent.orderRevision)) {
+   $('#qr-error').textContent='No se pudo confirmar el importe con el saldo actual.';return;
+  }
+  intent.status='CONFIRMADO';
+  $('#order-search').dispatchEvent(new Event('input')); renderQr(); $('#confirm-qr').focus();
+  announce('Confirmación QR simulada; recibo DEMO emitido. Sin dinero real.');
+ };
+ const finish=status=>{
+  if(intent.status!=='PENDIENTE') return;
+  intent.status=status; renderQr(); $('#qr-amount').focus();
+ };
+ $('#expire-qr').onclick=()=>finish('VENCIDO'); $('#cancel-qr').onclick=()=>finish('CANCELADO');
+}
+$('#qr-form').onsubmit=event=>{
+ event.preventDefault();
+ const order=state.orders.find(item=>item.id===qrOrderId), cents=parseCents($('#qr-amount').value);
+ if(!order || cents===null || cents>balance(order)) {$('#qr-error').textContent='Introduce un importe positivo de hasta el saldo pendiente, con máximo dos decimales.';return;}
+ const intent={id:newId('DEMO-QR'),orderId:order.id,amountCents:cents,orderRevision:order.revision,status:'PENDIENTE'};
+ state.qrIntents.push(intent); qrIntentId=intent.id;
+ $('#qr-error').textContent=''; renderQr(); $('#confirm-qr').focus();
 };
 function renderInventory() {
  $('#view').innerHTML=`<section class="card"><div class="filters"><label class="search">Buscar insumo<input id="inventory-search" type="search" placeholder="Nombre o código"></label><label>Disponibilidad<select id="inventory-status"><option value="all">Todos los insumos</option><option value="low">Solo stock bajo</option><option value="ok">Disponibles</option></select></label></div><div id="inventory-results"></div></section>`;
@@ -627,6 +1022,14 @@ document.addEventListener('click',event=>{
  if(editCatalog) openCatalog(editCatalog.dataset.catalogEdit,editCatalog);
  const removeSlot=event.target.closest('[data-remove-slot]');
  if(removeSlot) {removeSlot.closest('[data-slot-id]').remove();$('#add-slot').focus();}
+ const attend=event.target.closest('[data-attend]');
+ if(attend) startConsultation(attend.dataset.attend);
+ const qr=event.target.closest('[data-qr]');
+ if(qr) openQr(qr.dataset.qr,qr);
+ const receipt=event.target.closest('[data-receipt]');
+ if(receipt) openReceipt(receipt.dataset.receipt,receipt);
+ const detail=event.target.closest('[data-order-detail]');
+ if(detail) openOrderDetail(detail.dataset.orderDetail,detail);
  const payButton=event.target.closest('[data-pay]'); if(payButton) openPayment(payButton.dataset.pay,payButton);
  const closeButton=event.target.closest('[data-close]'); if(closeButton) closeDialog(document.getElementById(closeButton.dataset.close));
 });
@@ -635,7 +1038,7 @@ $$('dialog').forEach(dialog=>{
  // Keep Tab inside the modal rather than allowing a browser-chrome focus stop.
  dialog.addEventListener('keydown',event=>{
   if(event.key!=='Tab') return;
-  const controls=$$('button:not(:disabled),input:not(:disabled),select:not(:disabled)',dialog);
+  const controls=$$('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled)',dialog);
   const first=controls[0],last=controls.at(-1);
   if(event.shiftKey&&document.activeElement===first) {event.preventDefault();last.focus();}
   else if(!event.shiftKey&&document.activeElement===last) {event.preventDefault();first.focus();}
