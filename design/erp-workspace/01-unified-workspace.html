@@ -223,6 +223,15 @@ body.nav-collapsed .sidebar { display:none; }
   <div class="dialog-actions"><button type="button" data-close="catalog-dialog">Cancelar</button><button type="submit" class="primary">Guardar registro</button></div>
  </form>
 </dialog>
+<dialog id="master-detail-dialog" aria-labelledby="master-detail-title">
+ <h2 id="master-detail-title">Detalle de registro</h2><div id="master-detail-content" class="summary"></div>
+ <button type="button" data-close="master-detail-dialog">Cerrar detalle</button>
+</dialog>
+<dialog id="master-delete-dialog" aria-labelledby="master-delete-title">
+ <h2 id="master-delete-title">Confirmar eliminación</h2><p id="master-delete-summary" class="summary"></p>
+ <p id="master-delete-error" class="error" role="alert"></p>
+ <div class="dialog-actions"><button type="button" data-close="master-delete-dialog">Cancelar</button><button type="button" id="master-delete-confirm">Eliminar registro</button></div>
+</dialog>
 <dialog id="appointment-dialog" aria-labelledby="appointment-title">
  <form id="appointment-form" novalidate>
   <h2 id="appointment-title">Agendar cita ficticia</h2>
@@ -308,7 +317,7 @@ const pages = {
  imaging:['Imagen','Imagen','Proveedores y tipos de estudio · solo IMAGEN.'],
  diseases:['Enfermedades','Enfermedades','Referencias de clínica, no diagnósticos de pacientes.'],
  allergyCatalog:['Alergias','Alergias','Referencias de clínica, distintas de las alergias del paciente.'],
- triage:['Triage','Triage','Vista inicial de Triage · campos y protocolo por definir'],
+ triage:['Triage','Triage','Configuración de clasificación y descripción · sin evaluación de pacientes'],
  catalogs:['Aranceles','Aranceles','Procedimientos y tarifas ficticias de consulta.'],
  inventory:['Inventario','Inventario','Disponibilidad y alertas de insumos de demostración.'],
  settings:['Configuración','Configuración','Personaliza este espacio. Todo se guarda solo en memoria.']
@@ -316,7 +325,7 @@ const pages = {
 const state = {
  page:'overview', clinic:'Clínica Dental Andina', contact:'recepcion@andina.example (ficticio)', brand:'#0369a1', density:'comfortable',
  menu:Object.keys(pages).map(id => ({id, visible:true})),
- roles:[{name:'Administrador', permissions:['Cobros','Agenda','Clínica']},{name:'Recepcionista', permissions:['Cobros','Agenda']},{name:'Médico', permissions:['Agenda','Clínica']}],
+ roles:[{id:'ROLE-1',name:'Administrador', permissions:['Cobros','Agenda','Clínica']},{id:'ROLE-2',name:'Recepcionista', permissions:['Cobros','Agenda']},{id:'ROLE-3',name:'Médico', permissions:['Agenda','Clínica']}],
  patients:[{id:'DEMO-001', name:'Alba Ejemplo', note:'Control preventivo'},{id:'DEMO-002', name:'Bruno Muestra', note:'Seguimiento'},{id:'DEMO-003', name:'Celia Prueba', note:'Consulta inicial'}],
  orders:[
   {id:'ORD-101',patient:'DEMO-001',service:'Limpieza y control',totalCents:60000,paidCents:0,due:'18 may 2026'},
@@ -340,7 +349,7 @@ const state = {
   {id:'AV-2',physicianId:'PH-2',weekday:1,start:'08:00',end:'17:00',roomId:'RM-2'},
   {id:'AV-3',physicianId:'PH-2',weekday:2,start:'08:00',end:'17:00',roomId:'RM-2'}
  ],
- providers:[], studyTypes:[], diseases:[], allergyCatalog:[], patientContexts:[], nextId:10
+ providers:[], studyTypes:[], diseases:[], allergyCatalog:[], triage:[], patientContexts:[], nextId:10
 };
 // Preserve every inherited fixture while moving references to stable resource IDs.
 state.appointments.forEach((item,index) => {
@@ -351,6 +360,7 @@ state.appointments.forEach((item,index) => {
  item.roomId=state.rooms.find(room=>room.name===item.room).id;
 });
 state.orders.forEach(order=>{
+ order.patientName=patientName(order.patient);
  order.revision=0;
  order.priorPaidCents=order.paidCents;
  order.lines=[{kind:'FIXTURE',name:order.service,amountCents:order.totalCents}];
@@ -472,14 +482,14 @@ $('#payment-form').onsubmit = event => {
 };
 function addPatient(name, documentId) {
  const cleanName=name.trim(), cleanId=documentId.trim();
- if(cleanName.length<2 || !/^[\p{L}\p{N}-]{3,30}$/u.test(cleanId)) return 'Introduce un nombre ficticio de al menos 2 caracteres y un documento válido.';
+ if(cleanName.length<2 || cleanName.length>80 || !/^[\p{L}\p{N}-]{3,30}$/u.test(cleanId)) return 'Introduce un nombre ficticio de al menos 2 caracteres y un documento válido.';
  if(state.patients.some(patient=>patient.id.toLocaleLowerCase()===cleanId.toLocaleLowerCase())) return 'Este documento de demo ya existe. Usa otro identificador ficticio.';
  state.patients.push({id:cleanId,name:cleanName,note:'Nuevo registro ficticio'}); return '';
 }
 function renderPatients() {
  action('Registrar paciente',()=>{ $('#patient-form').reset(); $('#patient-error').textContent=''; openDialog('#patient-dialog'); });
  $('#view').innerHTML=`<section class="card"><div class="filters"><label class="search">Buscar paciente ficticio<input id="patient-search" type="search" placeholder="Nombre o documento de demo"></label></div><div id="patient-results"></div></section>`;
- const filter=()=>{const term=$('#patient-search').value.toLocaleLowerCase(); const matches=state.patients.filter(patient=>`${patient.name} ${patient.id}`.toLocaleLowerCase().includes(term)); $('#patient-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Directorio de pacientes"><table><caption>${matches.length} registros ficticios · no usar datos personales</caption><thead><tr><th scope="col">Nombre ficticio</th><th scope="col">Documento de demo</th><th scope="col">Seguimiento</th><th scope="col">Expediente</th></tr></thead><tbody>${matches.map(patient=>`<tr><td><strong>${escapeText(patient.name)}</strong></td><td>${escapeText(patient.id)}</td><td>${escapeText(patient.note)}</td><td><button type="button" data-chart="${escapeText(patient.id)}">Ver expediente</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty">No se encontraron pacientes ficticios.</td></tr>'}</tbody></table></div>`;};
+ const filter=()=>{const term=$('#patient-search').value.toLocaleLowerCase(); const matches=state.patients.filter(patient=>`${patient.name} ${patient.id}`.toLocaleLowerCase().includes(term)); $('#patient-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Directorio de pacientes"><table><caption>${matches.length} registros ficticios · no usar datos personales</caption><thead><tr><th scope="col">Nombre ficticio</th><th scope="col">Documento de demo</th><th scope="col">Seguimiento</th><th scope="col">Expediente</th></tr></thead><tbody>${matches.map(patient=>`<tr><td><strong>${escapeText(patient.name)}</strong></td><td>${escapeText(patient.id)}</td><td>${escapeText(patient.note)}</td><td>${masterActions('patients',patient)}<button type="button" data-chart="${escapeText(patient.id)}">Ver expediente</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty">No se encontraron pacientes ficticios.</td></tr>'}</tbody></table></div>`;};
  $('#patient-search').oninput=filter; filter();
 }
 $('#patient-form').onsubmit=event=>{
@@ -578,17 +588,7 @@ $('#habits-form').onsubmit=event=>{
  $('[data-habits-edit]').focus();
  announce('Hábitos guardados. Solo en memoria; sin interpretación clínica.');
 };
-function renderTriage() {
- $('#view').innerHTML=`<section class="card"><h2>Vista inicial de Triage · campos y protocolo por definir</h2>
-  <p class="help">Solo lectura del expediente ficticio. Sin puntuación, urgencia, recomendaciones ni decisiones clínicas.</p>
-  <label style="margin-top:24px">Paciente ficticio<select id="triage-patient"><option value="">Seleccionar paciente</option>${state.patients.map(patient=>`<option value="${escapeText(patient.id)}">${escapeText(patient.name)} · ${escapeText(patient.id)}</option>`).join('')}</select></label>
-  <div id="triage-context"></div></section>`;
- const update=()=>{
-  const id=$('#triage-patient').value;
-  $('#triage-context').innerHTML=id?clinicalContextMarkup(id,true):'<p class="empty">Selecciona un paciente para ver su contexto registrado.</p>';
- };
- $('#triage-patient').onchange=update;update();
-}
+function renderTriage() { catalogKind='triage'; renderCatalogs(); }
 function field(id,label,value='',type='text') {
  return `<label>${label}<input id="${id}" type="${type}" maxlength="120" value="${escapeText(value)}"></label>`;
 }
@@ -621,8 +621,8 @@ $('#context-form').onsubmit=event=>{
 };
 
 // Catalog editing has one validation/commit path; failed or closed forms never allocate IDs.
-const catalogLabels={physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',providers:'Proveedores',studyTypes:'Tipos de estudio',procedures:'Procedimientos',diseases:'Enfermedades',allergyCatalog:'Alergias'};
-const catalogRoutes={physicians:'physicians',specialties:'specialties',rooms:'rooms',catalogs:'procedures',diseases:'diseases',allergyCatalog:'allergyCatalog'};
+const catalogLabels={physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',providers:'Proveedores',studyTypes:'Tipos de estudio',procedures:'Procedimientos',diseases:'Enfermedades',allergyCatalog:'Alergias',triage:'Triage',patients:'Pacientes',inventory:'Inventario',roles:'Roles'};
+const catalogRoutes={physicians:'physicians',specialties:'specialties',rooms:'rooms',catalogs:'procedures',diseases:'diseases',allergyCatalog:'allergyCatalog',triage:'triage'};
 const modalityViews={laboratory:'providers',imaging:'providers'};
 function catalogMode() {return state.page==='laboratory'?'LABORATORIO':state.page==='imaging'?'IMAGEN':null;}
 let catalogKind='physicians', catalogDraft=null;
@@ -635,7 +635,10 @@ function catalogDetails(kind,item) {
  if(kind==='providers') return `${item.mode} · ${item.contact || 'Sin contacto'}`;
  if(kind==='procedures') return money(item.priceCents);
  if(kind==='studyTypes') return `${item.mode} · ${money(item.priceCents)} · ${item.providerId?resourceName('providers',item.providerId):'Sin proveedor predeterminado'}`;
- if(kind==='diseases' || kind==='allergyCatalog') return item.description || 'Sin descripción';
+ if(kind==='diseases' || kind==='allergyCatalog' || kind==='triage') return item.description || 'Sin descripción';
+ if(kind==='patients') return `${item.id} · ${item.note}`;
+ if(kind==='inventory') return `Código: ${item.code || item.id} · Cantidad: ${item.stock} · Umbral: ${item.min}`;
+ if(kind==='roles') return `Permisos simulados: ${item.permissions.join(', ') || 'Ninguno'}${item.id==='ROLE-1'?' · Administrador activo protegido':''}`;
  return 'Especialidad de demo';
 }
 function renderCatalogs() {
@@ -649,10 +652,10 @@ function renderCatalogs() {
   <div id="catalog-results" ${mode?`role="tabpanel" aria-labelledby="catalog-tab-${catalogKind}"`:''} style="margin-top:24px">
    <div class="table-wrap" tabindex="0" role="region" aria-label="Registros de catálogo"><table>
     <caption>${records.length} registros ficticios · ${catalogLabels[catalogKind]}</caption>
-    <thead><tr><th scope="col">Nombre</th><th scope="col">Configuración</th><th scope="col">Acción</th></tr></thead>
-    <tbody>${records.map(item=>`<tr><td>${escapeText(item.name)}</td><td>${escapeText(catalogDetails(catalogKind,item))}</td><td><button type="button" data-catalog-edit="${item.id}">Editar</button></td></tr>`).join('') || '<tr><td colspan="3">Sin registrar</td></tr>'}</tbody>
+    <thead><tr><th scope="col">${catalogKind==='triage'?'Clasificación':'Nombre'}</th><th scope="col">${catalogKind==='triage'?'Descripción':'Configuración'}</th><th scope="col">Acción</th></tr></thead>
+    <tbody>${records.map(item=>`<tr><td>${escapeText(item.name)}</td><td>${escapeText(catalogDetails(catalogKind,item))}</td><td>${masterActions(catalogKind,item)}</td></tr>`).join('') || '<tr><td colspan="3">Sin registrar</td></tr>'}</tbody>
    </table></div>
-  </div><p class="help" style="margin-top:24px">${reference?'Lista de referencia local, no historia clínica.':'Configuración conectada a agenda, consulta y estudios de demo.'} Sin análisis de imágenes ni conexión externa.</p>
+  </div><p class="help" style="margin-top:24px">${catalogKind==='triage'?'Catálogo de clasificación y descripción. No evalúa pacientes ni aplica decisiones clínicas.':reference?'Lista de referencia local, no historia clínica.':'Configuración conectada a agenda, consulta y estudios de demo.'} Sin análisis de imágenes ni conexión externa.</p>
  </section>`;
  $('#catalog-add').onclick=()=>openCatalog();
  $$('[data-catalog-tab]').forEach(tab=>{
@@ -678,14 +681,21 @@ function openCatalog(id,trigger) {
  const kind=catalogKind, item=state[kind].find(entry=>entry.id===id) || {};
  catalogDraft={kind,id,mode:catalogMode()};
  $('#catalog-title').textContent=`${id?'Editar':'Crear'} · ${catalogLabels[kind]}`;
- let markup=field('cat-name','Nombre requerido',item.name);
+ let markup=field('cat-name',kind==='triage'?'Clasificación requerida':'Nombre requerido',item.name);
+ if(kind==='patients') {
+  markup+=`<p class="help">Documento de demo / ID inmutable: ${escapeText(item.id)}. Se conserva para mantener los vínculos del expediente.</p>`+field('cat-note','Notas de seguimiento',item.note);
+ } else if(kind==='inventory') {
+  markup+=field('cat-code','Código requerido',item.code || (id?item.id:''))+field('cat-stock','Cantidad (entero no negativo)',item.stock ?? 0,'number')+field('cat-min','Umbral (entero no negativo)',item.min ?? 0,'number');
+ } else if(kind==='roles') {
+  markup+=`<fieldset><legend>Permisos simulados · sin seguridad real</legend>${['Cobros','Agenda','Clínica'].map(permission=>`<label class="check"><input type="checkbox" name="role-permission" value="${permission}" ${item.permissions?.includes(permission)?'checked':''}>${permission}</label>`).join('')}</fieldset>`;
+ }
  if(kind==='physicians') {
   markup+=field('cat-document','Documento de demo (opcional, único)',item.document)+
    `<fieldset><legend>Especialidades (al menos una)</legend>${state.specialties.map(specialty=>`<label class="check"><input type="checkbox" name="specialty" value="${specialty.id}" ${item.specialtyIds?.includes(specialty.id)?'checked':''}>${escapeText(specialty.name)}</label>`).join('') || '<p>Crea primero una especialidad.</p>'}</fieldset>`;
   const slots=state.availability.filter(slot=>slot.physicianId===id);
   markup+=`<div id="availability-slots" class="form-section">${(slots.length?slots:[undefined]).map(slot=>slotMarkup(slot)).join('')}</div><button type="button" id="add-slot">Añadir horario</button>`;
- } else if(kind==='diseases' || kind==='allergyCatalog') {
-  markup+=field('cat-description','Descripción (opcional)',item.description);
+ } else if(kind==='diseases' || kind==='allergyCatalog' || kind==='triage') {
+  markup+=field('cat-description',kind==='triage'?'Descripción requerida':'Descripción (opcional)',item.description);
  } else if(kind==='rooms') {
   markup+=field('cat-location','Ubicación (opcional)',item.location)+`<label class="check"><input id="cat-active" type="checkbox" ${item.active!==false?'checked':''}>Activo</label>`;
  } else if(kind==='procedures') {
@@ -696,6 +706,9 @@ function openCatalog(id,trigger) {
   else markup+=`<label>Proveedor predeterminado (opcional)<select id="cat-provider"></select></label>`+field('cat-price','Precio (Bs, máximo dos decimales)',((item.priceCents || 0)/100).toFixed(2),'number');
  }
  $('#catalog-fields').innerHTML=markup;
+ if(kind==='patients') $('#cat-name').maxLength=80;
+ if(kind==='roles') $('#cat-name').maxLength=40;
+ if(kind==='inventory') $('#cat-code').maxLength=30;
  if(kind==='physicians') $('#add-slot').onclick=()=>$('#availability-slots').insertAdjacentHTML('beforeend',slotMarkup());
  if(kind==='studyTypes') {
   const updateProviders=()=>$('#cat-provider').innerHTML=options(state.providers.filter(provider=>provider.mode===$('#cat-mode').value),item.providerId,true);
@@ -711,9 +724,27 @@ function saveCatalog() {
  const normalized=value=>value.trim().toLocaleLowerCase();
  if(!name) return 'Introduce un nombre requerido.';
  if(name.length>120) return 'El nombre admite hasta 120 caracteres.';
- if(state[kind].some(item=>item.id!==id && normalized(item.name)===normalized(name))) return 'Este nombre ya existe en el catálogo.';
+ if(kind!=='patients' && state[kind].some(item=>item.id!==id && normalized(item.name)===normalized(name))) return 'Este nombre ya existe en el catálogo.';
  const values={name};
  let slots=[];
+ if(kind==='patients') {
+  if(name.length<2 || name.length>80) return 'El nombre ficticio debe tener entre 2 y 80 caracteres.';
+  values.note=$('#cat-note').value.trim();
+  if(values.note.length>120) return 'Las notas admiten hasta 120 caracteres.';
+ } else if(kind==='inventory') {
+  values.code=$('#cat-code').value.trim();
+  if(!/^[\p{L}\p{N}-]{1,30}$/u.test(values.code)) return 'Introduce un código de 1 a 30 letras, números o guiones.';
+  if(state.inventory.some(item=>item.id!==id && normalized(item.code || item.id)===normalized(values.code))) return 'Este código ya existe.';
+  for(const key of ['stock','min']) {
+   const raw=$(`#cat-${key}`).value;
+   if(!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) return 'Cantidad y umbral deben ser enteros no negativos seguros.';
+   values[key]=Number(raw);
+  }
+ } else if(kind==='roles') {
+  const error=validateRoleName(name,id); if(error) return error;
+  if(id==='ROLE-1' && name!=='Administrador') return 'El administrador activo conserva su nombre.';
+  values.permissions=$$('input[name=role-permission]:checked',$('#catalog-form')).map(input=>input.value);
+ }
  if(kind==='physicians') {
   values.document=$('#cat-document').value.trim();
   if(values.document && state.physicians.some(item=>item.id!==id && normalized(item.document)===normalized(values.document))) return 'Este documento de médico ya existe.';
@@ -726,8 +757,9 @@ function saveCatalog() {
    if(!state.rooms.some(room=>room.id===slot.roomId)) return 'Selecciona un consultorio de disponibilidad.';
   }
   if(slots.some((slot,index)=>slots.slice(index+1).some(other=>slot.weekday===other.weekday && slot.start<other.end && other.start<slot.end))) return 'No se permiten horarios superpuestos para el mismo médico.';
- } else if(kind==='diseases' || kind==='allergyCatalog') {
+ } else if(kind==='diseases' || kind==='allergyCatalog' || kind==='triage') {
   values.description=$('#cat-description').value.trim();
+  if(kind==='triage' && !values.description) return 'Introduce una descripción requerida.';
   if(values.description.length>120) return 'La descripción admite hasta 120 caracteres.';
  } else if(kind==='rooms') {
   values.location=$('#cat-location').value.trim(); values.active=$('#cat-active').checked;
@@ -762,8 +794,59 @@ $('#catalog-form').onsubmit=event=>{
  event.preventDefault();
  const error=saveCatalog();
  if(error) {$('#catalog-error').textContent=error;return;}
- closeDialog($('#catalog-dialog')); renderCatalogs(); $('#catalog-add').focus();
+ closeDialog($('#catalog-dialog')); refreshMaster(catalogDraft.kind);
  announce('Catálogo de demo guardado. Solo en memoria.');
+};
+// Master-data controls never apply to clinical or financial transactions.
+function masterActions(kind,item) {
+ const attrs=`data-master-kind="${kind}"`;
+ return `<button type="button" ${attrs} data-master-view="${escapeText(item.id)}">Ver</button><button type="button" ${attrs} data-catalog-edit="${escapeText(item.id)}">Editar</button>${kind==='providers'?'':`<button type="button" ${attrs} data-master-delete="${escapeText(item.id)}">Eliminar</button>`}`;
+}
+function openMasterEditor(kind,id,trigger) { catalogKind=kind; openCatalog(id,trigger); }
+function refreshMaster(kind) {
+ if(kind==='patients') {$('#patient-search').dispatchEvent(new Event('input'));$('#patient-search').focus();}
+ else if(kind==='inventory') {$('#inventory-search').dispatchEvent(new Event('input'));$('#inventory-search').focus();}
+ else if(kind==='roles') {$('#role-list').innerHTML=state.roles.map(roleMarkup).join('');$('#new-role').focus();}
+ else {renderCatalogs();$('#catalog-add').focus();}
+}
+function openMasterDetail(kind,id,trigger) {
+ const item=state[kind].find(entry=>entry.id===id); if(!item) return;
+ $('#master-detail-title').textContent=`Detalle · ${catalogLabels[kind]}`;
+ $('#master-detail-content').innerHTML=`<p><strong>${kind==='triage'?'Clasificación':'Nombre'}: ${escapeText(item.name)}</strong></p><p>ID: ${escapeText(item.id)}</p><p>${kind==='triage'?'Descripción: ':''}${escapeText(catalogDetails(kind,item))}</p>`;
+ openDialog('#master-detail-dialog',trigger);
+}
+function deletionBlock(kind,id) {
+ if(kind==='specialties' && state.physicians.some(item=>item.specialtyIds.includes(id))) return 'Especialidad utilizada por médicos.';
+ if(kind==='rooms' && (state.availability.some(item=>item.roomId===id) || state.appointments.some(item=>item.roomId===id))) return 'Consultorio utilizado por disponibilidad o citas.';
+ if(kind==='physicians' && state.appointments.some(item=>item.physicianId===id)) return 'Médico con citas vinculadas.';
+ if(kind==='patients') {
+  const context=patientContext(id);
+  if(state.appointments.some(item=>item.patient===id) || state.consultations.some(item=>item.patientId===id) || state.orders.some(item=>item.patient===id) || state.studies.some(item=>item.patientId===id) || context.habits || Object.keys(contextLabels).some(key=>context[key].length)) return 'Paciente con citas, historia clínica, órdenes o contexto registrado.';
+ }
+ if(kind==='studyTypes' && state.studies.some(item=>item.typeId===id)) return 'Tipo de estudio utilizado por solicitudes.';
+ if(kind==='procedures' && (state.consultations.some(item=>item.procedureIds.includes(id)) || state.orders.some(item=>item.lines.some(line=>line.kind==='PROCEDIMIENTO' && line.sourceId===id)))) return 'Arancel utilizado por consultas o líneas emitidas.';
+ if(kind==='roles' && id==='ROLE-1') return 'No se puede eliminar el rol Administrador activo de la demo.';
+ return '';
+}
+let deletionDraft=null;
+function openMasterDelete(kind,id,trigger) {
+ const item=state[kind].find(entry=>entry.id===id); if(!item || kind==='providers') return;
+ deletionDraft={kind,id};
+ $('#master-delete-summary').textContent=`Eliminar ${catalogLabels[kind]}: ${item.name}. Solo se elimina este registro libre; esta acción requiere confirmación.`;
+ $('#master-delete-error').textContent='';
+ openDialog('#master-delete-dialog',trigger);
+}
+$('#master-delete-confirm').onclick=()=>{
+ const {kind,id}=deletionDraft;
+ const error=deletionBlock(kind,id);
+ if(error) {$('#master-delete-error').textContent=`No eliminado: ${error} No se modificó ningún registro vinculado.`;return;}
+ const index=state[kind].findIndex(item=>item.id===id); if(index<0) return;
+ state[kind].splice(index,1);
+ // Only owned availability and an empty patient context may be removed.
+ if(kind==='physicians') state.availability=state.availability.filter(item=>item.physicianId!==id);
+ if(kind==='patients') state.patientContexts=state.patientContexts.filter(item=>item.patientId!==id);
+ closeDialog($('#master-delete-dialog')); refreshMaster(kind);
+ announce('Registro libre eliminado. Solo en memoria.');
 };
 // Scheduling is deterministic against the fixed demo calendar, never today's clock.
 function timeMinutes(time) {
@@ -883,7 +966,7 @@ function saveConsultation(complete) {
  Object.assign(consultation,values);
  if(complete) {
   // Exactly one issue path. A closed consultation never reaches this allocation again.
-  const order={id:newId('ORD'),patient:consultation.patientId,consultationId:consultation.id,service:`Consulta ${consultation.id}`,lines:lines.map(line=>({...line})),totalCents,paidCents:0,priorPaidCents:0,revision:0,due:'18 may 2026'};
+  const order={id:newId('ORD'),patient:consultation.patientId,patientName:patientName(consultation.patientId),consultationId:consultation.id,service:`Consulta ${consultation.id}`,lines:lines.map(line=>({...line})),totalCents,paidCents:0,priorPaidCents:0,revision:0,due:'18 may 2026'};
   state.orders.push(order);
   consultation.orderId=order.id;
   consultation.status='CERRADA';
@@ -955,7 +1038,7 @@ function lineTable(lines) {
 function openOrderDetail(id,trigger) {
  const order=state.orders.find(item=>item.id===id);
  if(!order) return;
- $('#order-detail-lines').innerHTML=`<p>${order.id} · ${escapeText(patientName(order.patient))}</p>${lineTable(order.lines)}<p>Total de orden: ${money(order.totalCents)}</p>`;
+ $('#order-detail-lines').innerHTML=`<p>${order.id} · ${escapeText(order.patientName || patientName(order.patient))}</p>${lineTable(order.lines)}<p>Total de orden: ${money(order.totalCents)}</p>`;
  openDialog('#order-detail-dialog',trigger);
 }
 function openReceipt(id,trigger) {
@@ -1024,22 +1107,27 @@ $('#qr-form').onsubmit=event=>{
  $('#qr-error').textContent=''; renderQr(); $('#confirm-qr').focus();
 };
 function renderInventory() {
+ action('Crear insumo',()=>openMasterEditor('inventory'));
  $('#view').innerHTML=`<section class="card"><div class="filters"><label class="search">Buscar insumo<input id="inventory-search" type="search" placeholder="Nombre o código"></label><label>Disponibilidad<select id="inventory-status"><option value="all">Todos los insumos</option><option value="low">Solo stock bajo</option><option value="ok">Disponibles</option></select></label></div><div id="inventory-results"></div></section>`;
- const filter=()=>{const term=$('#inventory-search').value.toLocaleLowerCase(); const matches=state.inventory.filter(item=>`${item.id} ${item.name}`.toLocaleLowerCase().includes(term)&&($('#inventory-status').value==='all'||$('#inventory-status').value===(item.stock<item.min?'low':'ok'))); $('#inventory-results').innerHTML=`<p class="help" style="margin-bottom:16px">${matches.filter(item=>item.stock<item.min).length} insumos con stock bajo en estos resultados. Cantidades ficticias.</p><div class="table-wrap" tabindex="0" role="region" aria-label="Existencias de demo"><table><caption>${matches.length} insumos encontrados</caption><thead><tr>${['Código','Insumo','Stock','Mínimo','Estado'].map(label=>`<th scope="col">${label}</th>`).join('')}</tr></thead><tbody>${matches.map(item=>`<tr><td>${item.id}</td><td>${item.name}</td><td class="amount">${item.stock}</td><td class="amount">${item.min}</td><td>${badge(item.stock<item.min?'low':'ok')}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">No hay insumos que coincidan con estos filtros.</td></tr>'}</tbody></table></div>`;};
+ const filter=()=>{const term=$('#inventory-search').value.toLocaleLowerCase(); const matches=state.inventory.filter(item=>`${item.code || item.id} ${item.name}`.toLocaleLowerCase().includes(term)&&($('#inventory-status').value==='all'||$('#inventory-status').value===(item.stock<item.min?'low':'ok'))); $('#inventory-results').innerHTML=`<p class="help" style="margin-bottom:16px">${matches.filter(item=>item.stock<item.min).length} insumos con stock bajo en estos resultados. Cantidades ficticias.</p><div class="table-wrap" tabindex="0" role="region" aria-label="Existencias de demo"><table><caption>${matches.length} insumos encontrados</caption><thead><tr>${['Código','Insumo','Stock','Mínimo','Estado','Acciones'].map(label=>`<th scope="col">${label}</th>`).join('')}</tr></thead><tbody>${matches.map(item=>`<tr><td>${escapeText(item.code || item.id)}</td><td>${escapeText(item.name)}</td><td class="amount">${item.stock}</td><td class="amount">${item.min}</td><td>${badge(item.stock<item.min?'low':'ok')}</td><td>${masterActions('inventory',item)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No hay insumos que coincidan con estos filtros.</td></tr>'}</tbody></table></div>`;};
  $('#inventory-search').oninput=filter; $('#inventory-status').onchange=filter; filter();
 }
 function navSetting(item) {
  return `<div class="nav-setting" data-nav-id="${item.id}"><label class="check"><input type="checkbox" ${item.visible?'checked':''} ${item.id==='settings'?'disabled':''}>${pages[item.id][0]}${item.id==='settings'?' · acceso protegido':''}</label><div class="moves"><button type="button" data-move="up" aria-label="Subir ${pages[item.id][0]}">↑</button><button type="button" data-move="down" aria-label="Bajar ${pages[item.id][0]}">↓</button></div></div>`;
 }
 function roleMarkup(role) {
- return `<section class="role" data-role="${escapeText(role.name)}"><h3>${escapeText(role.name)}</h3><div class="permissions">${['Cobros','Agenda','Clínica'].map(permission=>`<label class="check"><input type="checkbox" value="${permission}" ${role.permissions.includes(permission)?'checked':''}>${permission}</label>`).join('')}</div></section>`;
+ return `<section class="role" data-role="${escapeText(role.name)}"><h3>${escapeText(role.name)}</h3>${masterActions('roles',role)}<div class="permissions">${['Cobros','Agenda','Clínica'].map(permission=>`<label class="check"><input type="checkbox" value="${permission}" ${role.permissions.includes(permission)?'checked':''}>${permission}</label>`).join('')}</div></section>`;
 }
-function addRole(name) {
+function validateRoleName(name,id) {
  const clean=name.trim();
  if(clean.length<2||clean.length>40) return 'El rol debe tener entre 2 y 40 caracteres.';
  if(clean.toLocaleLowerCase()==='paciente') return 'Paciente es un registro de negocio, no un rol del equipo.';
- if(state.roles.some(role=>role.name.toLocaleLowerCase()===clean.toLocaleLowerCase())) return 'Este rol ya existe.';
- state.roles.push({name:clean,permissions:[]}); return '';
+ if(state.roles.some(role=>role.id!==id && role.name.toLocaleLowerCase()===clean.toLocaleLowerCase())) return 'Este rol ya existe.';
+ return '';
+}
+function addRole(name) {
+ const error=validateRoleName(name); if(error) return error;
+ state.roles.push({id:newId('ROLE'),name:name.trim(),permissions:[]}); return '';
 }
 function renderSettings() {
  $('#view').innerHTML=`<section class="card"><div class="tabs" role="tablist" aria-label="Secciones de configuración">${[['clinic','Clínica'],['appearance','Apariencia'],['navigation','Navegación'],['roles','Roles']].map(([id,label],index)=>`<button type="button" role="tab" id="tab-${id}" aria-controls="panel-${id}" aria-selected="${index===0}" tabindex="${index===0?'0':'-1'}" data-tab="${id}">${label}</button>`).join('')}</div>
@@ -1092,7 +1180,11 @@ document.addEventListener('click',event=>{
   announce('Antecedente ficticio eliminado. Solo en memoria.');
  }
  const editCatalog=event.target.closest('[data-catalog-edit]');
- if(editCatalog) openCatalog(editCatalog.dataset.catalogEdit,editCatalog);
+ if(editCatalog) openMasterEditor(editCatalog.dataset.masterKind,editCatalog.dataset.catalogEdit,editCatalog);
+ const viewMaster=event.target.closest('[data-master-view]');
+ if(viewMaster) openMasterDetail(viewMaster.dataset.masterKind,viewMaster.dataset.masterView,viewMaster);
+ const deleteMaster=event.target.closest('[data-master-delete]');
+ if(deleteMaster) openMasterDelete(deleteMaster.dataset.masterKind,deleteMaster.dataset.masterDelete,deleteMaster);
  const removeSlot=event.target.closest('[data-remove-slot]');
  if(removeSlot) {removeSlot.closest('[data-slot-id]').remove();$('#add-slot').focus();}
  const attend=event.target.closest('[data-attend]');

@@ -59,6 +59,10 @@ try {
   const noOverflow = async target => check(await target.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No page horizontal overflow');
   const snapshotKPIs = () => page.locator('[data-kpi]').allTextContents();
 
+  // Reopened S11: assert the missing configuration surface before any implementation.
+  await go('triage');
+  check(await page.locator('#catalog-add').count()===1 && await page.locator('#triage-patient').count()===0, 'S11 Triage is configuration CRUD, not patient assessment');
+  await go('overview');
   const resourceMenus = {physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',laboratory:'Laboratorio',imaging:'Imagen',diseases:'Enfermedades',allergyCatalog:'Alergias',triage:'Triage'};
   await page.locator('#navigation [data-page="clinical"]').click();
   console.log(`S8-S11 discovery: direct menus=${(await page.locator('#navigation button').allTextContents()).filter(label=>Object.values(resourceMenus).includes(label)).length}/8; habits=${await page.getByRole('button',{name:'Editar hábitos',exact:true}).count()}; references=${await page.locator('#navigation [data-page="diseases"],#navigation [data-page="allergyCatalog"]').count()}/2; triage=${await page.locator('#navigation [data-page="triage"]').count()}/1`);
@@ -706,6 +710,45 @@ try {
   await flow.locator('#complete-consultation').click();
   check(await ft('#consultation-status')==='CERRADA' && (await ft('#consultation-studies')).includes('PENDIENTE'), 'Pending studies explicitly allowed at completion without invented results');
   await noOverflow(flow);
+  // Referenced deletions must not alter any connected business record or money.
+  await flow.setViewportSize({width:1440,height:1000});
+  await flow.waitForFunction(()=>document.querySelector('#menu-toggle').getAttribute('aria-expanded')==='true');
+  async function businessSnapshot() {
+    await fg('overview'); const kpis=await flow.locator('[data-kpi]').allTextContents();
+    await fg('payments'); const payments=await ft('#order-results');
+    await fg('agenda'); await flow.locator('#agenda-period').selectOption('week'); const agenda=await ft('#agenda-results');
+    await fg('clinical'); await flow.locator('#clinical-patient').selectOption('FLOW-001'); const clinical=await ft('#clinical-results');
+    return JSON.stringify({kpis,payments,agenda,clinical});
+  }
+  const protectedBusiness=await businessSnapshot();
+  for(const [kind,name,mode] of [['specialties','Especialidad flujo'],['rooms','Sala renombrada'],['physicians','Dra. Flujo renombrada'],['studyTypes','Estudio lab renombrado','LABORATORIO'],['studyTypes','Estudio imagen flujo','IMAGEN'],['procedures','Consulta demo']]) {
+    await fcTab(kind,mode);
+    const listBefore=await ft('#catalog-results');
+    await flow.locator('#catalog-results tbody tr').filter({hasText:name}).locator('[data-master-delete]').click();
+    await flow.locator('#master-delete-confirm').click();
+    check((await ft('#master-delete-error')).includes('No eliminado') && await ft('#catalog-results')===listBefore, `Referenced ${kind}/${name} deletion rejects with exact list unchanged`);
+    await flow.keyboard.press('Escape');
+    check(await businessSnapshot()===protectedBusiness, `Referenced ${kind}/${name} deletion preserves patients, history, appointments, studies, orders, receipts and money`);
+  }
+  await fg('patients');
+  const protectedDirectory=await ft('#patient-results');
+  await flow.locator('[data-master-delete="FLOW-001"]').click(); await flow.locator('#master-delete-confirm').click();
+  check((await ft('#master-delete-error')).includes('Paciente con') && await ft('#patient-results')===protectedDirectory, 'Patient with linked clinical/financial records cannot be deleted');
+  await flow.keyboard.press('Escape');
+  check(await businessSnapshot()===protectedBusiness, 'Blocked patient deletion leaves complete business snapshot unchanged');
+  // Patient labels are live, issued orders and receipts remain snapshots.
+  await fg('payments'); await flowOrder().locator('[data-order-detail]').click(); const orderPatientSnapshot=await ft('#order-detail-lines'); await flow.keyboard.press('Escape');
+  await flowOrder().locator('[data-receipt]').first().click(); const receiptPatientSnapshot=await ft('#receipt-content'); await flow.keyboard.press('Escape');
+  await fg('patients'); await flow.locator('[data-catalog-edit="FLOW-001"]').click();
+  check((await ft('#catalog-fields')).includes('ID inmutable'), 'Patient document immutability explained visibly');
+  await flow.locator('#cat-name').fill('Dalia renombrada'); await flow.locator('#cat-note').fill('Nota editada'); await flow.locator('#catalog-form button[type=submit]').click();
+  await fg('clinical'); await flow.locator('#clinical-patient').selectOption('FLOW-001');
+  check((await flow.locator('#clinical-patient option:checked').innerText()).includes('Dalia renombrada') && (await ft('#clinical-results')).includes('Alergia Dalia'), 'Patient rename retains stable selector/history links');
+  await fg('agenda'); check((await ft('#agenda-results')).includes('Dalia renombrada'), 'Patient rename updates linked appointments');
+  await fg('payments'); await flowOrder().locator('[data-order-detail]').click();
+  check(await ft('#order-detail-lines')===orderPatientSnapshot, 'Patient edit cannot rewrite issued order snapshot'); await flow.keyboard.press('Escape');
+  await flowOrder().locator('[data-receipt]').first().click();
+  check(await ft('#receipt-content')===receiptPatientSnapshot, 'Patient edit cannot rewrite issued receipt snapshot'); await flow.keyboard.press('Escape');
   await flow.reload();
   check((await flow.locator('[data-kpi]').allTextContents()).join('|')==='Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'T3 reload resets financial state');
   await fg('agenda'); check(!await flow.locator(`[data-attend="${appointmentId}"]`).count(), 'Reload removes new appointments and consultations');
@@ -791,15 +834,65 @@ try {
   check(await habits().innerText()==='Sin registrar', 'Clearing habits explicitly restores undocumented');
   await editHabits(habitText); await expanded.locator('#habits-form button[type=submit]').click();
   await eg('triage');
-  check((await et('#view')).includes('Vista inicial de Triage · campos y protocolo por definir') && await expanded.locator('#triage-patient').count()===1 && await expanded.locator('#view input,#view textarea,#view button').count()===0, 'Triage initial read-only context, no scores or decision controls');
-  await expanded.locator('#triage-patient').selectOption('');
-  check((await et('#triage-context')).includes('Selecciona un paciente'), 'Triage empty context safe');
-  await expanded.locator('#triage-patient').selectOption('DEMO-001');
-  check((await et('#triage-context')).includes(habitText), 'Triage displays saved habits');
-  const triageText=await et('#triage-context');
-  check(['Alergia ficticia Alba','Reacción humana','Antecedente familiar ficticio','Nota personal ficticia Alba'].every(value=>triageText.includes(value)), 'Triage reads actual saved allergy, family and personal history');
-  await expanded.locator('#triage-patient').selectOption('DEMO-002');
-  check((await et('#triage-context')).includes('Solo Bruno') && !(await et('#triage-context')).includes(habitText), 'Triage patient selection isolated');
+  check(await expanded.locator('#triage-patient').count()===0 && (await et('#catalog-results')).includes('Sin registrar'), 'Triage configuration empty state without patient controls');
+  const triageCreate=async(name,description)=>{
+    await expanded.locator('#catalog-add').click();
+    await expanded.locator('#cat-name').fill(name); await expanded.locator('#cat-description').fill(description);
+    await expanded.locator('#catalog-form button[type=submit]').click();
+  };
+  for(const [name,description] of [['','Descripción'],['Clase',''],['   ','   ']]) {
+    const before=await et('#catalog-results'); await triageCreate(name,description);
+    check(await expanded.locator('#catalog-dialog').isVisible() && await et('#catalog-results')===before && (await et('#catalog-error')).length>0, 'Triage required classification/description reject without mutation');
+    await expanded.keyboard.press('Escape');
+  }
+  for(const dismissal of ['cancel','escape']) {
+    const before=await et('#catalog-results'); await expanded.locator('#catalog-add').click();
+    await expanded.locator('#cat-name').fill('Descartar clase'); await expanded.locator('#cat-description').fill('Descartar descripción');
+    if(dismissal==='cancel') await expanded.locator('#catalog-dialog [data-close]').click(); else await expanded.keyboard.press('Escape');
+    check(await et('#catalog-results')===before, `Triage create ${dismissal} preserves empty list/count`);
+  }
+  await expanded.locator('#catalog-add').click();
+  for(const [key,value] of [['name','x'.repeat(121)],['description','y'.repeat(121)]]) {
+    await expanded.locator('#cat-name').fill('Clase válida'); await expanded.locator('#cat-description').fill('Descripción válida');
+    await expanded.locator(`#cat-${key}`).evaluate(node=>node.removeAttribute('maxlength'));
+    await expanded.locator(`#cat-${key}`).fill(value); const before=await et('#catalog-results');
+    await expanded.locator('#catalog-form button[type=submit]').click();
+    check((await et('#catalog-error')).includes('120') && await et('#catalog-results')===before, `Triage ${key} rejects 121 characters without mutation`);
+  }
+  await expanded.keyboard.press('Escape');
+  await triageCreate('x'.repeat(120),'y'.repeat(120));
+  check(await expanded.locator('[data-catalog-edit]').count()===1, 'Triage accepts both exact 120-character boundaries');
+  await expanded.locator('[data-master-delete]').click(); await expanded.locator('#master-delete-confirm').click();
+  const literalClass='<img onerror=throw(1)>', literalDescription='Texto <script>throw(1)</script>';
+  await triageCreate(literalClass,literalDescription);
+  check((await et('#catalog-results')).includes(literalClass) && await expanded.locator('#catalog-results img,#catalog-results script').count()===0, 'Triage plain text create is literal');
+  const triageSaved=await et('#catalog-results');
+  await triageCreate(` ${literalClass.toUpperCase()} `,'Duplicado');
+  check((await et('#catalog-error')).includes('ya existe') && await et('#catalog-results')===triageSaved, 'Triage trimmed case-insensitive duplicate rejects without mutation');
+  await expanded.keyboard.press('Escape');
+  await expanded.locator('[data-master-view]').click();
+  check((await et('#master-detail-content')).includes(literalClass) && (await et('#master-detail-content')).includes(literalDescription), 'Triage actual detail contains classification and description');
+  await expanded.keyboard.press('Escape');
+  for(const dismissal of ['cancel','escape']) {
+    const before=await et('#catalog-results'); await expanded.locator('[data-catalog-edit]').click();
+    await expanded.locator('#cat-description').fill('No guardar');
+    if(dismissal==='cancel') await expanded.locator('#catalog-dialog [data-close]').click(); else await expanded.keyboard.press('Escape');
+    check(await et('#catalog-results')===before, `Triage edit ${dismissal} preserves saved list/count`);
+  }
+  const triageId=await expanded.locator('[data-catalog-edit]').getAttribute('data-catalog-edit');
+  await expanded.locator('[data-catalog-edit]').click(); await expanded.locator('#cat-description').fill('Descripción editada');
+  check(await expanded.locator('#cat-name').getAttribute('maxlength')==='120' && await expanded.locator('#cat-description').getAttribute('maxlength')==='120', 'Triage bounded classification and description');
+  await expanded.locator('#catalog-form button[type=submit]').click();
+  check(await expanded.locator('[data-catalog-edit]').getAttribute('data-catalog-edit')===triageId && (await et('#catalog-results')).includes('Descripción editada'), 'Triage update keeps stable identity');
+  for(const dismiss of ['cancel','escape']) {
+    const before=await et('#catalog-results'); await expanded.locator('[data-master-delete]').click();
+    await expanded.locator('#master-delete-confirm').focus(); await expanded.keyboard.press('Tab');
+    check(await expanded.locator('#master-delete-dialog [data-close]').evaluate(node=>node===document.activeElement), 'Delete confirmation Tab wraps');
+    if(dismiss==='cancel') await expanded.locator('#master-delete-dialog [data-close]').click(); else await expanded.keyboard.press('Escape');
+    check(await et('#catalog-results')===before && await expanded.locator('[data-master-delete]').evaluate(node=>node===document.activeElement), `Triage delete ${dismiss} preserves data and focus`);
+  }
+  await expanded.locator('[data-master-delete]').click(); await expanded.locator('#master-delete-confirm').click();
+  check((await et('#catalog-results')).includes('Sin registrar'), 'Triage confirmed delete restores empty state');
   for(const id of ['diseases','allergyCatalog']) {
     await eg(id);
     check((await et('#view')).includes('no se aplican al paciente'), `Reference catalog distinguished: ${id}`);
@@ -845,7 +938,7 @@ try {
   await expanded.keyboard.press('Escape');
   for(const id of Object.keys(resourceMenus)) {
     await eg(id); await noOverflow(expanded);
-    if(id!=='triage') {
+    {
       await expanded.locator('#catalog-add').click();
       check(await expanded.locator('#catalog-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth), `Mobile narrow form: ${id}`);
       await expanded.locator('#catalog-form button[type=submit]').focus(); await expanded.keyboard.press('Tab');
@@ -857,11 +950,150 @@ try {
   await editHabits('Borrador móvil'); await noOverflow(expanded);
   check(await expanded.locator('#habits-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth), 'Mobile habits dialog fits');
   await expanded.keyboard.press('Escape');
-  await eg('triage'); await expanded.locator('#triage-patient').selectOption('DEMO-001');
+  await eg('triage');
   await expanded.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
   check(await expanded.locator('[id]').evaluateAll(nodes=>new Set(nodes.map(node=>node.id)).size===nodes.length), 'Context rendering has no duplicate DOM IDs');
   await expanded.reload(); await eg('clinical');
   check(await habits().innerText()==='Sin registrar', 'Reload resets habits');
+  // Full S13 CRUD on free records; public DOM only, independent fixtures.
+  const masters=await openPage({width:1440,height:1000});
+  const mt=selector=>masters.locator(selector).innerText();
+  async function mg(route) { await masters.locator(`#navigation [data-page="${route}"]`).click(); }
+  async function mc(kind,mode) { await selectCatalog(masters,kind,mode); }
+  async function submitMaster() { await masters.locator('#catalog-form button[type=submit]').click(); }
+  async function detailMaster(row,name,detail) {
+    await row.locator('[data-master-view]').click();
+    const content=await mt('#master-detail-content');
+    check(content.includes(name) && content.includes(detail), `Actual read/detail for ${name}: ${detail}`);
+    await masters.locator('#master-detail-dialog [data-close]').focus(); await masters.keyboard.press('Tab');
+    check(await masters.locator('#master-detail-dialog [data-close]').evaluate(node=>node===document.activeElement), 'Shared detail traps Tab');
+    await masters.keyboard.press('Escape');
+    check(await row.locator('[data-master-view]').evaluate(node=>node===document.activeElement), 'Shared detail restores initiating focus');
+  }
+  async function deleteFree(row,result,name) {
+    const before=await mt(result);
+    for(const dismiss of ['cancel','escape']) {
+      await row.locator('[data-master-delete]').click();
+      if(dismiss==='cancel') await masters.locator('#master-delete-dialog [data-close]').click(); else await masters.keyboard.press('Escape');
+      check(await mt(result)===before, `${name} delete ${dismiss} does not mutate list/counter`);
+    }
+    await row.locator('[data-master-delete]').click(); await masters.locator('#master-delete-confirm').click();
+    check(!await row.count() && !(await mt(result)).includes(name), `${name} confirmed free record deletion`);
+  }
+  const freeCases=[
+    ['specialties','Libre especialidad',{},'Especialidad de demo'],
+    ['rooms','Libre consultorio',{location:'Ubicación libre'},'Ubicación libre'],
+    ['physicians','Libre médico',{document:'LIBRE-MED'},'LIBRE-MED'],
+    ['studyTypes','Libre laboratorio',{price:'12.34'},'Bs 12,34','LABORATORIO'],
+    ['studyTypes','Libre imagen',{price:'12.34'},'Bs 12,34','IMAGEN'],
+    ['procedures','Libre arancel',{price:'12.34'},'Bs 12,34'],
+    ['diseases','Libre enfermedad',{description:'Referencia libre'},'Referencia libre'],
+    ['allergyCatalog','Libre alergia',{description:'Referencia libre'},'Referencia libre']
+  ];
+  // Use the clinic references directly; no patient allergy data is inferred.
+  for(const [kind,name,values,detail,mode] of freeCases) {
+    if(kind==='physicians') {
+      await mc('rooms'); await masters.locator('#catalog-add').click(); await masters.locator('#cat-name').fill('Sala de horario libre'); await submitMaster();
+    }
+    if(['diseases','allergyCatalog'].includes(kind)) await mg(kind); else await mc(kind,mode);
+    const before=await mt('#catalog-results');
+    await masters.locator('#catalog-add').click();
+    await submitMaster();
+    check(await masters.locator('#catalog-dialog').isVisible() && await mt('#catalog-results')===before, `${kind} invalid create preserves list and counter`);
+    await masters.locator('#cat-name').fill(name);
+    for(const [key,value] of Object.entries(values)) await masters.locator(`#cat-${key}`).fill(value);
+    if(kind==='physicians') {
+      await masters.getByLabel('Odontología general',{exact:true}).check();
+      await masters.locator('.slot-room').selectOption({label:'Sala de horario libre'});
+    }
+    await submitMaster();
+    const row=masters.locator('#catalog-results tbody tr').filter({hasText:name});
+    check(await row.count()===1, `${kind} free record created`);
+    const id=await row.locator('[data-catalog-edit]').getAttribute('data-catalog-edit');
+    await detailMaster(row,name,detail);
+    const created=await mt('#catalog-results');
+    await row.locator('[data-catalog-edit]').click(); await masters.locator('#cat-name').fill(''); await submitMaster();
+    check(await masters.locator('#catalog-dialog').isVisible() && await mt('#catalog-results')===created, `${kind} invalid edit retains exact list/count`);
+    await masters.locator('#cat-name').fill(`${name} editado`); await submitMaster();
+    check(await row.locator('[data-catalog-edit]').getAttribute('data-catalog-edit')===id && (await row.innerText()).includes('editado'), `${kind} update preserves stable ID`);
+    await detailMaster(row,`${name} editado`,detail);
+    await deleteFree(row,'#catalog-results',name);
+    check(await mt('#catalog-results')===before, `${kind} CRUD cycle restores original list and count`);
+    if(kind==='physicians') {
+      // The free doctor's owned availability must not leave a dangling room dependency.
+      await mc('rooms');
+      const ownedRoom=masters.locator('#catalog-results tbody tr').filter({hasText:'Sala de horario libre'});
+      await deleteFree(ownedRoom,'#catalog-results','Sala de horario libre');
+      check((await mt('#catalog-results')).includes('Consultorio 1'), 'Free physician deletion cleans only owned availability, leaving other rooms and doctors');
+    }
+  }
+  // Counter proof through consecutive publicly visible IDs around rejected operations.
+  await mc('specialties');
+  async function createCounter(name) {
+    await masters.locator('#catalog-add').click(); await masters.locator('#cat-name').fill(name); await submitMaster();
+    return Number((await masters.locator('#catalog-results tbody tr').filter({hasText:name}).locator('[data-catalog-edit]').getAttribute('data-catalog-edit')).split('-').at(-1));
+  }
+  const firstCounter=await createCounter('Contador A');
+  await masters.locator('#catalog-add').click(); await masters.locator('#cat-name').fill(' contador a '); await submitMaster(); await masters.keyboard.press('Escape');
+  await masters.locator('#catalog-add').click(); await masters.locator('#cat-name').fill('Descartado'); await masters.keyboard.press('Escape');
+  await masters.locator('#catalog-results tbody tr').filter({hasText:'Odontología general'}).locator('[data-master-delete]').click(); await masters.locator('#master-delete-confirm').click(); await masters.keyboard.press('Escape');
+  check(await createCounter('Contador B')===firstCounter+1, 'Rejected/abandoned saves and referenced deletion allocate no IDs');
+  // Patient CRUD includes an empty stored context (the only permitted context cleanup).
+  await mg('patients'); const directoryBefore=await mt('#patient-results');
+  await masters.getByRole('button',{name:'Registrar paciente',exact:true}).click();
+  await masters.locator('#patient-name').fill('Paciente libre'); await masters.locator('#patient-document').fill('FREE-001'); await masters.locator('#patient-form button[type=submit]').click();
+  let patientRow=masters.locator('#patient-results tbody tr').filter({hasText:'FREE-001'});
+  await detailMaster(patientRow,'Paciente libre','FREE-001');
+  await patientRow.locator('[data-catalog-edit]').click(); await masters.locator('#cat-name').fill('P'); await submitMaster();
+  check((await mt('#catalog-error')).includes('2 y 80') && (await mt('#patient-results')).includes('Paciente libre'), 'Patient invalid edit preserves directory');
+  await masters.locator('#cat-name').fill('Paciente libre editado'); await masters.locator('#cat-note').fill('Nota libre'); await submitMaster();
+  await detailMaster(patientRow,'Paciente libre editado','Nota libre');
+  await patientRow.locator('[data-chart]').click(); await masters.locator('[data-habits-edit]').click(); await masters.locator('#habits-form button[type=submit]').click();
+  await mg('patients'); await deleteFree(patientRow,'#patient-results','Paciente libre editado');
+  check(await mt('#patient-results')===directoryBefore, 'Free patient CRUD restores original directory');
+  // Context-only dependency blocks deletion even without appointments or orders.
+  await masters.getByRole('button',{name:'Registrar paciente',exact:true}).click(); await masters.locator('#patient-name').fill('Solo contexto'); await masters.locator('#patient-document').fill('CONTEXT-001'); await masters.locator('#patient-form button[type=submit]').click();
+  await masters.locator('[data-chart="CONTEXT-001"]').click(); await masters.locator('[data-habits-edit]').click(); await masters.locator('#habits-text').fill('Hábito humano'); await masters.locator('#habits-form button[type=submit]').click();
+  await mg('patients'); const contextDirectory=await mt('#patient-results'); await masters.locator('[data-master-delete="CONTEXT-001"]').click(); await masters.locator('#master-delete-confirm').click();
+  check((await mt('#master-delete-error')).includes('contexto') && await mt('#patient-results')===contextDirectory, 'Context-only patient deletion is protected'); await masters.keyboard.press('Escape');
+  await masters.locator('[data-chart="CONTEXT-001"]').click(); check((await mt('[data-habits-summary]'))==='Hábito humano', 'Blocked deletion retains patient habits');
+  await mg('inventory'); const inventoryBefore=await mt('#inventory-results');
+  await masters.getByRole('button',{name:'Crear insumo',exact:true}).click();
+  await masters.locator('#cat-name').fill('Insumo <demo>'); await masters.locator('#cat-code').fill('FREE-INS');
+  for(const [key,value] of [['stock','-1'],['stock','1.5'],['min','-1'],['min','2.5']]) {
+    await masters.locator('#cat-stock').fill('2'); await masters.locator('#cat-min').fill('3'); await masters.locator(`#cat-${key}`).fill(value); await submitMaster();
+    check((await mt('#catalog-error')).includes('enteros') && await mt('#inventory-results')===inventoryBefore, `Inventory invalid ${key}/${value} leaves rows and low count unchanged`);
+  }
+  await masters.locator('#cat-min').fill('3'); await masters.locator('#cat-stock').fill('2'); await masters.locator('#cat-code').fill('INS-01'); await submitMaster();
+  check((await mt('#catalog-error')).includes('ya existe') && await mt('#inventory-results')===inventoryBefore, 'Inventory duplicate code rejected without mutation');
+  await masters.locator('#cat-code').fill('FREE-INS'); await submitMaster();
+  const itemRow=masters.locator('#inventory-results tbody tr').filter({hasText:'FREE-INS'});
+  const itemId=await itemRow.locator('[data-catalog-edit]').getAttribute('data-catalog-edit');
+  await detailMaster(itemRow,'Insumo <demo>','Cantidad: 2 · Umbral: 3');
+  await itemRow.locator('[data-catalog-edit]').click(); await masters.locator('#cat-stock').fill('8'); await masters.locator('#cat-min').fill('4'); await masters.locator('#cat-name').fill('Insumo editado'); await submitMaster();
+  check(await itemRow.locator('[data-catalog-edit]').getAttribute('data-catalog-edit')===itemId && (await itemRow.innerText()).includes('Disponible'), 'Inventory update retains ID and recomputes availability');
+  await detailMaster(itemRow,'Insumo editado','Cantidad: 8 · Umbral: 4');
+  await deleteFree(itemRow,'#inventory-results','Insumo editado'); check(await mt('#inventory-results')===inventoryBefore, 'Inventory CRUD restores original quantities/low count');
+  await mg('settings'); await masters.getByRole('tab',{name:'Roles',exact:true}).click();
+  const rolesBefore=await mt('#role-list');
+  await masters.locator('[data-role="Administrador"] [data-master-delete]').click(); await masters.locator('#master-delete-confirm').click();
+  check((await mt('#master-delete-error')).includes('Administrador activo') && await mt('#role-list')===rolesBefore, 'Active demo administrator removal protected'); await masters.keyboard.press('Escape');
+  await masters.locator('#new-role').fill('Rol libre'); await masters.locator('#add-role').click();
+  const roleRow=masters.locator('.role').filter({hasText:'Rol libre'});
+  const roleId=await roleRow.locator('[data-catalog-edit]').getAttribute('data-catalog-edit');
+  await detailMaster(roleRow,'Rol libre','Ninguno');
+  await roleRow.locator('[data-catalog-edit]').click(); await masters.locator('#cat-name').fill('Paciente'); await submitMaster();
+  check((await mt('#catalog-error')).includes('no un rol') && (await mt('#role-list')).includes('Rol libre'), 'Role edit rejects patient login role');
+  await masters.locator('#cat-name').fill('Rol libre editado'); await masters.locator('input[name="role-permission"][value="Agenda"]').check(); await submitMaster();
+  check(await roleRow.locator('[data-catalog-edit]').getAttribute('data-catalog-edit')===roleId && await roleRow.locator('input[value="Agenda"]').isChecked(), 'Role edit preserves stable ID and saves simulated permission');
+  await detailMaster(roleRow,'Rol libre editado','Agenda'); await deleteFree(roleRow,'#role-list','Rol libre editado');
+  check(await mt('#role-list')===rolesBefore, 'Role CRUD restores original staff roles');
+  await mg('overview'); check((await masters.locator('[data-kpi]').allTextContents()).join('|')==='Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'All master CRUD leaves financial fixture untouched');
+  await mg('triage'); await masters.locator('#catalog-add').click();
+  await masters.locator('#cat-name').fill('Clasificación de ejemplo'); await masters.locator('#cat-description').fill('Referencia configurable de demostración; sin valoración de pacientes.'); await submitMaster();
+  await masters.screenshot({path:fileURLToPath(new URL('desktop.png',import.meta.url)),fullPage:true});
+  await masters.setViewportSize({width:390,height:844}); await noOverflow(masters);
+  await masters.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
   for (const context of contexts) for (const item of context.pages()) check(await item.evaluate(()=>window.demoViolations.length) === 0, 'No API or storage writes');
   check(network.length === 0, `No HTTP requests: ${network.join(', ')}`);
   check(errors.length === 0, `No page errors: ${errors.join(', ')}`);
