@@ -21,6 +21,10 @@ input,select { border:1px solid #64748b; border-radius:10px; padding:10px 14px; 
 input[type=checkbox] { width:18px; height:18px; accent-color:var(--action); }
 label { display:grid; gap:6px; font-size:14px; font-weight:600; }
 label.check { display:flex; align-items:center; gap:8px; }
+fieldset { min-width:0; margin:0; padding:16px; border:1px solid #64748b; border-radius:10px; }
+legend { font-size:14px; font-weight:600; padding:0 6px; }
+#context-fields,#catalog-fields { min-width:0; }
+#catalog-results td:nth-child(2) { white-space:normal; min-width:260px; }
 h1,h2,h3,p { margin:0; }
 h1 { font-size:24px; line-height:1.18; letter-spacing:-.24px; }
 h2 { font-size:17px; }
@@ -184,6 +188,24 @@ body.nav-collapsed .sidebar { display:none; }
   <div class="dialog-actions"><button type="button" data-close="patient-dialog">Cancelar</button><button class="primary" type="submit">Crear registro ficticio</button></div>
  </form>
 </dialog>
+<dialog id="context-dialog" aria-labelledby="context-title">
+ <form id="context-form" novalidate>
+  <h2 id="context-title"></h2>
+  <p class="help">Antecedentes ficticios · no representan una conclusión médica.</p>
+  <div id="context-fields" class="form-section"></div>
+  <p id="context-error" class="error" role="alert"></p>
+  <div class="dialog-actions"><button type="button" data-close="context-dialog">Cancelar</button><button type="submit" class="primary">Guardar antecedente</button></div>
+ </form>
+</dialog>
+<dialog id="catalog-dialog" aria-labelledby="catalog-title">
+ <form id="catalog-form" novalidate>
+  <h2 id="catalog-title"></h2>
+  <p class="help">Catálogo de demo · solo en memoria hasta recargar.</p>
+  <div id="catalog-fields" class="form-section"></div>
+  <p id="catalog-error" class="error" role="alert"></p>
+  <div class="dialog-actions"><button type="button" data-close="catalog-dialog">Cancelar</button><button type="submit" class="primary">Guardar registro</button></div>
+ </form>
+</dialog>
 <script>
 'use strict';
 // All fixtures and mutations live in this closure; nothing is persisted or transmitted.
@@ -198,6 +220,7 @@ const iconPaths = {
  patients:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87',
  agenda:'M4 5h16v16H4zM8 3v4M16 3v4M4 11h16M8 15h2M14 15h2',
  clinical:'M9 3h6v6h6v6h-6v6H9v-6H3V9h6z',
+ catalogs:'M4 3h16v18H4zM8 7h8M8 12h8M8 17h5',
  inventory:'M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10',
  settings:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2'
 };
@@ -208,6 +231,7 @@ const pages = {
  patients:['Pacientes','Pacientes','Directorio sintético de la clínica.'],
  agenda:['Agenda','Agenda','Citas de demostración · semana del 18 al 24 de mayo de 2026.'],
  clinical:['Atención clínica','Atención clínica','Resumen de consultas ficticias; no sustituye una historia clínica.'],
+ catalogs:['Catálogos','Catálogos','Recursos y estudios ficticios · configuración local para agenda y atención.'],
  inventory:['Inventario','Inventario','Disponibilidad y alertas de insumos de demostración.'],
  settings:['Configuración','Configuración','Personaliza este espacio. Todo se guarda solo en memoria.']
 };
@@ -219,8 +243,30 @@ const state = {
  orders:[{id:'ORD-101', patient:'DEMO-001', service:'Limpieza y control', total:600, paid:0, due:'18 may 2026'}, {id:'ORD-102', patient:'DEMO-002', service:'Restauración', total:1200, paid:400, due:'18 may 2026'}, {id:'ORD-103', patient:'DEMO-003', service:'Consulta inicial', total:300, paid:300, due:'18 may 2026'}],
  appointments:[{time:'09:00', day:'18', patient:'DEMO-001', service:'Control preventivo', professional:'Dra. Norte · demo', room:'Consultorio 1', status:'confirmed'}, {time:'10:30', day:'18', patient:'DEMO-002', service:'Restauración', professional:'Dr. Sur · demo', room:'Consultorio 2', status:'scheduled'}, {time:'12:00', day:'18', patient:'DEMO-003', service:'Consulta inicial', professional:'Dra. Norte · demo', room:'Consultorio 1', status:'confirmed'}, {time:'09:30', day:'19', patient:'DEMO-001', service:'Seguimiento', professional:'Dr. Sur · demo', room:'Consultorio 2', status:'scheduled'}],
  inventory:[{id:'INS-01',name:'Guantes de nitrilo · caja',stock:4,min:8},{id:'INS-02',name:'Resina universal · unidad',stock:12,min:5},{id:'INS-03',name:'Mascarillas · caja',stock:2,min:6},{id:'INS-04',name:'Gasas estériles · paquete',stock:18,min:10}],
- expenses:250, paymentTotal:0
+ expenses:250, paymentTotal:0,
+ // Stable IDs connect these catalogs to appointments and the forthcoming consultation flow.
+ specialties:[{id:'SP-1',name:'Odontología general'}],
+ physicians:[
+  {id:'PH-1',name:'Dra. Norte · demo',document:'MED-001',specialtyIds:['SP-1']},
+  {id:'PH-2',name:'Dr. Sur · demo',document:'MED-002',specialtyIds:['SP-1']}
+ ],
+ rooms:[{id:'RM-1',name:'Consultorio 1',location:'',active:true},{id:'RM-2',name:'Consultorio 2',location:'',active:true}],
+ availability:[
+  {id:'AV-1',physicianId:'PH-1',weekday:1,start:'08:00',end:'17:00',roomId:'RM-1'},
+  {id:'AV-2',physicianId:'PH-2',weekday:1,start:'08:00',end:'17:00',roomId:'RM-2'},
+  {id:'AV-3',physicianId:'PH-2',weekday:2,start:'08:00',end:'17:00',roomId:'RM-2'}
+ ],
+ providers:[], studyTypes:[], patientContexts:[], nextId:10
 };
+// Preserve every inherited fixture while moving references to stable resource IDs.
+state.appointments.forEach((item,index) => {
+ item.id=`AP-${index+1}`;
+ item.physicianId=state.physicians.find(doctor=>doctor.name===item.professional).id;
+ item.roomId=state.rooms.find(room=>room.name===item.room).id;
+});
+const resourceName = (collection,id) => state[collection].find(item=>item.id===id)?.name || 'Sin registrar';
+const weekdayNames=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+function newId(prefix) { return `${prefix}-${state.nextId++}`; }
 const labels = {pending:'Pendiente',partial:'Parcial',paid:'Pagado',confirmed:'Confirmada',scheduled:'Programada',low:'Stock bajo',ok:'Disponible'};
 function badge(status) { return `<span class="badge ${status}">${labels[status]}</span>`; }
 function patientName(id) { return state.patients.find(patient => patient.id === id)?.name || 'Registro ficticio'; }
@@ -250,7 +296,7 @@ function navigate(page, moveFocus = true) {
  $('#page-actions').replaceChildren();
  announce('');
  renderNav();
- const renderers = {overview:renderOverview,payments:renderPayments,patients:renderPatients,agenda:renderAgenda,clinical:renderClinical,inventory:renderInventory,settings:renderSettings};
+ const renderers = {overview:renderOverview,payments:renderPayments,patients:renderPatients,agenda:renderAgenda,clinical:renderClinical,inventory:renderInventory,catalogs:renderCatalogs,settings:renderSettings};
  renderers[page]();
  setDrawer(false);
  if (moveFocus) $('#main').focus();
@@ -268,7 +314,7 @@ function renderOverview() {
  action('Ver cobros', () => navigate('payments'));
  $('#view').innerHTML = `<section class="kpis" aria-label="Indicadores del 18 de mayo de 2026">${kpis.map(([label,value,detail,key]) => `<article class="card"><div class="kpi-label">${label}${icon(key)}</div><p class="kpi-value amount" data-kpi="${key}">${money(value)}</p><p class="small muted">${detail}</p></article>`).join('')}</section>
  <div class="split"><section class="card"><div class="card-heading"><div><h2>Ingresos y egresos</h2><p class="small muted">Últimos 5 días de actividad · Bs</p></div><span class="badge">14–18 may</span></div><div class="legend"><span><i class="key"></i>Ingresos</span><span><i class="key expense"></i>Egresos</span></div>${chart(income)}<p class="small muted">Hoy: ${money(income)} ingresados / ${money(state.expenses)} en egresos.</p></section>
- <section class="card"><div class="card-heading"><h2>Agenda de hoy</h2><button type="button" data-page="agenda">Ver agenda</button></div><p class="small muted">18 de mayo · 3 citas ficticias</p>${state.appointments.filter(item => item.day==='18').map(item => `<div class="appointment"><span class="time">${item.time}</span><div><strong>${escapeText(patientName(item.patient))}</strong><p>${item.service} · ${item.room}</p></div></div>`).join('')}</section></div>
+ <section class="card"><div class="card-heading"><h2>Agenda de hoy</h2><button type="button" data-page="agenda">Ver agenda</button></div><p class="small muted">18 de mayo · 3 citas ficticias</p>${state.appointments.filter(item => item.day==='18').map(item => `<div class="appointment"><span class="time">${item.time}</span><div><strong>${escapeText(patientName(item.patient))}</strong><p>${escapeText(item.service)} · ${escapeText(resourceName('rooms',item.roomId))}</p></div></div>`).join('')}</section></div>
  <section class="card"><div class="card-heading"><div><h2>Cobros pendientes</h2><p class="small muted">Prioriza el seguimiento de los saldos de hoy.</p></div><button type="button" data-page="payments">Ver todos los cobros</button></div>${orderTable(state.orders.filter(order=>balance(order)>0),'Órdenes con saldo pendiente · datos ficticios',false)}</section>`;
 }
 function chart(income) {
@@ -319,7 +365,7 @@ function addPatient(name, documentId) {
 function renderPatients() {
  action('Registrar paciente',()=>{ $('#patient-form').reset(); $('#patient-error').textContent=''; openDialog('#patient-dialog'); });
  $('#view').innerHTML=`<section class="card"><div class="filters"><label class="search">Buscar paciente ficticio<input id="patient-search" type="search" placeholder="Nombre o documento de demo"></label></div><div id="patient-results"></div></section>`;
- const filter=()=>{const term=$('#patient-search').value.toLocaleLowerCase(); const matches=state.patients.filter(patient=>`${patient.name} ${patient.id}`.toLocaleLowerCase().includes(term)); $('#patient-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Directorio de pacientes"><table><caption>${matches.length} registros ficticios · no usar datos personales</caption><thead><tr><th scope="col">Nombre ficticio</th><th scope="col">Documento de demo</th><th scope="col">Seguimiento</th></tr></thead><tbody>${matches.map(patient=>`<tr><td><strong>${escapeText(patient.name)}</strong></td><td>${escapeText(patient.id)}</td><td>${patient.note}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">No se encontraron pacientes ficticios.</td></tr>'}</tbody></table></div>`;};
+ const filter=()=>{const term=$('#patient-search').value.toLocaleLowerCase(); const matches=state.patients.filter(patient=>`${patient.name} ${patient.id}`.toLocaleLowerCase().includes(term)); $('#patient-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Directorio de pacientes"><table><caption>${matches.length} registros ficticios · no usar datos personales</caption><thead><tr><th scope="col">Nombre ficticio</th><th scope="col">Documento de demo</th><th scope="col">Seguimiento</th><th scope="col">Expediente</th></tr></thead><tbody>${matches.map(patient=>`<tr><td><strong>${escapeText(patient.name)}</strong></td><td>${escapeText(patient.id)}</td><td>${escapeText(patient.note)}</td><td><button type="button" data-chart="${escapeText(patient.id)}">Ver expediente</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty">No se encontraron pacientes ficticios.</td></tr>'}</tbody></table></div>`;};
  $('#patient-search').oninput=filter; filter();
 }
 $('#patient-form').onsubmit=event=>{
@@ -328,15 +374,189 @@ $('#patient-form').onsubmit=event=>{
  closeDialog($('#patient-dialog')); $('#patient-search').value=''; $('#patient-search').dispatchEvent(new Event('input')); announce('Paciente ficticio creado. Solo en memoria; se pierde al recargar');
 };
 function renderAgenda() {
- $('#view').innerHTML=`<section class="card"><div class="filters"><label>Vista<select id="agenda-period"><option value="day">Día · lunes 18 may</option><option value="week">Semana · 18–24 may</option></select></label><label>Profesional<select id="agenda-professional"><option value="all">Todo el equipo</option><option>Dra. Norte · demo</option><option>Dr. Sur · demo</option></select></label><label>Estado<select id="agenda-status"><option value="all">Todos</option><option value="confirmed">Confirmada</option><option value="scheduled">Programada</option></select></label></div><div id="agenda-results"></div></section>`;
- const filter=()=>{const matches=state.appointments.filter(item=>($('#agenda-period').value==='week'||item.day==='18')&&($('#agenda-professional').value==='all'||item.professional===$('#agenda-professional').value)&&($('#agenda-status').value==='all'||item.status===$('#agenda-status').value)); $('#agenda-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Citas ficticias"><table><caption>${matches.length} citas ficticias · ${$('#agenda-period').value==='day'?'18 de mayo':'Semana del 18 al 24 de mayo'} de 2026</caption><thead><tr>${['Día / hora','Paciente ficticio','Motivo','Profesional','Consultorio','Estado'].map(label=>`<th scope="col">${label}</th>`).join('')}</tr></thead><tbody>${matches.map(item=>`<tr><td>${item.day} may · ${item.time}</td><td>${escapeText(patientName(item.patient))}</td><td>${item.service}</td><td>${item.professional}</td><td>${item.room}</td><td>${badge(item.status)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No hay citas para estos filtros.</td></tr>'}</tbody></table></div>`;};
+ $('#view').innerHTML=`<section class="card"><div class="filters"><label>Vista<select id="agenda-period"><option value="day">Día · lunes 18 may</option><option value="week">Semana · 18–24 may</option></select></label><label>Profesional<select id="agenda-professional"><option value="all">Todo el equipo</option>${state.physicians.map(doctor=>`<option>${escapeText(doctor.name)}</option>`).join('')}</select></label><label>Consultorio<select id="agenda-room"><option value="all">Todos los consultorios</option>${state.rooms.map(room=>`<option value="${room.id}">${escapeText(room.name)}${room.active?'':' · inactivo'}</option>`).join('')}</select></label><label>Estado<select id="agenda-status"><option value="all">Todos</option><option value="confirmed">Confirmada</option><option value="scheduled">Programada</option></select></label></div><div id="agenda-results"></div></section>`;
+ const filter=()=>{const matches=state.appointments.filter(item=>($('#agenda-period').value==='week'||item.day==='18')&&($('#agenda-professional').value==='all'||resourceName('physicians',item.physicianId)===$('#agenda-professional').value)&&($('#agenda-room').value==='all'||item.roomId===$('#agenda-room').value)&&($('#agenda-status').value==='all'||item.status===$('#agenda-status').value)); $('#agenda-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Citas ficticias"><table><caption>${matches.length} citas ficticias · ${$('#agenda-period').value==='day'?'18 de mayo':'Semana del 18 al 24 de mayo'} de 2026</caption><thead><tr>${['Día / hora','Paciente ficticio','Motivo','Profesional','Consultorio','Estado'].map(label=>`<th scope="col">${label}</th>`).join('')}</tr></thead><tbody>${matches.map(item=>`<tr><td>${item.day} may · ${item.time}</td><td>${escapeText(patientName(item.patient))}</td><td>${item.service}</td><td>${escapeText(resourceName('physicians',item.physicianId))}</td><td>${escapeText(resourceName('rooms',item.roomId))}</td><td>${badge(item.status)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No hay citas para estos filtros.</td></tr>'}</tbody></table></div>`;};
  $$('#view select').forEach(select=>select.onchange=filter); filter();
 }
 function renderClinical() {
  $('#view').innerHTML=`<section class="card"><div class="filters"><label>Paciente ficticio<select id="clinical-patient">${state.patients.map(patient=>`<option value="${escapeText(patient.id)}">${escapeText(patient.name)} · ${escapeText(patient.id)}</option>`).join('')}</select></label></div><div id="clinical-results"></div></section>`;
- const update=()=>{const id=$('#clinical-patient').value; const appointments=state.appointments.filter(item=>item.patient===id); $('#clinical-results').innerHTML=`<div class="summary"><h2>${escapeText(patientName(id))}</h2><p class="help">Ficha de demostración · sin diagnóstico real ni datos médicos personales.</p></div><h3 style="margin-top:24px">Consultas programadas</h3>${appointments.map(item=>`<div class="appointment"><span class="time">${item.day} may</span><div><strong>${item.service}</strong><p>${item.time} · ${item.professional} · ${item.room}</p></div>${badge(item.status)}</div>`).join('')||'<p class="empty">Este nuevo registro no tiene consultas de demostración.</p>'}<p class="help" style="margin-top:24px">Odontograma, diagnóstico, prescripción y edición clínica no implementados en este prototipo.</p>`;};
+ const update=()=>{const id=$('#clinical-patient').value; const appointments=state.appointments.filter(item=>item.patient===id); $('#clinical-results').innerHTML=`<div class="summary"><h2>${escapeText(patientName(id))}</h2><p class="help">Ficha de demostración · sin diagnóstico real ni datos médicos personales.</p></div><h3 style="margin-top:24px">Consultas programadas</h3>${appointments.map(item=>`<div class="appointment"><span class="time">${item.day} may</span><div><strong>${item.service}</strong><p>${item.time} · ${escapeText(resourceName('physicians',item.physicianId))} · ${escapeText(resourceName('rooms',item.roomId))}</p></div>${badge(item.status)}</div>`).join('')||'<p class="empty">Este nuevo registro no tiene consultas de demostración.</p>'}${clinicalContextMarkup(id)}<p class="help" style="margin-top:24px">Odontograma, diagnóstico, prescripción y cierre de consulta pendientes. Solo antecedentes ficticios editables.</p>`;};
  $('#clinical-patient').onchange=update; update();
 }
+// Clinical context: no medical assertions are inferred from an empty record.
+const contextLabels={allergies:'Alergias',familyHistory:'Antecedentes familiares',personalHistory:'Antecedentes personales'};
+let contextDraft=null;
+function patientContext(patientId) {
+ return state.patientContexts.find(item=>item.patientId===patientId) || {patientId,allergies:[],familyHistory:[],personalHistory:[]};
+}
+function clinicalContextMarkup(patientId) {
+ const context=patientContext(patientId);
+ return Object.entries(contextLabels).map(([kind,label])=>`
+  <section style="margin-top:24px" aria-label="${label}">
+   <div class="card-heading"><h3>${label}</h3><button type="button" data-context-add="${kind}">Añadir · ${label}</button></div>
+   <div id="context-${kind}">${context[kind].map(entry=>`
+    <div class="summary" style="margin-bottom:12px">
+     <p>${escapeText(kind==='allergies'?`${entry.substance} · ${entry.reaction} · ${entry.severity}`:kind==='familyHistory'?`${entry.relation} · ${entry.condition}`:entry.notes)}</p>
+     <button type="button" data-context-edit="${entry.id}" data-kind="${kind}">Editar</button>
+     <button type="button" data-context-remove="${entry.id}" data-kind="${kind}">Eliminar</button>
+    </div>`).join('') || '<p class="help">Sin registrar</p>'}</div>
+  </section>`).join('');
+}
+function field(id,label,value='',type='text') {
+ return `<label>${label}<input id="${id}" type="${type}" maxlength="120" value="${escapeText(value)}"></label>`;
+}
+function openContext(kind,id,trigger) {
+ const patientId=$('#clinical-patient').value;
+ const entry=patientContext(patientId)[kind].find(item=>item.id===id) || {};
+ contextDraft={patientId,kind,id};
+ $('#context-title').textContent=`${id?'Editar':'Añadir'} · ${contextLabels[kind]}`;
+ $('#context-fields').innerHTML=kind==='allergies' ?
+  field('context-substance','Sustancia',entry.substance)+field('context-reaction','Reacción',entry.reaction)+
+  `<label>Severidad registrada<select id="context-severity">${['Sin registrar','Leve','Moderada','Grave'].map(value=>`<option ${value===entry.severity?'selected':''}>${value}</option>`).join('')}</select></label>` :
+  kind==='familyHistory' ? field('context-relation','Parentesco',entry.relation)+field('context-condition','Condición registrada',entry.condition) :
+  field('context-notes','Nota personal (ficticia)',entry.notes);
+ $('#context-error').textContent='';
+ openDialog('#context-dialog',trigger);
+}
+$('#context-form').onsubmit=event=>{
+ event.preventDefault();
+ const {patientId,kind,id}=contextDraft;
+ const fields=kind==='allergies'?['substance','reaction','severity']:kind==='familyHistory'?['relation','condition']:['notes'];
+ const values=Object.fromEntries(fields.map(key=>[key,$(`#context-${key}`).value.trim()]));
+ if(fields.some(key=>!values[key])) { $('#context-error').textContent='Completa los campos del antecedente ficticio.'; return; }
+ let context=state.patientContexts.find(item=>item.patientId===patientId);
+ if(!context) { context=patientContext(patientId); state.patientContexts.push(context); }
+ const entry=context[kind].find(item=>item.id===id);
+ if(entry) Object.assign(entry,values); else context[kind].push({id:newId('CX'),...values});
+ closeDialog($('#context-dialog'));
+ $('#clinical-patient').dispatchEvent(new Event('change'));
+ $(`[data-context-add="${kind}"]`).focus();
+ announce('Antecedente ficticio guardado. Solo en memoria.');
+};
+
+// Catalog editing has one validation/commit path; failed or closed forms never allocate IDs.
+const catalogLabels={physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',providers:'Laboratorio e imagen',studyTypes:'Tipos de estudio'};
+let catalogKind='physicians', catalogDraft=null;
+function options(collection,selected,empty=false) {
+ return `${empty?'<option value="">Sin proveedor predeterminado</option>':''}${collection.map(item=>`<option value="${item.id}" ${item.id===selected?'selected':''}>${escapeText(item.name)}</option>`).join('')}`;
+}
+function catalogDetails(kind,item) {
+ if(kind==='physicians') return `${item.specialtyIds.map(id=>resourceName('specialties',id)).join(', ')} · ${item.document || 'Sin documento'} · ${state.availability.filter(slot=>slot.physicianId===item.id).map(slot=>`${weekdayNames[slot.weekday]} ${slot.start}–${slot.end} · ${resourceName('rooms',slot.roomId)}`).join('; ')}`;
+ if(kind==='rooms') return `${item.location || 'Sin ubicación'} · ${item.active?'Activo':'Inactivo'}`;
+ if(kind==='providers') return `${item.mode} · ${item.contact || 'Sin contacto'}`;
+ if(kind==='studyTypes') return `${item.mode} · ${money(item.priceCents/100)} · ${item.providerId?resourceName('providers',item.providerId):'Sin proveedor predeterminado'}`;
+ return 'Especialidad de demo';
+}
+function renderCatalogs() {
+ $('#view').innerHTML=`<section class="card">
+  <div class="tabs" role="tablist" aria-label="Catálogos de demo">${Object.entries(catalogLabels).map(([kind,label])=>`<button type="button" role="tab" id="catalog-tab-${kind}" aria-controls="catalog-results" aria-selected="${kind===catalogKind}" tabindex="${kind===catalogKind?0:-1}" data-catalog-tab="${kind}">${label}</button>`).join('')}</div>
+  <button type="button" id="catalog-add" class="primary">Crear · ${catalogLabels[catalogKind]}</button>
+  <div id="catalog-results" role="tabpanel" aria-labelledby="catalog-tab-${catalogKind}" style="margin-top:24px">
+   <div class="table-wrap" tabindex="0" role="region" aria-label="Registros de catálogo"><table>
+    <caption>${state[catalogKind].length} registros ficticios · ${catalogLabels[catalogKind]}</caption>
+    <thead><tr><th scope="col">Nombre</th><th scope="col">Configuración</th><th scope="col">Acción</th></tr></thead>
+    <tbody>${state[catalogKind].map(item=>`<tr><td>${escapeText(item.name)}</td><td>${escapeText(catalogDetails(catalogKind,item))}</td><td><button type="button" data-catalog-edit="${item.id}">Editar</button></td></tr>`).join('') || '<tr><td colspan="3">Sin registrar</td></tr>'}</tbody>
+   </table></div>
+  </div><p class="help" style="margin-top:24px">Configuración de demo. Solicitudes, resultados y consulta completa pendientes; sin análisis de imágenes ni conexión externa.</p>
+ </section>`;
+ $('#catalog-add').onclick=()=>openCatalog();
+ $$('[data-catalog-tab]').forEach(tab=>{
+  tab.onclick=()=>{catalogKind=tab.dataset.catalogTab;renderCatalogs();$(`#catalog-tab-${catalogKind}`).focus();};
+  tab.onkeydown=event=>{
+   const kinds=Object.keys(catalogLabels), index=kinds.indexOf(catalogKind);
+   const target=event.key==='ArrowRight'?kinds[(index+1)%kinds.length]:event.key==='ArrowLeft'?kinds[(index+kinds.length-1)%kinds.length]:event.key==='Home'?kinds[0]:event.key==='End'?kinds.at(-1):null;
+   if(target) {event.preventDefault();catalogKind=target;renderCatalogs();$(`#catalog-tab-${target}`).focus();}
+  };
+ });
+}
+function slotMarkup(slot={weekday:1,start:'08:00',end:'12:00',roomId:state.rooms.find(room=>room.active)?.id}) {
+ return `<fieldset class="form-section" data-slot-id="${slot.id || ''}"><legend>Horario de disponibilidad</legend>
+  <label>Día<select class="slot-day">${weekdayNames.map((name,index)=>`<option value="${index}" ${index===slot.weekday?'selected':''}>${name}</option>`).join('')}</select></label>
+  <label>Inicio<input class="slot-start" type="time" value="${slot.start}"></label>
+  <label>Fin<input class="slot-end" type="time" value="${slot.end}"></label>
+  <label>Consultorio de disponibilidad<select class="slot-room">${options(state.rooms.filter(room=>room.active || room.id===slot.roomId),slot.roomId)}</select></label>
+  <button type="button" data-remove-slot>Quitar horario</button>
+ </fieldset>`;
+}
+function openCatalog(id,trigger) {
+ const kind=catalogKind, item=state[kind].find(entry=>entry.id===id) || {};
+ catalogDraft={kind,id};
+ $('#catalog-title').textContent=`${id?'Editar':'Crear'} · ${catalogLabels[kind]}`;
+ let markup=field('cat-name','Nombre requerido',item.name);
+ if(kind==='physicians') {
+  markup+=field('cat-document','Documento de demo (opcional, único)',item.document)+
+   `<fieldset><legend>Especialidades (al menos una)</legend>${state.specialties.map(specialty=>`<label class="check"><input type="checkbox" name="specialty" value="${specialty.id}" ${item.specialtyIds?.includes(specialty.id)?'checked':''}>${escapeText(specialty.name)}</label>`).join('') || '<p>Crea primero una especialidad.</p>'}</fieldset>`;
+  const slots=state.availability.filter(slot=>slot.physicianId===id);
+  markup+=`<div id="availability-slots" class="form-section">${(slots.length?slots:[undefined]).map(slot=>slotMarkup(slot)).join('')}</div><button type="button" id="add-slot">Añadir horario</button>`;
+ } else if(kind==='rooms') {
+  markup+=field('cat-location','Ubicación (opcional)',item.location)+`<label class="check"><input id="cat-active" type="checkbox" ${item.active!==false?'checked':''}>Activo</label>`;
+ } else if(kind==='providers' || kind==='studyTypes') {
+  markup+=`<label>Modalidad<select id="cat-mode">${['LABORATORIO','IMAGEN'].map(mode=>`<option ${item.mode===mode?'selected':''}>${mode}</option>`).join('')}</select></label>`;
+  if(kind==='providers') markup+=field('cat-contact','Contacto ficticio (opcional)',item.contact);
+  else markup+=`<label>Proveedor predeterminado (opcional)<select id="cat-provider"></select></label>`+field('cat-price','Precio (Bs, máximo dos decimales)',((item.priceCents || 0)/100).toFixed(2),'number');
+ }
+ $('#catalog-fields').innerHTML=markup;
+ if(kind==='physicians') $('#add-slot').onclick=()=>$('#availability-slots').insertAdjacentHTML('beforeend',slotMarkup());
+ if(kind==='studyTypes') {
+  const updateProviders=()=>$('#cat-provider').innerHTML=options(state.providers.filter(provider=>provider.mode===$('#cat-mode').value),item.providerId,true);
+  $('#cat-mode').onchange=updateProviders; updateProviders();
+  $('#cat-price').step='0.01'; $('#cat-price').min='0';
+ }
+ $('#catalog-error').textContent='';
+ openDialog('#catalog-dialog',trigger);
+}
+function saveCatalog() {
+ const {kind,id}=catalogDraft;
+ const name=$('#cat-name').value.trim();
+ const normalized=value=>value.trim().toLocaleLowerCase();
+ if(!name) return 'Introduce un nombre requerido.';
+ if(state[kind].some(item=>item.id!==id && normalized(item.name)===normalized(name))) return 'Este nombre ya existe en el catálogo.';
+ const values={name};
+ let slots=[];
+ if(kind==='physicians') {
+  values.document=$('#cat-document').value.trim();
+  if(values.document && state.physicians.some(item=>item.id!==id && normalized(item.document)===normalized(values.document))) return 'Este documento de médico ya existe.';
+  values.specialtyIds=$$('input[name=specialty]:checked',$('#catalog-form')).map(input=>input.value);
+  if(!values.specialtyIds.length) return 'Selecciona al menos una especialidad.';
+  slots=$$('[data-slot-id]',$('#catalog-form')).map(row=>({id:row.dataset.slotId,weekday:Number($('.slot-day',row).value),start:$('.slot-start',row).value,end:$('.slot-end',row).value,roomId:$('.slot-room',row).value}));
+  if(!slots.length) return 'Añade al menos un horario de disponibilidad.';
+  for(const slot of slots) {
+   if(!/^\d{2}:\d{2}$/.test(slot.start) || !/^\d{2}:\d{2}$/.test(slot.end) || slot.end<=slot.start) return 'La hora final debe ser posterior al inicio.';
+   if(!state.rooms.some(room=>room.id===slot.roomId)) return 'Selecciona un consultorio de disponibilidad.';
+  }
+  if(slots.some((slot,index)=>slots.slice(index+1).some(other=>slot.weekday===other.weekday && slot.start<other.end && other.start<slot.end))) return 'No se permiten horarios superpuestos para el mismo médico.';
+ } else if(kind==='rooms') {
+  values.location=$('#cat-location').value.trim(); values.active=$('#cat-active').checked;
+ } else if(kind==='providers' || kind==='studyTypes') {
+  values.mode=$('#cat-mode').value;
+  if(!['LABORATORIO','IMAGEN'].includes(values.mode)) return 'Selecciona una modalidad válida.';
+  if(kind==='providers') values.contact=$('#cat-contact').value.trim();
+  else {
+   const price=$('#cat-price').value;
+   if(!/^\d+(\.\d{1,2})?$/.test(price) || !Number.isSafeInteger(Math.round(Number(price)*100))) return 'Introduce un precio positivo o cero, sin fracciones de centavos.';
+   values.priceCents=Math.round(Number(price)*100); values.providerId=$('#cat-provider').value || null;
+   if(values.providerId && !state.providers.some(provider=>provider.id===values.providerId && provider.mode===values.mode)) return 'El proveedor debe corresponder a la modalidad.';
+  }
+  // Existing study defaults cannot silently become incompatible after a provider edit.
+  if(kind==='providers' && state.studyTypes.some(study=>study.providerId===id && study.mode!==values.mode)) return 'La modalidad está vinculada a un tipo de estudio; cambia primero su proveedor.';
+ }
+ const existing=state[kind].find(item=>item.id===id);
+ const saved=existing || {id:newId('CAT')};
+ Object.assign(saved,values);
+ if(!existing) state[kind].push(saved);
+ if(kind==='physicians') {
+  state.availability=state.availability.filter(slot=>slot.physicianId!==saved.id);
+  state.availability.push(...slots.map(slot=>({...slot,id:slot.id || newId('AV'),physicianId:saved.id})));
+ }
+ return '';
+}
+$('#catalog-form').onsubmit=event=>{
+ event.preventDefault();
+ const error=saveCatalog();
+ if(error) {$('#catalog-error').textContent=error;return;}
+ closeDialog($('#catalog-dialog')); renderCatalogs(); $('#catalog-add').focus();
+ announce('Catálogo de demo guardado. Solo en memoria.');
+};
 function renderInventory() {
  $('#view').innerHTML=`<section class="card"><div class="filters"><label class="search">Buscar insumo<input id="inventory-search" type="search" placeholder="Nombre o código"></label><label>Disponibilidad<select id="inventory-status"><option value="all">Todos los insumos</option><option value="low">Solo stock bajo</option><option value="ok">Disponibles</option></select></label></div><div id="inventory-results"></div></section>`;
  const filter=()=>{const term=$('#inventory-search').value.toLocaleLowerCase(); const matches=state.inventory.filter(item=>`${item.id} ${item.name}`.toLocaleLowerCase().includes(term)&&($('#inventory-status').value==='all'||$('#inventory-status').value===(item.stock<item.min?'low':'ok'))); $('#inventory-results').innerHTML=`<p class="help" style="margin-bottom:16px">${matches.filter(item=>item.stock<item.min).length} insumos con stock bajo en estos resultados. Cantidades ficticias.</p><div class="table-wrap" tabindex="0" role="region" aria-label="Existencias de demo"><table><caption>${matches.length} insumos encontrados</caption><thead><tr>${['Código','Insumo','Stock','Mínimo','Estado'].map(label=>`<th scope="col">${label}</th>`).join('')}</tr></thead><tbody>${matches.map(item=>`<tr><td>${item.id}</td><td>${item.name}</td><td class="amount">${item.stock}</td><td class="amount">${item.min}</td><td>${badge(item.stock<item.min?'low':'ok')}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">No hay insumos que coincidan con estos filtros.</td></tr>'}</tbody></table></div>`;};
@@ -390,6 +610,23 @@ function renderSettings() {
 // Delegated public controls share the same navigation and dialog paths.
 document.addEventListener('click',event=>{
  const pageButton=event.target.closest('[data-page]'); if(pageButton) navigate(pageButton.dataset.page);
+ const chartButton=event.target.closest('[data-chart]');
+ if(chartButton) {navigate('clinical');$('#clinical-patient').value=chartButton.dataset.chart;$('#clinical-patient').dispatchEvent(new Event('change'));}
+ const addContext=event.target.closest('[data-context-add]');
+ if(addContext) openContext(addContext.dataset.contextAdd,null,addContext);
+ const editContext=event.target.closest('[data-context-edit]');
+ if(editContext) openContext(editContext.dataset.kind,editContext.dataset.contextEdit,editContext);
+ const removeContext=event.target.closest('[data-context-remove]');
+ if(removeContext) {
+  const kind=removeContext.dataset.kind, context=patientContext($('#clinical-patient').value);
+  context[kind]=context[kind].filter(item=>item.id!==removeContext.dataset.contextRemove);
+  $('#clinical-patient').dispatchEvent(new Event('change')); $(`[data-context-add="${kind}"]`).focus();
+  announce('Antecedente ficticio eliminado. Solo en memoria.');
+ }
+ const editCatalog=event.target.closest('[data-catalog-edit]');
+ if(editCatalog) openCatalog(editCatalog.dataset.catalogEdit,editCatalog);
+ const removeSlot=event.target.closest('[data-remove-slot]');
+ if(removeSlot) {removeSlot.closest('[data-slot-id]').remove();$('#add-slot').focus();}
  const payButton=event.target.closest('[data-pay]'); if(payButton) openPayment(payButton.dataset.pay,payButton);
  const closeButton=event.target.closest('[data-close]'); if(closeButton) closeDialog(document.getElementById(closeButton.dataset.close));
 });

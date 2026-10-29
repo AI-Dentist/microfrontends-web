@@ -65,7 +65,6 @@ try {
   check(await page.locator('header').count() === 1 && await page.locator('aside').count() === 1 && await page.locator('main').count() === 1, 'One shell');
   check((await text('.fixture')).includes('Prototipo · datos ficticios · sin backend'), 'Visible demo disclaimer');
   await noOverflow(page);
-  await page.screenshot({path:fileURLToPath(new URL('desktop.png',import.meta.url)),fullPage:true});
   await page.locator('#menu-toggle').click();
   check(await page.locator('#menu-toggle').getAttribute('aria-expanded') === 'false', 'Desktop sidebar collapse');
   await page.locator('#menu-toggle').click();
@@ -149,6 +148,173 @@ try {
   check((await text('#clinical-results')).includes('Control preventivo'), 'Clinical summary');
   await page.locator('#clinical-patient').selectOption('DEMO-004');
   check((await text('#clinical-results')).includes('no tiene consultas'), 'Clinical newly-created patient empty state');
+  // T2: clinical records are patient-specific, editable, and only committed on submit.
+  await go('patients');
+  await page.locator('[data-chart="DEMO-001"]').click();
+  check((await text('#clinical-results')).includes('Sin registrar'), 'Undocumented clinical context is explicit');
+  const clinicalList = kind => page.locator(`#context-${kind}`);
+  async function contextForm(kind, values, edit = false) {
+    await page.locator(edit ? `#context-${kind} [data-context-edit]` : `[data-context-add="${kind}"]`).first().click();
+    for (const [field,value] of Object.entries(values)) await page.locator(`#context-${field}`).fill(value);
+  }
+  const undocumented=await text('#clinical-results');
+  await contextForm('allergies',{});
+  await page.locator('#context-form button[type=submit]').click();
+  check(await text('#context-error')==='Completa los campos del antecedente ficticio.' && await text('#clinical-results')===undocumented, 'Required clinical fields reject without mutation');
+  await page.keyboard.press('Escape');
+  await contextForm('allergies',{substance:'Penicilina <demo>',reaction:'Erupción'});
+  await page.locator('#context-severity').selectOption('Leve');
+  await page.locator('#context-form button[type=submit]').click();
+  check((await clinicalList('allergies').innerText()).includes('Penicilina <demo>') && (await clinicalList('allergies').innerText()).includes('Erupción · Leve'), 'Allergy created with literal substance, reaction and severity');
+  await contextForm('allergies',{reaction:'Reacción editada'},true);
+  await page.locator('#context-form button[type=submit]').click();
+  check((await clinicalList('allergies').innerText()).includes('Reacción editada'), 'Allergy edit');
+  await contextForm('familyHistory',{relation:'Madre',condition:'Condición ficticia'});
+  await page.locator('#context-form button[type=submit]').click();
+  await contextForm('familyHistory',{condition:'Condición editada'},true);
+  await page.locator('#context-form button[type=submit]').click();
+  check((await clinicalList('familyHistory').innerText()).includes('Madre · Condición editada'), 'Family history creation and edit');
+  await contextForm('personalHistory',{notes:'Nota personal ficticia'});
+  await page.locator('#context-form button[type=submit]').click();
+  check((await clinicalList('personalHistory').innerText()).includes('Nota personal ficticia'), 'Personal history note');
+  await contextForm('personalHistory',{notes:'Nota personal editada'},true);
+  await page.locator('#context-form button[type=submit]').click();
+  check((await clinicalList('personalHistory').innerText()).includes('Nota personal editada'), 'Personal history edit');
+  const clinicalBefore = await text('#clinical-results');
+  for (const dismiss of ['cancel','escape']) {
+    const trigger=page.locator('[data-context-add="allergies"]');
+    await contextForm('allergies',{substance:'Descartar',reaction:'Borrador'});
+    await page.locator('#context-form button[type=submit]').focus();
+    await page.keyboard.press('Tab');
+    check(await page.locator('#context-substance').evaluate(node=>node===document.activeElement), 'Clinical Tab wraps');
+    await page.keyboard.press('Shift+Tab');
+    check(await page.locator('#context-form button[type=submit]').evaluate(node=>node===document.activeElement), 'Clinical Shift+Tab wraps');
+    if(dismiss==='cancel') await page.locator('#context-dialog [data-close]').click(); else await page.keyboard.press('Escape');
+    check(await text('#clinical-results')===clinicalBefore && await trigger.evaluate(node=>node===document.activeElement), `Clinical ${dismiss} preserves data and focus`);
+  }
+  await page.locator('#clinical-patient').selectOption('DEMO-002');
+  check(!(await text('#clinical-results')).includes('Penicilina') && !(await text('#clinical-results')).includes('Condición editada') && !(await text('#clinical-results')).includes('Nota personal editada'), 'Cross-patient isolation');
+  await go('overview'); await go('clinical');
+  await page.locator('#clinical-patient').selectOption('DEMO-001');
+  check((await text('#clinical-results')).includes('Reacción editada') && (await text('#clinical-results')).includes('Condición editada'), 'Clinical persistence across views');
+  await page.screenshot({path:fileURLToPath(new URL('desktop.png',import.meta.url)),fullPage:true});
+  await page.locator('#clinical-patient').selectOption('DEMO-002');
+  await contextForm('familyHistory',{relation:'Padre',condition:'Solo Bruno'});
+  await page.locator('#context-form button[type=submit]').click();
+  await page.locator('#clinical-patient').selectOption('DEMO-001');
+  for(const kind of ['allergies','familyHistory','personalHistory']) {
+    await page.locator(`#context-${kind} [data-context-remove]`).click();
+    check((await clinicalList(kind).innerText()).includes('Sin registrar'), `Remove ${kind}`);
+  }
+  await page.locator('#clinical-patient').selectOption('DEMO-002');
+  check((await clinicalList('familyHistory').innerText()).includes('Padre · Solo Bruno'), 'Deleting Alba history preserves Bruno history');
+
+  await go('catalogs');
+  const catalogRows = () => page.locator('#catalog-results tbody tr');
+  async function catalogTab(kind) { await page.locator(`[data-catalog-tab="${kind}"]`).click(); }
+  async function catalogForm(values, edit=false) {
+    await page.locator(edit ? '#catalog-results [data-catalog-edit]' : '#catalog-add').last().click();
+    for(const [field,value] of Object.entries(values)) await page.locator(`#cat-${field}`).fill(value);
+  }
+  async function saveCatalog() { await page.locator('#catalog-form button[type=submit]').click(); }
+  async function rejectCatalog(message, before) {
+    await saveCatalog();
+    check((await text('#catalog-error')).includes(message) && await page.locator('#catalog-dialog').isVisible(), `Catalog rejection: ${message}`);
+    check(await text('#catalog-results')===before, 'Rejected catalog leaves all displayed rows unchanged');
+  }
+  await catalogTab('specialties');
+  let specialtyBefore=await text('#catalog-results');
+  await catalogForm({name:''}); await rejectCatalog('nombre',specialtyBefore); await page.keyboard.press('Escape');
+  await catalogForm({name:'Ortodoncia demo'}); await saveCatalog();
+  check((await text('#catalog-results')).includes('Ortodoncia demo'), 'Create specialty');
+  let before=await text('#catalog-results');
+  await catalogForm({name:' ortodoncia DEMO '}); await rejectCatalog('ya existe',before);
+  await page.keyboard.press('Escape');
+  await catalogForm({name:'Ortodoncia editada'},true); await saveCatalog();
+  check((await text('#catalog-results')).includes('Ortodoncia editada'), 'Edit specialty');
+  await catalogTab('rooms');
+  await catalogForm({name:'Consultorio 3',location:'Planta demo'}); await saveCatalog();
+  check((await text('#catalog-results')).includes('Consultorio 3') && (await text('#catalog-results')).includes('Planta demo'), 'Create consultorio');
+  before=await text('#catalog-results');
+  await catalogForm({name:'Consultorio 3'}); await rejectCatalog('ya existe',before); await page.keyboard.press('Escape');
+  await catalogForm({name:''}); await rejectCatalog('nombre',before); await page.keyboard.press('Escape');
+  await catalogForm({location:'Ubicación editada'},true);
+  await page.locator('#cat-active').uncheck(); await saveCatalog();
+  check((await text('#catalog-results')).includes('Ubicación editada · Inactivo'), 'Edit consultorio location and active flag');
+  await catalogForm({},true); await page.locator('#cat-active').check(); await saveCatalog();
+  await catalogTab('physicians');
+  before=await text('#catalog-results');
+  await catalogForm({name:''}); await rejectCatalog('nombre',before); await page.keyboard.press('Escape');
+  await catalogForm({name:'Dra. Este demo',document:'MED-003'});
+  await rejectCatalog('especialidad',before);
+  await page.getByLabel('Ortodoncia editada',{exact:true}).check();
+  await page.locator('.slot-room').selectOption({label:'Consultorio 3'});
+  await page.locator('.slot-end').fill('08:00');
+  await rejectCatalog('posterior',before);
+  await page.locator('.slot-end').fill('12:00');
+  await page.locator('#add-slot').click();
+  await page.locator('.slot-start').last().fill('10:00');
+  await rejectCatalog('superpuestos',before);
+  await page.locator('.slot-start').last().fill('12:00');
+  await page.locator('.slot-end').last().fill('13:00');
+  await saveCatalog();
+  check(!await page.locator('#catalog-dialog').isVisible(), 'Adjacent same-day windows accepted (end equals next start)');
+  await catalogForm({},true);
+  await page.locator('.slot-day').last().selectOption('2');
+  await saveCatalog();
+  check((await text('#catalog-results')).includes('Dra. Este demo') && (await text('#catalog-results')).includes('Ortodoncia editada') && (await text('#catalog-results')).includes('Martes'), 'Physician specialties and multiple availability slots created');
+  await catalogForm({},true);
+  const physicianDraft=await page.locator('#catalog-fields').innerText();
+  await page.locator('#cat-name').fill('No guardar edición'); await page.keyboard.press('Escape');
+  await catalogForm({},true);
+  check(await page.locator('#catalog-fields').innerText()===physicianDraft && await page.locator('#cat-name').inputValue()==='Dra. Este demo', 'Escape discards physician edit');
+  await page.keyboard.press('Escape');
+  const physicianCount=await catalogRows().count();
+  await catalogForm({name:'Dra. Este editada'},true); await saveCatalog();
+  check(await catalogRows().count()===physicianCount && (await text('#catalog-results')).includes('Dra. Este editada'), 'Edit physician without adding record');
+  before=await text('#catalog-results');
+  await catalogForm({name:'Dra. Este editada'}); await rejectCatalog('ya existe',before); await page.keyboard.press('Escape');
+  await catalogForm({name:'Otra demo',document:'MED-003'}); await rejectCatalog('documento',before); await page.keyboard.press('Escape');
+  await go('agenda');
+  check(await page.locator('#agenda-professional option').filter({hasText:'Dra. Este editada'}).count()===1, 'New physician visible in agenda');
+  check(await page.locator('#agenda-room option').filter({hasText:'Consultorio 3'}).count()===1, 'New consultorio visible in agenda');
+  await page.locator('#agenda-room').selectOption({label:'Consultorio 1'});
+  check(await rows('#agenda-results').count()===2, 'Existing room fixtures retained and filter coherent');
+  await go('catalogs'); await catalogTab('providers');
+  for(const [mode,name] of [['LABORATORIO','Laboratorio demo'],['IMAGEN','Imagen demo']]) {
+    await catalogForm({name,contact:'Contacto ficticio'});
+    await page.locator('#cat-mode').selectOption(mode); await saveCatalog();
+    check((await text('#catalog-results')).includes(name) && (await text('#catalog-results')).includes(mode), `Create provider ${mode}`);
+  }
+  await catalogForm({contact:'Contacto editado'},true); await saveCatalog();
+  check((await text('#catalog-results')).includes('Contacto editado'), 'Edit provider');
+  before=await text('#catalog-results');
+  await catalogForm({name:'Imagen demo'}); await rejectCatalog('ya existe',before); await page.keyboard.press('Escape');
+  await catalogTab('studyTypes');
+  for(const [mode,name,provider] of [['LABORATORIO','Hemograma demo','Laboratorio demo'],['IMAGEN','Radiografía demo','Imagen demo']]) {
+    await catalogForm({name,price:'125.50'});
+    await page.locator('#cat-mode').selectOption(mode);
+    await page.locator('#cat-provider').selectOption({label:provider}); await saveCatalog();
+    check((await text('#catalog-results')).includes(name) && (await text('#catalog-results')).includes('Bs 125,50') && (await text('#catalog-results')).includes(provider), `Study type ${mode} has price and default provider`);
+  }
+  await catalogForm({price:'150.25'},true); await saveCatalog();
+  check((await text('#catalog-results')).includes('Bs 150,25'), 'Edit study type price');
+  before=await text('#catalog-results');
+  await catalogForm({name:'Radiografía demo'}); await rejectCatalog('ya existe',before); await page.keyboard.press('Escape');
+  await catalogForm({name:'Precio inválido',price:'1.001'}); await rejectCatalog('centavos',before); await page.keyboard.press('Escape');
+  await catalogForm({name:'Descartar catálogo'}); await page.locator('#catalog-dialog [data-close]').click();
+  check(await text('#catalog-results')===before, 'Catalog Cancel preserves list');
+  await catalogTab('providers');
+  before=await text('#catalog-results');
+  await catalogForm({},true); await page.locator('#cat-mode').selectOption('LABORATORIO');
+  await rejectCatalog('vinculada',before); await page.keyboard.press('Escape');
+  await go('overview'); await go('catalogs');
+  check((await text('#catalog-results')).includes('Contacto editado'), 'Catalog edits persist across views');
+  await catalogTab('physicians');
+  await page.setViewportSize({width:390,height:844});
+  await noOverflow(page);
+  check(await page.locator('.table-wrap').evaluate(node=>node.scrollWidth>node.clientWidth), 'Populated catalog overflow stays inside table region');
+  await page.setViewportSize({width:1440,height:1000});
   await go('inventory');
   await page.locator('#inventory-status').selectOption('low');
   check(await rows('#inventory-results').count() === 2, 'Low-stock filter');
@@ -168,6 +334,7 @@ try {
   check(await page.locator('body').getAttribute('data-density') === 'compact', 'Saved density');
   check(await text('#announcement') === 'Cambios de demo guardados. Solo en memoria; se pierde al recargar', 'Exact memory-only save status');
   await page.getByRole('tab',{name:'Navegación',exact:true}).click();
+  check(await page.locator('[data-nav-id="catalogs"] input').isChecked(), 'Catalog view included in configurable navigation');
   await page.locator('[data-nav-id="inventory"] input').uncheck();
   await page.locator('[data-nav-id="payments"] [data-move="up"]').click();
   check(await page.locator('[data-nav-id="settings"] input').isDisabled(), 'Configuration access protected');
@@ -200,21 +367,32 @@ try {
   await noOverflow(mobile);
   check(await mobile.locator('#menu-toggle').getAttribute('aria-expanded') === 'false', 'Mobile drawer initially closed');
   check(await mobile.locator('#clinic-name').innerText() === 'Clínica Dental Andina', 'Fresh context resets settings');
-  await mobile.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
   await mobile.locator('#menu-toggle').click();
   check(await mobile.locator('#menu-toggle').getAttribute('aria-expanded') === 'true', 'Mobile drawer opens');
   await mobile.keyboard.press('Shift+Tab');
   check(await mobile.evaluate(()=>!!document.activeElement.closest('#sidebar')), 'Drawer keyboard focus trapped');
   await mobile.keyboard.press('Escape');
   check(await mobile.locator('#menu-toggle').evaluate(node=>node===document.activeElement), 'Drawer Escape restores focus');
-  for (const id of ['payments','patients','agenda','clinical','inventory','settings','overview']) {
+  for (const id of ['payments','patients','agenda','clinical','catalogs','inventory','settings','overview']) {
     await mobile.locator('#menu-toggle').click();
     await mobile.locator(`#navigation [data-page="${id}"]`).click();
     check(await mobile.locator('#menu-toggle').getAttribute('aria-expanded') === 'false', `Mobile ${id} closes drawer`);
     await noOverflow(mobile);
   }
+  await mobile.locator('#menu-toggle').click();
+  await mobile.locator('#navigation [data-page="catalogs"]').click();
+  await mobile.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
+  await mobile.locator('#catalog-add').click();
+  check(await mobile.locator('#catalog-dialog').isVisible(), 'Mobile physician form opens');
+  check(await mobile.locator('#catalog-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth), 'Mobile physician form has no internal horizontal overflow');
+  await mobile.keyboard.press('Escape');
+  await noOverflow(mobile);
   await page.reload();
   check((await snapshotKPIs()).join('|') === 'Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'Reload resets all payments');
+  await go('catalogs');
+  check(!(await text('#catalog-results')).includes('Dra. Este editada'), 'Reload resets created catalogs');
+  await go('clinical'); await page.locator('#clinical-patient').selectOption('DEMO-002');
+  check((await clinicalList('familyHistory').innerText()).includes('Sin registrar'), 'Reload resets clinical context');
   for (const context of contexts) for (const item of context.pages()) check(await item.evaluate(()=>window.demoViolations.length) === 0, 'No API or storage writes');
   check(network.length === 0, `No HTTP requests: ${network.join(', ')}`);
   check(errors.length === 0, `No page errors: ${errors.join(', ')}`);
