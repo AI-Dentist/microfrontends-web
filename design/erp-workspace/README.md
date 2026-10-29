@@ -1,10 +1,32 @@
 # ERP workspace prototype
 
-**One connected offline demo**, in Spanish, for fictional Clínica Dental Andina. Open [`01-unified-workspace.html`](01-unified-workspace.html) directly in a modern browser; no build, server, install or internet. All records are fictional and in memory: **reload clears every change**. Fixed date: Monday 18 May 2026.
+**One connected offline demo**, in Spanish, for fictional Clínica Dental Andina. Open [`01-unified-workspace.html`](01-unified-workspace.html) directly in a modern browser; no build, server, install or internet. All records are fictional and in memory: **logout or reload clears every change and returns to login**. Fixed date: Monday 18 May 2026.
 
-The prototype covers **S1–S16 and S18**, including **configuration-only Triage, complete editable-master CRUD and provider-free Laboratorio / Imagenología**. The first menu/page is **Resumen**, without changing its financial meaning. **Pagos and simulated login/logout (S17, S19–S20) remain outside this slice**. Each study menu opens its own CRUD directly, with no subtabs, provider records, defaults or request dependency. The appointment → consultation → cash/QR → receipt flow is preserved.
+The prototype covers **S1–S20**, including **configuration-only Triage, complete editable-master CRUD, provider-free Laboratorio / Imagenología, Pagos outgoing expenses and simulated login/logout**. The first menu/page is **Resumen**; its outgoing totals now derive from the Pagos ledger, while Cobros remains incoming money. Each study menu opens its own CRUD directly, with no subtabs, provider records, defaults or request dependency. The appointment → consultation → cash/QR → receipt flow is preserved.
 
 Feature: [`../../odd/tasks/erp-prototype-full-workflows.md`](../../odd/tasks/erp-prototype-full-workflows.md). The parent owns tracking, commits, review and canvas opening. This is not production medical, accounting, inventory or authorization software. Never enter real personal or medical information.
+
+## Enter and reset the demo
+
+The initial screen is **Inicio de sesión simulado · No ingreses credenciales reales**. Use the entry-arrow icon beside **Entrar a la demo**, or focus it and press Enter. No username/password fields are presented or read; this is a no-credential visual simulation, not authentication. The workspace stays hidden and inert until entry.
+
+**Cerrar sesión** is the exit-arrow icon in the header, visible on desktop and mobile. It immediately hides the workspace and reloads the same file: every record, preference, custom role, draft, pending QR, payment and receipt is discarded. Re-entry restores the original fixtures, clinic, menu, theme and totals. Ordinary browser reload also returns to login. No cookies, storage, session tokens, auth query parameters or external service are involved. Real application authentication and role authorization remain unimplemented.
+
+## Pagos: simulated outgoing expenses
+
+**Pagos** is separate from **Cobros**. Search its ledger by concept/ID, combine the category filter, and use the eye icon to view stable ID, date, concept, category, amount and optional note. Its distinct sidebar icon depicts a document with an outgoing arrow.
+
+Use **Registrar egreso** to post a fictional outgoing amount:
+
+- Concept: required after trimming, **1–120 characters**. Optional note: **up to 500 characters**, literal text only.
+- Category: **Insumos, Servicios básicos, Alquiler or Otros**.
+- Amount: positive Bs, at most two decimals, stored as safe integer cents. Individual or aggregate overflow rejects before ID allocation or ledger mutation.
+- Date: readonly **2026-05-18**, the fixed reference day. No cross-date accounting is implied.
+- Cancel/Escape discard drafts. Rejected or repeated posted submissions do not change records, IDs or money. Confirmation explicitly announces **Egreso simulado registrado. Solo en memoria; sin dinero real.**
+
+The ledger starts with **one Bs 250 fixture**, not an additional fixed charge. Resumen outgoing KPI, net and current chart bar share that ledger. Starting totals are **700 / 250 / 450 / 1400**; posting Bs 100 gives **700 / 350 / 350 / 1400**, then Bs 50.25 gives **700 / 400.25 / 299.75 / 1400**. Expenses never change income or pending collections. Net may be negative: there is no insufficient-cash rule. The chart rescales for high outgoing amounts; earlier days remain fixtures.
+
+Expenses are posted transactions with registration/list/detail, **not editable/deletable master data**. No bank connection, approval, reversal, audit framework or real payment is implemented. Mobile form actions stay visible in a sticky footer; long dialog content and tables scroll locally.
 
 ## Quick path: editable master data
 
@@ -57,14 +79,14 @@ Blocked confirmation explains the reference and leaves dependent records and fin
 - Initial dashboard: Bs 700 income, Bs 250 expenses, Bs 450 net, Bs 1,400 pending. Prior fixture payments are labeled without historical receipts. Earlier chart days remain independent fixtures. Only confirmed cash/QR adds income.
 - ORD-102 starts Bs 800 pending. A Bs 200 cash payment leaves Bs 600 and changes income/net/pending to Bs 900/650/1,200. Invalid/zero/negative/over-balance/fractional-cent payments, Cancel and Escape leave balances unchanged. Filters/empty states and low-stock counts remain coherent.
 - One sourced light shell, palette and font stack; one header/sidebar/main. Clinic/contact, sourced blue/teal, comfortable/compact density and navigation hide/show/reorder remain configurable; Configuration cannot be hidden. No new framework.
-- Every sidebar menu retains its readable name and has its own semantic inline SVG geometry (16 distinct icons). Action buttons—including settings tabs, row actions, dialogs, QR and menu controls—show only SVG icons, retain accessible names and have at least 44×44px targets. Hover or keyboard focus shows a shared, viewport-clamped tooltip in the top layer; it remains visible outside scrolling tables and inside native dialogs. Escape dismisses it and preserves existing dialog close/focus restoration. Touch actions remain directly operable with accessible names.
+- Every sidebar menu retains its readable name and has its own semantic inline SVG geometry (17 distinct icons). Action buttons—including settings tabs, row actions, dialogs, QR and menu controls—show only SVG icons, retain accessible names and have at least 44×44px targets. Hover or keyboard focus shows a shared, viewport-clamped tooltip in the top layer; it remains visible outside scrolling tables and inside native dialogs. Escape dismisses it and preserves existing dialog close/focus restoration. Touch actions remain directly operable with accessible names.
 - Laboratorio exposes **Crear Laboratorio**; Imagenología exposes **Crear Imagen**. Their create/edit/detail/delete labels identify the entity, with name/price and implicit modality unchanged. Consultation selection says **Laboratorio / Imagen**, never generic tipo de estudio.
 - Labeled fields, semantic tables/captions, status/error announcements and visible focus. Shared native detail/edit/delete dialogs trap Tab/Shift+Tab, support Escape/Cancel and restore initiating focus when it survives. Keyboard tabs and mobile drawer trapping/Escape remain. Long tables scroll inside labeled regions, never across the page. Reduced motion supported.
 - All HTML/CSS/JS/SVG inline. No external assets/fonts, HTTP/API/backend, authentication, credentials, cookies, localStorage, service worker or durable storage. The header session and permissions are simulated. No medical diagnosis/ML, prescription, real QR/provider integration or accounting certification. Source authority: [`../system.md`](../system.md).
 
 ## Verify
 
-Run in the foreground from repository root with a timeout **at least 300 seconds**:
+Run in the foreground from repository root with a timeout **at least 360 seconds**:
 
 ```sh
 node design/erp-workspace/smoke.mjs
@@ -81,11 +103,22 @@ Uses existing Playwright via `apps/mf-erp/package.json` and its existing Chromiu
 | S14–S16/S18 RED | `node design/erp-workspace/smoke.mjs`, exit 1: combined presentation assertion named missing Resumen, distinct navigation geometries, entity-specific create labels and icon-only actions. No final count. |
 | First implementation check | Exit 1: Escape restored dialog focus but reopened its tooltip. Fixed by suppressing tooltip reopening during Escape focus restoration. |
 | First GREEN | Same command, exit 0: **PASS 838 checks**. |
-| Expanded GREEN | Same command, exit 0: **PASS 1044 checks**. All 812 business/regression checks retained with intentional accessible-name/startup-label adaptations; added entity titles/delete confirmation, reviewed semantic SVG motifs, visible-button audits throughout navigation/dialog journeys, hover/focus/Escape tooltips in dialog and scrolled mobile table. Zero HTTP/API/storage writes/page errors. |
+| Previous T2 expanded GREEN | Same command, exit 0: **PASS 1044 checks**. All 812 business/regression checks retained with intentional accessible-name/startup-label adaptations; added entity titles/delete confirmation, reviewed semantic SVG motifs, visible-button audits throughout navigation/dialog journeys, hover/focus/Escape tooltips in dialog and scrolled mobile table. Zero HTTP/API/storage writes/page errors. |
+
+T3 verification used the same command in the foreground with a 360-second timeout:
+
+| Run | Observed evidence |
+| --- | --- |
+| S17/S19/S20 RED | Exit 1: combined public-UI assertion identified missing initial login, hidden/inert workspace, logout and Pagos menu. No final count. No visual-baseline RED claimed. |
+| First implementation check | Exit 1: a new test incorrectly expected exposed navigation while the mobile drawer was closed; corrected to assert hidden navigation, then exactly one navigation landmark after opening the drawer. |
+| First GREEN | Exit 0: **PASS 1229 checks**. |
+| Final expanded GREEN | Exit 0: **PASS 1240 checks**, zero HTTP/API/storage writes/page errors. Includes all previous 1044 checks with intentional login-entry, visible-main and 17-menu adaptations. |
+
+New acceptance covers no-credential startup, hidden/inert workspace, mouse/keyboard entry, login/logout tooltips, mobile logout, expense categories/search/detail, exact KPI/chart updates, literal text and bounds, invalid amounts/category/concept/note and aggregate overflow, Cancel/Escape/focus, duplicate clicks/submit, consecutive public IDs, negative net and chart rescaling. Logout tests mutate cash, expenses, patients, catalogs, clinic/menu/theme/density/roles and pending QR, then verify baseline restoration and empty drafts/receipts/QR. Login and workspace screenshots are refreshed. No internal-state or Git-history test access is used.
 
 All unaffected business and CRUD assertions from the 608-check candidate remain. Obsolete provider creation/default/selector/dependency checks are replaced by direct study CRUD, implicit modality, provider-free requests and source/runtime absence checks, not weakened clinical or monetary expectations. Navigation and dialog checks assert no visible provider text throughout the journey; a structural check rejects any provider concept in the artboard source. The earlier five obsolete patient-context Triage assertions remain replaced by real configuration CRUD. Coverage includes required/duplicate/blank/bounded Triage fields, literal malicious text, exact 120-character boundaries and rejection at 121, actual details, edits with stable IDs, Cancel/Escape no-ops, confirmed deletion/empty states; complete free-record CRUD per master; reference-deletion business snapshots; patient/context protection and live labels versus issued snapshots; role protection/CRUD; inventory typed validation and counts; public ID-allocation no-op proof; owned availability cleanup; mobile forms/focus/overflow. Existing patient history/habits isolation, complete appointments/consultations/studies, cent money, cash/QR idempotency, receipts, settings and reload-reset tests remain.
 
-Current screenshots: [`desktop.png`](desktop.png) at 1440×1000 shows the simple **Laboratorio study CRUD** with a test-created example; [`mobile.png`](mobile.png) at 390×844 shows **configuration Triage scrolled locally to its icon-only row actions**. Imagen uses the same direct CRUD and is separately verified for modality/ID isolation, details, full CRUD and responsive forms. Tables may scroll locally. No pixel-diff baseline claimed.
+Current screenshots: [`login-desktop.png`](login-desktop.png) at 1440×1000 and [`login-mobile.png`](login-mobile.png) at 390×844 show the no-credential simulated entry. [`desktop.png`](desktop.png) shows the **Pagos ledger**, including exact Bs 100 and Bs 50.25 test postings; [`mobile.png`](mobile.png) shows the **Registrar egreso dialog** with its sticky icon-only action bar. Other catalogs and clinical/financial views remain browser-tested. Long tables/dialogs scroll locally. No pixel-diff baseline claimed.
 
 ## Shared model / maintenance handoff
 
@@ -96,8 +129,9 @@ Everything stays in the artboard closure's `state`, not a fake global API:
 - Reuse **`saveCatalog`** for validated master edits/creation, **`masterActions`**, **`openMasterEditor`**, **`openMasterDetail`**, **`deletionBlock`** and **`refreshMaster`** for public controls. Delete validation runs before mutation; only free physician availability / empty patient context cleanup is allowed. `validateRoleName` is shared with existing `addRole`.
 - **Provider layer removed entirely:** `studyTypes` contains stable ID, name, mode and `priceCents`; `studies` links type/consultation/patient IDs plus mode, status and human result/reference. No provider collection, ID, default, selector or validation remains. Both direct modality routes reuse the same catalog save/detail/delete helpers; requested types remain protected. Modality is taken from the catalog draft's current menu and existing types cannot move between modalities.
 - `appointments` connects patient/physician/room/date/time/duration/status; `consultations` has one appointment/patient, human documentation, procedure IDs and order ID. Reuse `createAppointment`, `startConsultation`, `saveConsultation`.
+- **`registerExpense`** is the sole expense validation/ID-allocation/posting path. `expenseTotal` derives current-day outgoing totals from `state.expenses`, seeded once with EXP-1/Bs 250. `renderExpenses` handles filters; `openExpenseDetail` is read-only. Reuse `parseCents`, `money`, `newId` and shared native dialog helpers; do not introduce a second expense mutation path.
 - All money is integer cents. `parseCents` validates input, `money` formats output. Issued orders now include a patient-name snapshot alongside immutable issued lines; receipts retain their own snapshots. Only **`registerPayment`** creates ledger/receipt records. QR holds order revision and cannot mutate money directly. `newId` allocates only after validation.
 
 - Presentation uses **`decorateActions` / `actionIcon`** as a shared adapter for static and dynamically rendered buttons. It preserves existing nodes, types, handlers and tab state; new action vocabulary must map to a semantic SVG rather than a fallback. A narrow MutationObserver decorates inserted controls and changed accessible menu labels. The shared manual-popover tooltip is owned by the active dialog when needed, clamps to the viewport and dismisses on Escape, scrolling, click or resize.
 
-Coverage: **S1–S16 and S18 implemented at prototype scope; all CRUD/reference and clinical/payment invariants preserved. S17 and S19–S20 are deferred to T3.** Parent final verification/native review, tracking, commits and canvas remain outside this unit.
+Coverage: **S1–S20 implemented at prototype scope; all CRUD/reference and clinical/payment invariants preserved. Pagos is outgoing posting/read-only history; login/logout is an explicit no-credential simulation with full reload reset.** Parent final verification/native review, tracking, commits and canvas remain outside this unit.

@@ -127,6 +127,31 @@ dialog form { display:grid; gap:20px; }
 .skip { position:absolute; top:8px; left:8px; background:#ffffff; padding:12px; color:#075985; z-index:10; transform:translateY(-200%); }
 .skip:focus { transform:none; }
 .scrim { display:none; }
+.header-actions { display:flex; align-items:center; gap:12px; flex:none; }
+#logout { flex:none; }
+#expense-dialog .dialog-actions { position:sticky; bottom:0; background:#ffffff; padding:12px 0; }
+.kpi-value { white-space:normal; overflow-wrap:anywhere; }
+.login-screen { min-height:100vh; max-width:none; padding:24px; display:grid; place-items:center; }
+.login-layout { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); width:100%; max-width:1000px; border:1px solid var(--line); border-radius:16px; overflow:hidden; background:#ffffff; box-shadow:0 10px 15px -3px rgb(0 0 0 / .1); }
+.login-story { padding:48px; background:#0f172a; color:#ffffff; display:grid; align-content:space-between; gap:24px; }
+.login-story .brand { padding:0; }
+.login-story h2 { font-size:24px; line-height:1.18; margin-bottom:16px; }
+.login-story p { color:#cbd5e1; font-size:14px; }
+.login-illustration { width:100%; max-width:300px; height:auto; justify-self:center; }
+.login-form { padding:48px; display:grid; align-content:center; gap:24px; }
+.login-form .badge { justify-self:start; }
+.login-form h1 { margin-bottom:12px; }
+.login-entry { display:flex; align-items:center; gap:16px; }
+.login-entry strong { display:block; font-size:14px; }
+.login-note { padding:16px; border:1px solid #0284c7; border-radius:10px; color:#075985; background:#e0f2fe; font-size:13px; }
+@media(max-width:760px) {
+ .login-screen { padding:16px; }
+ .login-layout { grid-template-columns:minmax(0,1fr); }
+ .login-story,.login-form { padding:24px; }
+ .login-story { gap:20px; }
+ .login-illustration { display:none; }
+ .login-story h2 { font-size:20px; }
+}
 body.nav-collapsed .shell { grid-template-columns:minmax(0,1fr); }
 body.nav-collapsed .sidebar { display:none; }
 [hidden] { display:none !important; }
@@ -156,9 +181,27 @@ body.nav-collapsed .sidebar { display:none; }
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Saltar al contenido</a>
+<main id="login-screen" class="login-screen" aria-labelledby="login-title">
+ <div class="login-layout">
+  <section class="login-story" aria-label="Andina, gestión de clínica">
+   <div class="brand"><div class="brand-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/></svg></div><div><strong>andina</strong><small>Gestión de clínica</small></div></div>
+   <div><h2>Tu clínica, conectada.<br>Tu jornada, más clara.</h2><p>Del primer registro a la atención y el cierre de caja, en un solo espacio de trabajo.</p></div>
+   <svg class="login-illustration" viewBox="0 0 300 150" aria-hidden="true"><rect x="8" y="8" width="284" height="134" rx="16" fill="#1e293b" stroke="#334155"/><path d="M28 42h244M92 42v80" stroke="#64748b" fill="none"/><rect x="112" y="62" width="64" height="28" rx="6" fill="#0369a1"/><rect x="192" y="62" width="76" height="28" rx="6" fill="#0f766e"/><path d="M112 118l32-15 28 8 36-14 36 8M30 66h42M30 86h32M30 106h38" stroke="#cbd5e1" fill="none" stroke-width="3"/></svg>
+   <p>Una clínica · equipo interno · datos ficticios</p>
+  </section>
+  <form id="login-form" class="login-form">
+   <span class="badge confirmed">Demo sin conexión</span>
+   <div><h1 id="login-title" tabindex="-1">Bienvenido a Andina</h1><p class="muted">Explora el espacio de trabajo de Clínica Dental Andina.</p></div>
+   <p class="login-note">Inicio de sesión simulado · No ingreses credenciales reales</p>
+   <div><strong>Administrador de demostración</strong><p class="help">Acceso sin usuario ni contraseña. No es autenticación ni autorización real.</p></div>
+   <div class="login-entry"><button type="submit" class="primary" id="login-enter">Entrar a la demo</button><div><strong>Entrar a la demo</strong><p class="help">Comenzar con registros ficticios</p></div></div>
+   <p class="help">Nada se guarda. Cerrar sesión o recargar descarta todos los cambios y vuelve a esta pantalla.</p>
+  </form>
+ </div>
+</main>
+<a class="skip" id="workspace-skip" href="#main" hidden>Saltar al contenido</a>
 <div class="scrim" id="scrim" aria-hidden="true"></div>
-<div class="shell">
+<div class="shell" id="workspace" hidden inert>
 <aside class="sidebar" id="sidebar" aria-label="Barra lateral">
  <div class="brand"><div class="brand-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/></svg></div><div><strong>andina</strong><small>Gestión de clínica</small></div></div>
  <div><p class="nav-label">Espacio de trabajo</p><nav id="navigation" aria-label="Navegación principal"></nav></div>
@@ -167,7 +210,7 @@ body.nav-collapsed .sidebar { display:none; }
 </aside>
 <header class="topbar">
  <div class="header-start"><button id="menu-toggle" class="menu-button" aria-controls="sidebar" aria-expanded="true" aria-label="Contraer menú"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div><strong id="clinic-name" class="clinic">Clínica Dental Andina</strong><p class="muted small">Clínica sintética de demostración</p></div></div>
- <div class="header-end"><span class="badge confirmed">Solo demo</span><div class="session"><strong>Equipo de recepción</strong><br><span class="muted">Administrador · simulado</span></div><span class="avatar" aria-hidden="true">AD</span></div>
+ <div class="header-actions"><div class="header-end"><span class="badge confirmed">Solo demo</span><div class="session"><strong>Equipo de recepción</strong><br><span class="muted">Administrador · simulado</span></div><span class="avatar" aria-hidden="true">AD</span></div><button type="button" id="logout">Cerrar sesión</button></div>
 </header>
 <main id="main" tabindex="-1">
  <div class="breadcrumb" id="breadcrumb">Clínica / Resumen</div>
@@ -177,6 +220,24 @@ body.nav-collapsed .sidebar { display:none; }
  <footer class="fixture">Prototipo · datos ficticios · sin backend · Fecha fija: lunes 18 de mayo de 2026. Los cambios se pierden al recargar.</footer>
 </main>
 </div>
+<dialog id="expense-dialog" aria-labelledby="expense-title">
+ <form id="expense-form" novalidate>
+  <h2 id="expense-title">Registrar egreso</h2>
+  <p class="help">Salida de dinero ficticia · no se realiza ningún pago real. Registro definitivo dentro de esta demo; sin edición ni eliminación.</p>
+  <label>Concepto requerido<input id="expense-concept" maxlength="120" required autocomplete="off"></label>
+  <label>Categoría<select id="expense-category"><option value="INSUMOS">Insumos</option><option value="SERVICIOS_BASICOS">Servicios básicos</option><option value="ALQUILER">Alquiler</option><option value="OTROS">Otros</option></select></label>
+  <label>Importe del egreso (Bs)<input id="expense-amount" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+  <label>Fecha fija de demostración<input id="expense-date" type="date" value="2026-05-18" readonly></label>
+  <label>Nota opcional<textarea id="expense-note" maxlength="500"></textarea></label>
+  <p class="help">Concepto: 1–120 caracteres · Nota: hasta 500 · Importe positivo con máximo dos decimales. Un egreso puede dejar el flujo neto negativo.</p>
+  <p id="expense-error" class="error" role="alert"></p>
+  <div class="dialog-actions"><button type="button" data-close="expense-dialog">Cancelar</button><button type="submit" class="primary">Confirmar egreso simulado</button></div>
+ </form>
+</dialog>
+<dialog id="expense-detail-dialog" aria-labelledby="expense-detail-title">
+ <h2 id="expense-detail-title">Detalle de egreso simulado</h2><div id="expense-detail-content" class="summary"></div>
+ <button type="button" data-close="expense-detail-dialog">Cerrar</button>
+</dialog>
 <dialog id="payment-dialog" aria-labelledby="payment-title">
  <form id="payment-form" novalidate>
   <h2 id="payment-title">Registrar cobro</h2>
@@ -297,6 +358,9 @@ function parseCents(raw,allowZero=false) {
 const iconPaths = {
  overview:'M3 13h7v8H3zM14 3h7v18h-7zM3 3h7v6H3z',
  payments:'M3 5h18v14H3zM3 9h18M7 15h3',
+ expenses:'M4 4h12v16H4zM7 8h6M7 12h3M13 16h8M18 13l3 3-3 3',
+ login:'M14 3h7v18h-7M3 12h13M11 7l5 5-5 5',
+ logout:'M10 3H3v18h7M10 12h11M16 7l5 5-5 5',
  patients:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87',
  agenda:'M4 5h16v16H4zM8 3v4M16 3v4M4 11h16M8 15h2M14 15h2',
  clinical:'M9 3h6v6h6v6h-6v6H9v-6H3V9h6z',
@@ -326,6 +390,7 @@ function icon(key) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="
 const pages = {
  overview:['Resumen','Resumen','La jornada de tu clínica, en un solo lugar.'],
  payments:['Cobros','Cobros','Saldos y cobros de órdenes ficticias.'],
+ expenses:['Pagos','Pagos','Egresos de la clínica · registro simulado, sin dinero real.'],
  patients:['Pacientes','Pacientes','Directorio sintético de la clínica.'],
  agenda:['Agenda','Agenda','Citas de demostración · semana del 18 al 24 de mayo de 2026.'],
  clinical:['Atención clínica','Atención clínica','Resumen de consultas ficticias; no sustituye una historia clínica.'],
@@ -353,7 +418,7 @@ const state = {
  ],
  appointments:[{time:'09:00', day:'18', patient:'DEMO-001', service:'Control preventivo', professional:'Dra. Norte · demo', room:'Consultorio 1', status:'confirmed'}, {time:'10:30', day:'18', patient:'DEMO-002', service:'Restauración', professional:'Dr. Sur · demo', room:'Consultorio 2', status:'scheduled'}, {time:'12:00', day:'18', patient:'DEMO-003', service:'Consulta inicial', professional:'Dra. Norte · demo', room:'Consultorio 1', status:'confirmed'}, {time:'09:30', day:'19', patient:'DEMO-001', service:'Seguimiento', professional:'Dr. Sur · demo', room:'Consultorio 2', status:'scheduled'}],
  inventory:[{id:'INS-01',name:'Guantes de nitrilo · caja',stock:4,min:8},{id:'INS-02',name:'Resina universal · unidad',stock:12,min:5},{id:'INS-03',name:'Mascarillas · caja',stock:2,min:6},{id:'INS-04',name:'Gasas estériles · paquete',stock:18,min:10}],
- expensesCents:25000, paymentTotalCents:0,
+ expenses:[{id:'EXP-1',concept:'Insumos de demostración',category:'INSUMOS',amountCents:25000,note:'Egreso inicial ficticio de la jornada.',date:'2026-05-18'}], paymentTotalCents:0,
  procedures:[{id:'PR-1',name:'Consulta demo',priceCents:30000},{id:'PR-2',name:'Control demo',priceCents:60000}],
  consultations:[], studies:[], payments:[], receipts:[], qrIntents:[],
  // Stable IDs connect these catalogs to appointments and the forthcoming consultation flow.
@@ -416,7 +481,7 @@ function navigate(page, moveFocus = true) {
  $('#page-actions').replaceChildren();
  announce('');
  renderNav();
- const renderers = {overview:renderOverview,payments:renderPayments,patients:renderPatients,agenda:renderAgenda,clinical:renderClinical,inventory:renderInventory,catalogs:renderCatalogs,settings:renderSettings};
+ const renderers = {overview:renderOverview,expenses:renderExpenses,payments:renderPayments,patients:renderPatients,agenda:renderAgenda,clinical:renderClinical,inventory:renderInventory,catalogs:renderCatalogs,settings:renderSettings};
  if(catalogRoutes[page] || catalogMode()) {
   catalogKind=catalogRoutes[page];
   renderCatalogs();
@@ -444,18 +509,64 @@ function orderTable(orders,caption,allowPayment) {
 function renderOverview() {
  const income = 70000 + state.paymentTotalCents;
  const pending = state.orders.reduce((sum, order) => sum + balance(order),0);
- const kpis = [['Ingresos de hoy',income,'Efectivo y QR · cobros de demo','payments'],['Egresos de hoy',state.expensesCents,'Insumos · gasto ficticio fijo','inventory'],['Flujo neto',income-state.expensesCents,'Ingresos menos egresos','overview'],['Por cobrar',pending,`Saldo de ${state.orders.length} órdenes de demo`,'patients']];
+ const outgoing=expenseTotal();
+ const kpis = [['Ingresos de hoy',income,'Efectivo y QR · cobros de demo','payments'],['Egresos de hoy',outgoing,'Pagos · egresos simulados de la jornada','inventory'],['Flujo neto',income-outgoing,'Ingresos menos egresos','overview'],['Por cobrar',pending,`Saldo de ${state.orders.length} órdenes de demo`,'patients']];
  action('Ver cobros', () => navigate('payments'));
  $('#view').innerHTML = `<section class="kpis" aria-label="Indicadores del 18 de mayo de 2026">${kpis.map(([label,value,detail,key]) => `<article class="card"><div class="kpi-label">${label}${icon(key)}</div><p class="kpi-value amount" data-kpi="${key}">${money(value)}</p><p class="small muted">${detail}</p></article>`).join('')}</section>
- <div class="split"><section class="card"><div class="card-heading"><div><h2>Ingresos y egresos</h2><p class="small muted">Últimos 5 días de actividad · Bs</p></div><span class="badge">14–18 may</span></div><div class="legend"><span><i class="key"></i>Ingresos</span><span><i class="key expense"></i>Egresos</span></div>${chart(income)}<p class="small muted">Hoy: ${money(income)} ingresados / ${money(state.expensesCents)} en egresos.</p></section>
+ <div class="split"><section class="card"><div class="card-heading"><div><h2>Ingresos y egresos</h2><p class="small muted">Últimos 5 días de actividad · Bs</p></div><span class="badge">14–18 may</span></div><div class="legend"><span><i class="key"></i>Ingresos</span><span><i class="key expense"></i>Egresos</span></div>${chart(income)}<p class="small muted">Hoy: ${money(income)} ingresados / ${money(outgoing)} en egresos.</p></section>
  <section class="card"><div class="card-heading"><h2>Agenda de hoy</h2><button type="button" data-page="agenda">Ver agenda</button></div><p class="small muted">18 de mayo · ${state.appointments.filter(item=>item.date==='2026-05-18').length} citas ficticias</p>${state.appointments.filter(item => item.date==='2026-05-18').map(item => `<div class="appointment"><span class="time">${item.time}</span><div><strong>${escapeText(patientName(item.patient))}</strong><p>${escapeText(item.service)} · ${escapeText(resourceName('rooms',item.roomId))}</p></div></div>`).join('')}</section></div>
  <section class="card"><div class="card-heading"><div><h2>Cobros pendientes</h2><p class="small muted">Prioriza el seguimiento de los saldos de hoy.</p></div><button type="button" data-page="payments">Ver todos los cobros</button></div>${orderTable(state.orders.filter(order=>balance(order)>0),'Órdenes con saldo pendiente · datos ficticios',false)}</section>`;
 }
 function chart(income) {
- const values = [[90000,30000],[120000,45000],[80000,20000],[100000,35000],[income,25000]];
- const maximum = Math.max(150000,income);
- return `<svg class="chart" viewBox="0 0 560 220" role="img" aria-label="Ingresos y egresos del 14 al 18 de mayo: ${values.map((pair,index)=>`${14+index} mayo, ingresos ${pair[0]/100} Bs, egresos ${pair[1]/100} Bs`).join('; ')}"><path class="grid" d="M44 20H550M44 100H550M44 180H550"/><text x="0" y="24">${maximum/100}</text><text x="10" y="104">${Math.round(maximum/200)}</text><text x="24" y="184">0</text>${values.map((pair,index)=>{ const x=70+index*98; return `<rect class="income" x="${x}" y="${180-pair[0]/maximum*160}" width="24" height="${pair[0]/maximum*160}" rx="4"/><rect class="expense" x="${x+28}" y="${180-pair[1]/maximum*160}" width="24" height="${pair[1]/maximum*160}" rx="4"/><text x="${x+4}" y="210">${14+index} may</text>`; }).join('')}</svg>`;
+ const values = [[90000,30000],[120000,45000],[80000,20000],[100000,35000],[income,expenseTotal()]];
+ const maximum = Math.max(150000,...values.flat());
+ const axis=value=>new Intl.NumberFormat('es-BO',{notation:'compact',maximumFractionDigits:1}).format(value/100);
+ return `<svg class="chart" viewBox="0 0 560 220" role="img" aria-label="Ingresos y egresos del 14 al 18 de mayo: ${values.map((pair,index)=>`${14+index} mayo, ingresos ${pair[0]/100} Bs, egresos ${pair[1]/100} Bs`).join('; ')}"><path class="grid" d="M44 20H550M44 100H550M44 180H550"/><text x="0" y="24">${axis(maximum)}</text><text x="10" y="104">${axis(maximum/2)}</text><text x="24" y="184">0</text>${values.map((pair,index)=>{ const x=70+index*98; return `<rect class="income" x="${x}" y="${180-pair[0]/maximum*160}" width="24" height="${pair[0]/maximum*160}" rx="4"/><rect class="expense" x="${x+28}" y="${180-pair[1]/maximum*160}" width="24" height="${pair[1]/maximum*160}" rx="4"/><text x="${x+4}" y="210">${14+index} may</text>`; }).join('')}</svg>`;
 }
+const expenseCategories={INSUMOS:'Insumos',SERVICIOS_BASICOS:'Servicios básicos',ALQUILER:'Alquiler',OTROS:'Otros'};
+function expenseTotal() { return state.expenses.reduce((sum,item)=>sum+item.amountCents,0); }
+function registerExpense(concept,category,amount,note) {
+ // Single posting path: validate before allocating an ID or changing the ledger.
+ concept=concept.trim(); note=note.trim();
+ if(concept.length<1 || concept.length>120) return 'Introduce un concepto de 1 a 120 caracteres.';
+ if(!Object.hasOwn(expenseCategories,category)) return 'Selecciona una categoría válida.';
+ if(note.length>500) return 'La nota admite hasta 500 caracteres.';
+ const amountCents=parseCents(amount);
+ if(amountCents===null) return 'Introduce un importe positivo, con máximo dos decimales.';
+ if(!Number.isSafeInteger(expenseTotal()+amountCents)) return 'El total de egresos excede el límite seguro de centavos.';
+ state.expenses.push({id:newId('EXP'),concept,category,amountCents,note,date:'2026-05-18'});
+ return '';
+}
+function openExpense() {
+ $('#expense-form').reset(); $('#expense-error').textContent='';
+ $('#expense-concept').maxLength=120; $('#expense-note').maxLength=500;
+ openDialog('#expense-dialog');
+}
+function renderExpenses() {
+ action('Registrar egreso',openExpense);
+ $('#view').innerHTML=`<section class="card"><p class="help" style="margin-bottom:16px">Pagos registra salidas ficticias. Cobros registra ingresos. Fecha fija: 18 de mayo de 2026. Los egresos registrados no se editan ni eliminan.</p>
+  <div class="filters"><label class="search">Buscar egreso<input id="expense-search" type="search" placeholder="Concepto o identificador"></label><label>Categoría del egreso<select id="expense-category-filter"><option value="all">Todas las categorías</option>${Object.entries(expenseCategories).map(([key,label])=>`<option value="${key}">${label}</option>`).join('')}</select></label></div><div id="expense-results"></div></section>`;
+ const filter=()=>{
+  const term=$('#expense-search').value.toLocaleLowerCase(), category=$('#expense-category-filter').value;
+  const matches=state.expenses.filter(item=>`${item.id} ${item.concept}`.toLocaleLowerCase().includes(term) && (category==='all'||item.category===category));
+  $('#expense-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Egresos simulados"><table><caption>${matches.length} egresos ficticios · 2026-05-18</caption><thead><tr>${['ID / concepto','Categoría','Fecha','Importe','Detalle'].map(label=>`<th scope="col">${label}</th>`).join('')}</tr></thead><tbody>${matches.map(item=>`<tr><td><strong>${item.id}</strong><small>${escapeText(item.concept)}</small></td><td>${expenseCategories[item.category]}</td><td>${item.date}</td><td class="amount">${money(item.amountCents)}</td><td><button type="button" data-expense-detail="${item.id}">Ver egreso ${item.id}</button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">No hay egresos que coincidan con estos filtros.</td></tr>'}</tbody></table></div>`;
+ };
+ $('#expense-search').oninput=filter; $('#expense-category-filter').onchange=filter; filter();
+}
+function openExpenseDetail(id,trigger) {
+ const expense=state.expenses.find(item=>item.id===id); if(!expense) return;
+ $('#expense-detail-content').innerHTML=`<p><strong>${expense.id} · ${escapeText(expense.concept)}</strong></p><p>${expenseCategories[expense.category]} · ${expense.date}</p><p>Importe: ${money(expense.amountCents)}</p><p>Nota: ${escapeText(expense.note || 'Sin registrar')}</p><p class="help">Egreso simulado · sin dinero real.</p>`;
+ openDialog('#expense-detail-dialog',trigger);
+}
+$('#expense-form').onsubmit=event=>{
+ event.preventDefault();
+ // Closed dialogs cannot post again on a queued click/Enter/submit.
+ if(!$('#expense-dialog').open) return;
+ const error=registerExpense($('#expense-concept').value,$('#expense-category').value,$('#expense-amount').value,$('#expense-note').value);
+ if(error) {$('#expense-error').textContent=error;return;}
+ closeDialog($('#expense-dialog')); renderExpenses(); $('#page-actions button').focus();
+ announce('Egreso simulado registrado. Solo en memoria; sin dinero real.');
+};
 function renderPayments() {
  $('#view').innerHTML = `<section class="card"><div class="filters"><label class="search">Buscar orden o paciente<input id="order-search" type="search" placeholder="Nombre ficticio u ORD-101"></label><label>Estado<select id="order-status"><option value="all">Todos los estados</option><option value="pending">Pendiente</option><option value="partial">Parcial</option><option value="paid">Pagado</option></select></label></div><div id="order-results"></div></section>`;
  const filter = () => { const term=$('#order-search').value.toLocaleLowerCase(); const status=$('#order-status').value; $('#order-results').innerHTML=orderTable(state.orders.filter(order => `${order.id} ${patientName(order.patient)}`.toLocaleLowerCase().includes(term) && (status==='all'||status===orderStatus(order))),'Órdenes de cobro · importes en bolivianos',true); };
@@ -1161,6 +1272,8 @@ function renderSettings() {
 // Delegated public controls share the same navigation and dialog paths.
 document.addEventListener('click',event=>{
  const pageButton=event.target.closest('[data-page]'); if(pageButton) navigate(pageButton.dataset.page);
+ const expenseDetail=event.target.closest('[data-expense-detail]');
+ if(expenseDetail) openExpenseDetail(expenseDetail.dataset.expenseDetail,expenseDetail);
  const chartButton=event.target.closest('[data-chart]');
  if(chartButton) {navigate('clinical');$('#clinical-patient').value=chartButton.dataset.chart;$('#clinical-patient').dispatchEvent(new Event('change'));}
  const habits=event.target.closest('[data-habits-edit]');
@@ -1222,6 +1335,9 @@ matchMedia('(max-width:760px)').addEventListener('change',()=>{document.body.cla
 function actionIcon(button,label) {
  if(button.dataset.move) return button.dataset.move;
  if(button.id==='menu-toggle') return 'menu';
+ if(button.id==='login-enter') return 'login';
+ if(button.id==='logout') return 'logout';
+ if(/egreso/i.test(label)) return /ver/i.test(label)?'view':/confirm/i.test(label)?'confirm':'expenses';
  if(button.dataset.tab) return {clinic:'clinical',appearance:'appearance',navigation:'menu',roles:'patients'}[button.dataset.tab];
  if(button.hasAttribute('data-receipt')) return 'receipt';
  if(/QR/i.test(label) && !/confirm|venc|cancel/i.test(label)) return 'qr';
@@ -1290,7 +1406,22 @@ new MutationObserver(()=>{
  decorateActions();
  if(tipControl && (!tipControl.isConnected || tipControl.closest('dialog:not([open])'))) hideTooltip();
 }).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['aria-label']});
-navigate('overview',false); syncMenuButton(); decorateActions();
+// Simulated entry never reads credentials; logout reloads this same file, discarding
+// every closure record, draft, dialog and preference without any durable session.
+$('#login-form').onsubmit=event=>{
+ event.preventDefault();
+ if($('#login-screen').hidden) return;
+ $('#login-screen').hidden=true; $('#login-screen').inert=true;
+ $('#workspace').hidden=false; $('#workspace').inert=false; $('#workspace-skip').hidden=false;
+ navigate('overview');
+};
+$('#logout').onclick=()=>{
+ hideTooltip(); $('#workspace').hidden=true; $('#workspace').inert=true;
+ $('#workspace-skip').hidden=true;
+ $$('dialog[open]').forEach(dialog=>dialog.close());
+ location.reload();
+};
+syncMenuButton(); decorateActions();
 })();
 </script>
 </body>

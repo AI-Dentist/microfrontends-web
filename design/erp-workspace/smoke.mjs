@@ -28,7 +28,10 @@ const network = [];
 try {
   // Use the existing full Chromium binary, never trigger a download.
   browser = await chromium.launch({ headless:true, executablePath:chromium.executablePath() });
-  async function openPage(viewport) {
+  async function enterDemo(target) {
+    await target.getByRole('button',{name:'Entrar a la demo',exact:true}).click();
+  }
+  async function openPage(viewport,{signedIn=true}={}) {
     const context = await browser.newContext({ viewport, reducedMotion:'reduce' });
     contexts.push(context);
     await context.route(/^https?:/i, async route => { network.push(route.request().url()); await route.abort(); });
@@ -47,12 +50,22 @@ try {
     const page = await context.newPage();
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(htmlURL.href);
+    if(signedIn) await enterDemo(page);
     return page;
   }
   async function noProviderUI(target) {
     check(!/proveedor|provider/i.test(await target.locator('body').innerText()), 'No visible provider concepts in current page/dialog');
     await iconButtons(target);
   }
+  const startup=await openPage({width:1440,height:1000},{signedIn:false});
+  const startupGaps=[];
+  if(!await startup.locator('#login-screen').isVisible()) startupGaps.push('initial simulated login');
+  if(!await startup.locator('#workspace[inert][hidden]').count()) startupGaps.push('hidden inert workspace');
+  if(!await startup.locator('#logout').count()) startupGaps.push('logout control');
+  // Source is not the acceptance surface: discover Pagos through its actual menu.
+  if(await startup.getByRole('button',{name:'Entrar a la demo',exact:true}).count()) await enterDemo(startup);
+  if(!await startup.getByRole('button',{name:'Pagos',exact:true}).count()) startupGaps.push('Pagos outgoing menu');
+  check(startupGaps.length===0,`S17/S19/S20 missing: ${startupGaps.join('; ')}`);
   const page = await openPage({width:1440,height:1000});
   const text = selector => page.locator(selector).innerText();
   const go = async id => {
@@ -68,12 +81,12 @@ try {
   const presentationFailures=[];
   if(await text('#page-title')!=='Resumen' || await text('#breadcrumb')!=='Clínica / Resumen' || await page.locator('#navigation button').first().innerText()!=='Resumen') presentationFailures.push('Resumen entry/title/breadcrumb');
   // Distinct geometry is not enough: each reviewed motif must match its menu.
-  const navMotifs={overview:'M3 13h7',payments:'M3 5h18',patients:'M16 21v-2',agenda:'M4 5h16',clinical:'M9 3h6',physicians:'M5 3v5',specialties:'M12 3l3 5',rooms:'M4 21h16',laboratory:'M9 3h6M10',imaging:'M3 4h18',diseases:'M12 7a5',allergyCatalog:'M12 3C9',triage:'M8 4H5',catalogs:'M4 3h16',inventory:'M3 7l9',settings:'M12 8a4'};
+  const navMotifs={expenses:'M4 4h12v16',overview:'M3 13h7',payments:'M3 5h18',patients:'M16 21v-2',agenda:'M4 5h16',clinical:'M9 3h6',physicians:'M5 3v5',specialties:'M12 3l3 5',rooms:'M4 21h16',laboratory:'M9 3h6M10',imaging:'M3 4h18',diseases:'M12 7a5',allergyCatalog:'M12 3C9',triage:'M8 4H5',catalogs:'M4 3h16',inventory:'M3 7l9',settings:'M12 8a4'};
   for(const [route,motif] of Object.entries(navMotifs)) {
     if(!(await page.locator(`#navigation [data-page="${route}"] svg path`).getAttribute('d')).startsWith(motif)) presentationFailures.push(`Semantic motif ${route}`);
   }
   const navGeometry=await page.locator('#navigation button svg').evaluateAll(nodes=>nodes.map(svg=>svg.innerHTML));
-  if(navGeometry.length!==16 || new Set(navGeometry).size!==16) presentationFailures.push('16 distinct semantic navigation geometries');
+  if(navGeometry.length!==17 || new Set(navGeometry).size!==17) presentationFailures.push('17 distinct semantic navigation geometries');
   async function iconButtons(target) {
     const invalid=await target.locator('button:visible').evaluateAll(nodes=>nodes.filter(button=>!button.querySelector('svg path') || (!button.closest('#navigation') && (button.textContent.trim() || !button.getAttribute('aria-label')))).map(button=>button.id || button.outerHTML));
     check(invalid.length===0, `Named SVG-only actions, labeled navigation: ${invalid.join(', ')}`);
@@ -124,7 +137,7 @@ try {
   check(await text('#page-title') === 'Resumen', 'Initial dashboard');
   check(await page.locator('[data-kpi]').count() === 4, 'Four KPIs');
   check((await snapshotKPIs()).join('|') === 'Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'Initial coherent totals');
-  check(await page.locator('header').count() === 1 && await page.locator('aside').count() === 1 && await page.locator('main').count() === 1, 'One shell');
+  check(await page.locator('header').count() === 1 && await page.locator('aside').count() === 1 && await page.locator('main:visible').count() === 1, 'One shell');
   check((await text('.fixture')).includes('Prototipo · datos ficticios · sin backend'), 'Visible demo disclaimer');
   await noOverflow(page);
   await page.locator('#menu-toggle').click();
@@ -445,6 +458,8 @@ try {
   await mobile.keyboard.press('Escape');
   await noOverflow(mobile);
   await page.reload();
+  check(await page.locator('#login-screen').isVisible(), 'Reload returns to login');
+  await enterDemo(page);
   check((await snapshotKPIs()).join('|') === 'Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'Reload resets all payments');
   await catalogTab('physicians');
   check(!(await text('#catalog-results')).includes('Dra. Este editada'), 'Reload resets created catalogs');
@@ -790,7 +805,7 @@ try {
   check(await ft('#order-detail-lines')===orderPatientSnapshot, 'Patient edit cannot rewrite issued order snapshot'); await flow.keyboard.press('Escape');
   await flowOrder().locator('[data-receipt]').first().click();
   check(await ft('#receipt-content')===receiptPatientSnapshot, 'Patient edit cannot rewrite issued receipt snapshot'); await flow.keyboard.press('Escape');
-  await flow.reload();
+  await flow.reload(); await enterDemo(flow);
   check((await flow.locator('[data-kpi]').allTextContents()).join('|')==='Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'T3 reload resets financial state');
   await fg('agenda'); check(!await flow.locator(`[data-attend="${appointmentId}"]`).count(), 'Reload removes new appointments and consultations');
   // S8-S11 use a fresh public UI scenario, independent of the connected cash/QR flow above.
@@ -966,7 +981,7 @@ try {
     await expanded.locator(`[data-nav-id="${id}"] input`).uncheck();
   }
   await expanded.getByRole('button',{name:'Guardar cambios de demo',exact:true}).click();
-  check(await expanded.locator('#navigation button').count()===8, 'Hide all eight new menus without hiding core or tariffs');
+  check(await expanded.locator('#navigation button').count()===9, 'Hide all eight new menus without hiding core, Pagos or tariffs');
   for(const id of Object.keys(resourceMenus)) await expanded.locator(`[data-nav-id="${id}"] input`).check();
   await expanded.locator('[data-nav-id="triage"] [data-move="up"]').click();
   await expanded.getByRole('button',{name:'Guardar cambios de demo',exact:true}).click();
@@ -997,7 +1012,7 @@ try {
   await eg('triage');
   await expanded.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
   check(await expanded.locator('[id]').evaluateAll(nodes=>new Set(nodes.map(node=>node.id)).size===nodes.length), 'Context rendering has no duplicate DOM IDs');
-  await expanded.reload(); await eg('clinical');
+  await expanded.reload(); await enterDemo(expanded); await eg('clinical');
   check(await habits().innerText()==='Sin registrar', 'Reload resets habits');
   // Full S13 CRUD on free records; public DOM only, independent fixtures.
   const masters=await openPage({width:1440,height:1000});
@@ -1149,10 +1164,156 @@ try {
   await tooltip(masters,masters.locator('[data-master-delete]'),'Eliminar');
   await noOverflow(masters);
   await masters.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
+  // S17/S19/S20 independent public-UI acceptance; legacy journeys above still enter visibly.
+  const session=await openPage({width:1440,height:1000},{signedIn:false});
+  const st=selector=>session.locator(selector).innerText();
+  const sg=async route=>{
+    if(await session.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await session.locator('#menu-toggle').click();
+    await session.locator(`#navigation [data-page="${route}"]`).click();
+    await noProviderUI(session);
+  };
+  const baseline='Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00';
+  check(await session.locator('#login-screen').isVisible() && !await session.locator('#workspace').isVisible() && await session.locator('#workspace').getAttribute('inert')!==null, 'Initial login hides and makes workspace inert');
+  check((await st('#login-screen')).includes('Inicio de sesión simulado · No ingreses credenciales reales') && await session.locator('#login-screen input').count()===0, 'No-credential login never solicits credentials');
+  check(await session.getByRole('main').count()===1 && await session.getByRole('navigation').count()===0, 'Only login landmark exposed initially');
+  await iconButtons(session); await noOverflow(session);
+  await tooltip(session,session.getByRole('button',{name:'Entrar a la demo',exact:true}),'Entrar a la demo');
+  await session.mouse.move(0,0); await session.locator('#login-title').focus(); await session.locator('#login-title').evaluate(node=>node.blur());
+  await session.screenshot({path:fileURLToPath(new URL('login-desktop.png',import.meta.url)),fullPage:true});
+  await session.setViewportSize({width:390,height:844}); await noOverflow(session);
+  await session.screenshot({path:fileURLToPath(new URL('login-mobile.png',import.meta.url)),fullPage:true});
+  await session.getByRole('button',{name:'Entrar a la demo',exact:true}).focus(); await session.keyboard.press('Enter');
+  check(!await session.locator('#login-screen').isVisible() && await session.locator('#main').evaluate(node=>node===document.activeElement), 'Keyboard login enters workspace and focuses main');
+  check(await session.getByRole('main').count()===1 && await session.getByRole('banner').count()===1 && await session.getByRole('navigation').count()===0, 'Mobile workspace exposes one main/header with drawer initially hidden');
+  await session.locator('#menu-toggle').click();
+  check(await session.getByRole('navigation').count()===1, 'Open mobile drawer exposes exactly one sidebar navigation');
+  await session.keyboard.press('Escape');
+  check(await session.getByRole('button',{name:'Cerrar sesión',exact:true}).isVisible(), 'Logout remains visible on mobile');
+  await session.setViewportSize({width:1440,height:1000});
+  await tooltip(session,session.getByRole('button',{name:'Cerrar sesión',exact:true}),'Cerrar sesión');
+  await sg('expenses');
+  check(await st('#page-title')==='Pagos' && (await st('#expense-results')).includes('Bs 250,00') && await session.locator('[data-expense-detail]').count()===1, 'Pagos has exactly one seeded outgoing fixture, separate from Cobros');
+  const expenseOpen=async(concept='Gasto ficticio',amount='100',category='INSUMOS',note='')=>{
+    await session.getByRole('button',{name:'Registrar egreso',exact:true}).click();
+    await session.locator('#expense-concept').fill(concept); await session.locator('#expense-amount').fill(amount);
+    if(category==='UNKNOWN') await session.locator('#expense-category').evaluate(node=>node.add(new Option('Desconocida','UNKNOWN')));
+    await session.locator('#expense-category').selectOption(category); await session.locator('#expense-note').fill(note);
+  };
+  const expenseSubmit=()=>session.locator('#expense-form button[type=submit]').click();
+  const expenseSnapshot=async()=>{
+    await sg('overview'); const kpis=await session.locator('[data-kpi]').allTextContents(); const chart=await session.locator('.chart').getAttribute('aria-label');
+    await sg('expenses'); return JSON.stringify({kpis,chart,rows:await st('#expense-results')});
+  };
+  async function expectTotals(expected,expenseBs) {
+    await sg('overview');
+    check((await session.locator('[data-kpi]').allTextContents()).join('|')===expected, 'Expense ledger updates only outgoing and net KPIs with exact cents');
+    check((await session.locator('.chart').getAttribute('aria-label')).includes(`18 mayo, ingresos 700 Bs, egresos ${expenseBs} Bs`), 'Current chart bar uses same expense ledger');
+    check(await session.locator('.chart rect').evaluateAll(nodes=>nodes.every(node=>Number(node.getAttribute('height'))>=0 && Number(node.getAttribute('y'))>=19)), 'Chart scale contains every outgoing bar without negative geometry');
+    await noOverflow(session); await sg('expenses');
+  }
+  await expectTotals(baseline,250);
+  await tooltip(session,session.getByRole('button',{name:'Registrar egreso',exact:true}),'Registrar egreso');
+  await expenseOpen('<img onerror=throw(1)> Insumos','100','INSUMOS','Nota <b>literal</b>');
+  check(await session.locator('#expense-date').inputValue()==='2026-05-18' && await session.locator('#expense-date').getAttribute('readonly')!==null, 'Expense date is visibly fixed and readonly');
+  check(await session.locator('#expense-concept').getAttribute('maxlength')==='120' && await session.locator('#expense-note').getAttribute('maxlength')==='500', 'Concept and optional note have visible bounds');
+  await iconButtons(session);
+  await tooltip(session,session.locator('#expense-dialog [data-close]'),'Cancelar');
+  check(await session.getByRole('button',{name:'Registrar egreso',exact:true}).evaluate(node=>node===document.activeElement), 'Expense Escape restores initiating focus');
+  await expenseOpen('<img onerror=throw(1)> Insumos','100','INSUMOS','Nota <b>literal</b>');
+  await session.locator('#expense-form button[type=submit]').evaluate(node=>{node.click();node.click();node.form.requestSubmit();});
+  check(await st('#announcement')==='Egreso simulado registrado. Solo en memoria; sin dinero real.' && !await session.locator('#expense-dialog').isVisible(), 'Posting has exact simulated status and closes dialog');
+  check(await session.locator('[data-expense-detail]').count()===2 && await session.locator('#expense-results img').count()===0, 'Duplicate posted submit cannot duplicate ledger; concept is literal');
+  const firstExpenseId=await session.locator('[data-expense-detail]').last().getAttribute('data-expense-detail');
+  await expectTotals('Bs 700,00|Bs 350,00|Bs 350,00|Bs 1.400,00',350);
+  const savedExpense=await expenseSnapshot();
+  for(const [concept,amount,category,note,error] of [
+    ['Gasto','0','INSUMOS','','Introduce un importe positivo, con máximo dos decimales.'],
+    ['Gasto','-1','INSUMOS','','Introduce un importe positivo, con máximo dos decimales.'],
+    ['Gasto','1.001','INSUMOS','','Introduce un importe positivo, con máximo dos decimales.'],
+    ['  ','10','INSUMOS','','Introduce un concepto de 1 a 120 caracteres.'],
+    ['Gasto','10','UNKNOWN','','Selecciona una categoría válida.'],
+    ['Gasto','90071992547409.91','INSUMOS','','El total de egresos excede el límite seguro de centavos.'],
+    ['Gasto','90071992547410','INSUMOS','','Introduce un importe positivo, con máximo dos decimales.'],
+    ['x'.repeat(121),'10','OTROS','','Introduce un concepto de 1 a 120 caracteres.'],
+    ['Gasto','10','OTROS','n'.repeat(501),'La nota admite hasta 500 caracteres.']
+  ]) {
+    // Remove only public field length constraints to exercise submit-time validation.
+    await session.getByRole('button',{name:'Registrar egreso',exact:true}).click();
+    await session.locator('#expense-concept,#expense-note').evaluateAll(nodes=>nodes.forEach(node=>node.removeAttribute('maxlength')));
+    await session.locator('#expense-concept').fill(concept); await session.locator('#expense-amount').fill(amount);
+    if(category==='UNKNOWN') await session.locator('#expense-category').evaluate(node=>node.add(new Option('Desconocida','UNKNOWN')));
+    await session.locator('#expense-category').selectOption(category); await session.locator('#expense-note').fill(note); await expenseSubmit();
+    check(await session.locator('#expense-dialog').isVisible() && await st('#expense-error')===error, `Exact expense rejection: ${concept.slice(0,10)}/${amount}/${category}`);
+    await session.keyboard.press('Escape');
+    check(await expenseSnapshot()===savedExpense, 'Rejected expense preserves rows/count, current chart, income, outgoing, net and pending');
+  }
+  for(const dismissal of ['cancel','escape']) {
+    await expenseOpen('Descartar egreso','25');
+    await session.locator('#expense-form button[type=submit]').focus(); await session.keyboard.press('Tab');
+    check(await session.locator('#expense-concept').evaluate(node=>node===document.activeElement), 'Expense dialog Tab wraps');
+    await session.keyboard.press('Shift+Tab');
+    check(await session.locator('#expense-form button[type=submit]').evaluate(node=>node===document.activeElement), 'Expense dialog reverse Tab wraps');
+    if(dismissal==='cancel') await session.locator('#expense-dialog [data-close]').click(); else await session.keyboard.press('Escape');
+    check(await expenseSnapshot()===savedExpense, `Expense ${dismissal} leaves ledger and money unchanged`);
+  }
+  await expenseOpen('Servicios ficticios','50.25','SERVICIOS_BASICOS'); await expenseSubmit();
+  const secondExpenseId=await session.locator('[data-expense-detail]').last().getAttribute('data-expense-detail');
+  check(Number(secondExpenseId.split('-').at(-1))===Number(firstExpenseId.split('-').at(-1))+1, 'Rejected/canceled/duplicate expense submissions allocate no IDs');
+  await expectTotals('Bs 700,00|Bs 400,25|Bs 299,75|Bs 1.400,00',400.25);
+  await session.locator('#expense-category-filter').selectOption('SERVICIOS_BASICOS'); await session.locator('#expense-search').fill('servicios');
+  check(await session.locator('[data-expense-detail]').count()===1 && (await st('#expense-results')).includes('Bs 50,25'), 'Expense search and category filter combine');
+  await session.locator('[data-expense-detail]').click();
+  check((await st('#expense-detail-content')).includes(secondExpenseId) && (await st('#expense-detail-content')).includes('2026-05-18') && (await st('#expense-detail-content')).includes('Servicios básicos') && (await st('#expense-detail-content')).includes('Bs 50,25'), 'Expense details expose stable ID, date, category and exact amount');
+  await iconButtons(session); await session.keyboard.press('Escape');
+  check(await session.locator('[data-expense-detail]').evaluate(node=>node===document.activeElement), 'Expense detail restores focus');
+  await session.locator('#expense-search').fill('missing'); check((await st('#expense-results')).includes('No hay egresos'), 'Expense filtered empty state');
+  await sg('expenses'); await session.locator('[data-expense-detail]').nth(1).click();
+  check((await st('#expense-detail-content')).includes('Nota <b>literal</b>') && await session.locator('#expense-detail-content b,#expense-detail-content img').count()===0, 'Expense detail safely displays optional note'); await session.keyboard.press('Escape');
+  check(await session.locator('#view [data-master-delete],#view [data-catalog-edit]').count()===0, 'Posted expenses have no generic edit/delete');
+  await session.screenshot({path:fileURLToPath(new URL('desktop.png',import.meta.url)),fullPage:true});
+  await session.setViewportSize({width:390,height:844}); await noOverflow(session);
+  await expenseOpen('Borrador móvil','20'); await iconButtons(session); await noOverflow(session);
+  check(await session.locator('#expense-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth), 'Mobile expense dialog fits');
+  check(await session.locator('#expense-form button[type=submit]').evaluate(node=>{const r=node.getBoundingClientRect(),d=node.closest('dialog').getBoundingClientRect();return r.top>=d.top&&r.bottom<=d.bottom&&r.width>=44&&r.height>=44;}), 'Mobile expense confirmation remains visible with a touch-sized sticky action bar');
+  await session.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true}); await session.keyboard.press('Escape');
+  await session.setViewportSize({width:1440,height:1000});
+  await expenseOpen('x'.repeat(120),'1000','ALQUILER','n'.repeat(500)); await expenseSubmit();
+  await expectTotals('Bs 700,00|Bs 1.400,25|Bs -700,25|Bs 1.400,00',1400.25);
+  await expenseOpen('Alto egreso','5000','OTROS'); await expenseSubmit();
+  await expectTotals('Bs 700,00|Bs 6.400,25|Bs -5.700,25|Bs 1.400,00',6400.25);
+  // Mutate each major state family, then logout must discard everything, including pending QR.
+  await sg('patients'); await session.getByRole('button',{name:'Registrar paciente',exact:true}).click();
+  await session.locator('#patient-name').fill('Sesión ficticia'); await session.locator('#patient-document').fill('SESSION-001'); await session.locator('#patient-form button[type=submit]').click();
+  await sg('laboratory'); await session.locator('#catalog-add').click(); await session.locator('#cat-name').fill('Laboratorio sesión'); await session.locator('#catalog-form button[type=submit]').click();
+  await sg('settings'); await session.locator('#setting-clinic').fill('Clínica sesión');
+  await session.getByRole('tab',{name:'Apariencia',exact:true}).click(); await session.locator('#setting-brand').selectOption('#0f766e'); await session.locator('#setting-density').selectOption('compact');
+  await session.getByRole('tab',{name:'Roles',exact:true}).click(); await session.locator('#new-role').fill('Rol sesión'); await session.locator('#add-role').click();
+  await session.getByRole('tab',{name:'Navegación',exact:true}).click(); await session.locator('[data-nav-id="inventory"] input').uncheck();
+  await session.getByRole('button',{name:'Guardar cambios de demo',exact:true}).click();
+  await sg('payments'); await session.locator('[data-pay="ORD-102"]').click(); await session.locator('#payment-amount').fill('200'); await session.locator('#payment-form button[type=submit]').click();
+  await session.locator('[data-qr="ORD-102"]').click(); await session.locator('#qr-amount').fill('100'); await session.locator('#qr-form button[type=submit]').click();
+  check((await st('#qr-state')).includes('PENDIENTE'), 'Session has pending QR before logout'); await session.keyboard.press('Escape');
+  await session.getByRole('button',{name:'Cerrar sesión',exact:true}).click(); await session.waitForURL(htmlURL.href); await session.locator('#login-screen').waitFor();
+  check(!await session.locator('#workspace').isVisible() && await session.locator('dialog[open]').count()===0 && await session.locator('#view').innerHTML()==='', 'Logout resets document with no previous workspace content or open dialog');
+  await enterDemo(session);
+  check((await session.locator('[data-kpi]').allTextContents()).join('|')===baseline && await st('#clinic-name')==='Clínica Dental Andina' && await session.locator('#navigation button').count()===17, 'Re-entry restores money, clinic and full menu fixtures');
+  check(await session.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--action').trim()==='#0369a1' && !document.body.dataset.density), 'Logout resets theme and density preferences');
+  await sg('settings'); await session.getByRole('tab',{name:'Roles',exact:true}).click();
+  check((await session.locator('.role h3').allTextContents()).join('|')==='Administrador|Recepcionista|Médico', 'Logout resets custom roles and preserves baseline administrator');
+  await sg('expenses'); check(await session.locator('[data-expense-detail]').count()===1, 'Logout discards all posted expenses');
+  await sg('patients'); check(!(await st('#patient-results')).includes('SESSION-001') && await session.locator('#patient-results tbody tr').count()===3, 'Logout discards patient creation');
+  await sg('laboratory'); check((await st('#catalog-results')).includes('Sin registrar'), 'Logout discards catalog changes');
+  await sg('payments'); check(await session.locator('[data-receipt]').count()===0 && (await st('#order-results')).includes('Bs 800,00'), 'Logout discards cash payments and receipts');
+  await session.locator('[data-qr="ORD-102"]').click(); check(await session.locator('#qr-intent-id').count()===0 && (await st('#qr-state')).includes('No hay un intento'), 'Logout discards pending QR without confirming it'); await session.keyboard.press('Escape');
+  await session.setViewportSize({width:390,height:844});
+  check(await session.getByRole('button',{name:'Cerrar sesión',exact:true}).isVisible(), 'Mobile logout still available after re-entry');
+  await session.getByRole('button',{name:'Cerrar sesión',exact:true}).click(); await session.locator('#login-screen').waitFor();
+  await enterDemo(session); await session.reload();
+  check(await session.locator('#login-screen').isVisible() && !await session.locator('#workspace').isVisible(), 'Ordinary file reload returns to simulated login');
   for (const context of contexts) for (const item of context.pages()) check(await item.evaluate(()=>window.demoViolations.length) === 0, 'No API or storage writes');
   check(network.length === 0, `No HTTP requests: ${network.join(', ')}`);
   check(errors.length === 0, `No page errors: ${errors.join(', ')}`);
-  console.log(`PASS ${checks} checks · 1440×1000 + 390×844 · screenshots: desktop.png, mobile.png · HTTP/API/storage writes: 0 · page errors: 0`);
+  console.log(`PASS ${checks} checks · 1440×1000 + 390×844 · screenshots: desktop.png, mobile.png, login-desktop.png, login-mobile.png · HTTP/API/storage writes: 0 · page errors: 0`);
 } finally {
   for (const context of contexts) await context.close();
   if (browser) await browser.close();
