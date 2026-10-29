@@ -245,7 +245,6 @@ body.nav-collapsed .sidebar { display:none; }
  <form id="study-form" novalidate>
   <h2 id="study-title">Solicitar estudio ficticio</h2><p id="study-context" class="help"></p>
   <label>Tipo de estudio<select id="study-type"></select></label>
-  <label>Proveedor compatible<select id="study-provider"></select></label>
   <p id="study-error" class="error" role="alert"></p>
   <div class="dialog-actions"><button type="button" data-close="study-dialog">Cancelar</button><button type="submit" class="primary">Solicitar estudio demo</button></div>
  </form>
@@ -264,7 +263,7 @@ body.nav-collapsed .sidebar { display:none; }
  <button type="button" data-close="order-detail-dialog">Cerrar</button>
 </dialog>
 <dialog id="qr-dialog" aria-labelledby="qr-title">
- <h2 id="qr-title">Cobro QR · simulación local</h2><p class="help">Sin proveedor, webhook ni dinero real. Cerrar no confirma el pago.</p>
+ <h2 id="qr-title">Cobro QR · simulación local</h2><p class="help">Sin conexión bancaria, webhook ni dinero real. Cerrar no confirma el pago.</p>
  <form id="qr-form" novalidate>
   <p id="qr-summary" class="summary"></p>
   <label>Importe QR (Bs)<input id="qr-amount" type="number" step="0.01" min="0.01" inputmode="decimal"></label>
@@ -313,8 +312,8 @@ const pages = {
  physicians:['Médicos','Médicos','Especialidades y horarios conectados a la agenda.'],
  specialties:['Especialidades','Especialidades','Referencias de especialidad del equipo ficticio.'],
  rooms:['Consultorios','Consultorios','Espacios y disponibilidad de la clínica ficticia.'],
- laboratory:['Laboratorio','Laboratorio','Proveedores y tipos de estudio · solo LABORATORIO.'],
- imaging:['Imagen','Imagen','Proveedores y tipos de estudio · solo IMAGEN.'],
+ laboratory:['Laboratorio','Laboratorio','Tipos de estudio · solo LABORATORIO.'],
+ imaging:['Imagen','Imagen','Tipos de estudio · solo IMAGEN.'],
  diseases:['Enfermedades','Enfermedades','Referencias de clínica, no diagnósticos de pacientes.'],
  allergyCatalog:['Alergias','Alergias','Referencias de clínica, distintas de las alergias del paciente.'],
  triage:['Triage','Triage','Configuración de clasificación y descripción · sin evaluación de pacientes'],
@@ -349,7 +348,7 @@ const state = {
   {id:'AV-2',physicianId:'PH-2',weekday:1,start:'08:00',end:'17:00',roomId:'RM-2'},
   {id:'AV-3',physicianId:'PH-2',weekday:2,start:'08:00',end:'17:00',roomId:'RM-2'}
  ],
- providers:[], studyTypes:[], diseases:[], allergyCatalog:[], triage:[], patientContexts:[], nextId:10
+ studyTypes:[], diseases:[], allergyCatalog:[], triage:[], patientContexts:[], nextId:10
 };
 // Preserve every inherited fixture while moving references to stable resource IDs.
 state.appointments.forEach((item,index) => {
@@ -399,7 +398,7 @@ function navigate(page, moveFocus = true) {
  renderNav();
  const renderers = {overview:renderOverview,payments:renderPayments,patients:renderPatients,agenda:renderAgenda,clinical:renderClinical,inventory:renderInventory,catalogs:renderCatalogs,settings:renderSettings};
  if(catalogRoutes[page] || catalogMode()) {
-  catalogKind=catalogRoutes[page] || modalityViews[page];
+  catalogKind=catalogRoutes[page];
   renderCatalogs();
  } else if(page==='triage') renderTriage();
  else renderers[page]();
@@ -621,20 +620,18 @@ $('#context-form').onsubmit=event=>{
 };
 
 // Catalog editing has one validation/commit path; failed or closed forms never allocate IDs.
-const catalogLabels={physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',providers:'Proveedores',studyTypes:'Tipos de estudio',procedures:'Procedimientos',diseases:'Enfermedades',allergyCatalog:'Alergias',triage:'Triage',patients:'Pacientes',inventory:'Inventario',roles:'Roles'};
-const catalogRoutes={physicians:'physicians',specialties:'specialties',rooms:'rooms',catalogs:'procedures',diseases:'diseases',allergyCatalog:'allergyCatalog',triage:'triage'};
-const modalityViews={laboratory:'providers',imaging:'providers'};
+const catalogLabels={physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',studyTypes:'Tipos de estudio',procedures:'Procedimientos',diseases:'Enfermedades',allergyCatalog:'Alergias',triage:'Triage',patients:'Pacientes',inventory:'Inventario',roles:'Roles'};
+const catalogRoutes={physicians:'physicians',specialties:'specialties',rooms:'rooms',catalogs:'procedures',diseases:'diseases',allergyCatalog:'allergyCatalog',triage:'triage',laboratory:'studyTypes',imaging:'studyTypes'};
 function catalogMode() {return state.page==='laboratory'?'LABORATORIO':state.page==='imaging'?'IMAGEN':null;}
 let catalogKind='physicians', catalogDraft=null;
-function options(collection,selected,empty=false) {
- return `${empty?'<option value="">Sin proveedor predeterminado</option>':''}${collection.map(item=>`<option value="${item.id}" ${item.id===selected?'selected':''}>${escapeText(item.name)}</option>`).join('')}`;
+function options(collection,selected) {
+ return collection.map(item=>`<option value="${item.id}" ${item.id===selected?'selected':''}>${escapeText(item.name)}</option>`).join('');
 }
 function catalogDetails(kind,item) {
  if(kind==='physicians') return `${item.specialtyIds.map(id=>resourceName('specialties',id)).join(', ')} · ${item.document || 'Sin documento'} · ${state.availability.filter(slot=>slot.physicianId===item.id).map(slot=>`${weekdayNames[slot.weekday]} ${slot.start}–${slot.end} · ${resourceName('rooms',slot.roomId)}`).join('; ')}`;
  if(kind==='rooms') return `${item.location || 'Sin ubicación'} · ${item.active?'Activo':'Inactivo'}`;
- if(kind==='providers') return `${item.mode} · ${item.contact || 'Sin contacto'}`;
  if(kind==='procedures') return money(item.priceCents);
- if(kind==='studyTypes') return `${item.mode} · ${money(item.priceCents)} · ${item.providerId?resourceName('providers',item.providerId):'Sin proveedor predeterminado'}`;
+ if(kind==='studyTypes') return `Modalidad: ${item.mode} · Precio: ${money(item.priceCents)}`;
  if(kind==='diseases' || kind==='allergyCatalog' || kind==='triage') return item.description || 'Sin descripción';
  if(kind==='patients') return `${item.id} · ${item.note}`;
  if(kind==='inventory') return `Código: ${item.code || item.id} · Cantidad: ${item.stock} · Umbral: ${item.min}`;
@@ -642,14 +639,14 @@ function catalogDetails(kind,item) {
  return 'Especialidad de demo';
 }
 function renderCatalogs() {
- const mode=catalogMode(), kinds=mode?['providers','studyTypes']:[];
+ const mode=catalogMode();
  const records=state[catalogKind].filter(item=>!mode || item.mode===mode);
  const reference=['diseases','allergyCatalog'].includes(catalogKind);
  $('#view').innerHTML=`<section class="card">
-  ${mode?`<div class="tabs" role="tablist" aria-label="Recursos de ${mode}">${kinds.map(kind=>`<button type="button" role="tab" id="catalog-tab-${kind}" aria-controls="catalog-results" aria-selected="${kind===catalogKind}" tabindex="${kind===catalogKind?0:-1}" data-catalog-tab="${kind}">${catalogLabels[kind]}</button>`).join('')}</div>`:`<h2>${catalogLabels[catalogKind]}</h2>`}
+  <h2>${catalogLabels[catalogKind]}${mode?` · ${mode}`:''}</h2>
   ${reference?'<p class="help">Referencias ficticias de la clínica: no se aplican al paciente ni modifican sus alergias o antecedentes. Sin códigos médicos ni diagnósticos inferidos.</p>':''}
   <button type="button" id="catalog-add" class="primary">Crear · ${catalogLabels[catalogKind]}</button>
-  <div id="catalog-results" ${mode?`role="tabpanel" aria-labelledby="catalog-tab-${catalogKind}"`:''} style="margin-top:24px">
+  <div id="catalog-results" style="margin-top:24px">
    <div class="table-wrap" tabindex="0" role="region" aria-label="Registros de catálogo"><table>
     <caption>${records.length} registros ficticios · ${catalogLabels[catalogKind]}</caption>
     <thead><tr><th scope="col">${catalogKind==='triage'?'Clasificación':'Nombre'}</th><th scope="col">${catalogKind==='triage'?'Descripción':'Configuración'}</th><th scope="col">Acción</th></tr></thead>
@@ -658,15 +655,6 @@ function renderCatalogs() {
   </div><p class="help" style="margin-top:24px">${catalogKind==='triage'?'Catálogo de clasificación y descripción. No evalúa pacientes ni aplica decisiones clínicas.':reference?'Lista de referencia local, no historia clínica.':'Configuración conectada a agenda, consulta y estudios de demo.'} Sin análisis de imágenes ni conexión externa.</p>
  </section>`;
  $('#catalog-add').onclick=()=>openCatalog();
- $$('[data-catalog-tab]').forEach(tab=>{
-  const select=kind=>{catalogKind=kind;modalityViews[state.page]=kind;renderCatalogs();$(`#catalog-tab-${kind}`).focus();};
-  tab.onclick=()=>select(tab.dataset.catalogTab);
-  tab.onkeydown=event=>{
-   const index=kinds.indexOf(catalogKind);
-   const target=event.key==='ArrowRight'?kinds[(index+1)%kinds.length]:event.key==='ArrowLeft'?kinds[(index+kinds.length-1)%kinds.length]:event.key==='Home'?kinds[0]:event.key==='End'?kinds.at(-1):null;
-   if(target) {event.preventDefault();select(target);}
-  };
- });
 }
 function slotMarkup(slot={weekday:1,start:'08:00',end:'12:00',roomId:state.rooms.find(room=>room.active)?.id}) {
  return `<fieldset class="form-section" data-slot-id="${slot.id || ''}"><legend>Horario de disponibilidad</legend>
@@ -700,10 +688,8 @@ function openCatalog(id,trigger) {
   markup+=field('cat-location','Ubicación (opcional)',item.location)+`<label class="check"><input id="cat-active" type="checkbox" ${item.active!==false?'checked':''}>Activo</label>`;
  } else if(kind==='procedures') {
   markup+=field('cat-price','Precio del procedimiento (Bs)',((item.priceCents || 0)/100).toFixed(2),'number');
- } else if(kind==='providers' || kind==='studyTypes') {
-  markup+=`<label>Modalidad<select id="cat-mode">${['LABORATORIO','IMAGEN'].map(mode=>`<option ${(item.mode || catalogMode())===mode?'selected':''}>${mode}</option>`).join('')}</select></label>`;
-  if(kind==='providers') markup+=field('cat-contact','Contacto ficticio (opcional)',item.contact);
-  else markup+=`<label>Proveedor predeterminado (opcional)<select id="cat-provider"></select></label>`+field('cat-price','Precio (Bs, máximo dos decimales)',((item.priceCents || 0)/100).toFixed(2),'number');
+ } else if(kind==='studyTypes') {
+  markup+=`<p class="help">Modalidad: ${catalogMode()} · fija según el menú actual.</p>`+field('cat-price','Precio (Bs, máximo dos decimales)',((item.priceCents || 0)/100).toFixed(2),'number');
  }
  $('#catalog-fields').innerHTML=markup;
  if(kind==='patients') $('#cat-name').maxLength=80;
@@ -711,8 +697,6 @@ function openCatalog(id,trigger) {
  if(kind==='inventory') $('#cat-code').maxLength=30;
  if(kind==='physicians') $('#add-slot').onclick=()=>$('#availability-slots').insertAdjacentHTML('beforeend',slotMarkup());
  if(kind==='studyTypes') {
-  const updateProviders=()=>$('#cat-provider').innerHTML=options(state.providers.filter(provider=>provider.mode===$('#cat-mode').value),item.providerId,true);
-  $('#cat-mode').onchange=updateProviders; updateProviders();
   $('#cat-price').step='0.01'; $('#cat-price').min='0';
  }
  $('#catalog-error').textContent='';
@@ -766,19 +750,13 @@ function saveCatalog() {
  } else if(kind==='procedures') {
   values.priceCents=parseCents($('#cat-price').value,true);
   if(values.priceCents===null) return 'Introduce un precio positivo o cero, sin fracciones de centavos.';
- } else if(kind==='providers' || kind==='studyTypes') {
-  values.mode=$('#cat-mode').value;
-  if(!['LABORATORIO','IMAGEN'].includes(values.mode)) return 'Selecciona una modalidad válida.';
-  if(kind==='providers') values.contact=$('#cat-contact').value.trim();
-  else {
-   const price=$('#cat-price').value;
-   if(parseCents(price,true)===null) return 'Introduce un precio positivo o cero, sin fracciones de centavos.';
-   values.priceCents=parseCents(price,true); values.providerId=$('#cat-provider').value || null;
-   if(values.providerId && !state.providers.some(provider=>provider.id===values.providerId && provider.mode===values.mode)) return 'El proveedor debe corresponder a la modalidad.';
-  }
-  // Existing study defaults cannot silently become incompatible after a provider edit.
-  if(kind==='providers' && state.studyTypes.some(study=>study.providerId===id && study.mode!==values.mode)) return 'La modalidad está vinculada a un tipo de estudio; cambia primero su proveedor.';
-  if(values.mode!==catalogDraft.mode) return 'La modalidad debe corresponder a este menú. Crea el recurso desde Laboratorio o Imagen según corresponda.';
+ } else if(kind==='studyTypes') {
+  values.mode=catalogDraft.mode;
+  if(!['LABORATORIO','IMAGEN'].includes(values.mode)) return 'Selecciona el menú Laboratorio o Imagen.';
+  const existing=state.studyTypes.find(item=>item.id===id);
+  if(existing && existing.mode!==values.mode) return 'El tipo de estudio pertenece a otro menú.';
+  values.priceCents=parseCents($('#cat-price').value,true);
+  if(values.priceCents===null) return 'Introduce un precio positivo o cero, sin fracciones de centavos.';
  }
  const existing=state[kind].find(item=>item.id===id);
  const saved=existing || {id:newId('CAT')};
@@ -800,7 +778,7 @@ $('#catalog-form').onsubmit=event=>{
 // Master-data controls never apply to clinical or financial transactions.
 function masterActions(kind,item) {
  const attrs=`data-master-kind="${kind}"`;
- return `<button type="button" ${attrs} data-master-view="${escapeText(item.id)}">Ver</button><button type="button" ${attrs} data-catalog-edit="${escapeText(item.id)}">Editar</button>${kind==='providers'?'':`<button type="button" ${attrs} data-master-delete="${escapeText(item.id)}">Eliminar</button>`}`;
+ return `<button type="button" ${attrs} data-master-view="${escapeText(item.id)}">Ver</button><button type="button" ${attrs} data-catalog-edit="${escapeText(item.id)}">Editar</button><button type="button" ${attrs} data-master-delete="${escapeText(item.id)}">Eliminar</button>`;
 }
 function openMasterEditor(kind,id,trigger) { catalogKind=kind; openCatalog(id,trigger); }
 function refreshMaster(kind) {
@@ -830,7 +808,7 @@ function deletionBlock(kind,id) {
 }
 let deletionDraft=null;
 function openMasterDelete(kind,id,trigger) {
- const item=state[kind].find(entry=>entry.id===id); if(!item || kind==='providers') return;
+ const item=state[kind].find(entry=>entry.id===id); if(!item) return;
  deletionDraft={kind,id};
  $('#master-delete-summary').textContent=`Eliminar ${catalogLabels[kind]}: ${item.name}. Solo se elimina este registro libre; esta acción requiere confirmación.`;
  $('#master-delete-error').textContent='';
@@ -982,7 +960,7 @@ function renderStudies() {
  const studies=state.studies.filter(item=>item.consultationId===consultation.id);
  $('#consultation-studies').innerHTML=studies.map(study=>`<article data-study-row="${study.id}" style="margin-top:16px">
   <h3>${study.id} · ${escapeText(resourceName('studyTypes',study.typeId))}</h3>
-  <p>${study.mode} · ${escapeText(resourceName('providers',study.providerId))} · ${study.status}</p>
+  <p>Modalidad: ${study.mode} · Estado: ${study.status}</p>
   <p class="help">${escapeText(patientName(consultation.patientId))} · ${consultation.id}</p>
   <p>${escapeText(study.result) || 'Resultado sin registrar'}${study.reference?` · ${escapeText(study.reference)}`:''}</p>
   ${study.status==='PENDIENTE' && consultation.status==='EN_CURSO'?`<button type="button" data-result="${study.id}">Registrar resultado</button>`:''}
@@ -994,24 +972,18 @@ function openStudy() {
  if(!consultation || consultation.status!=='EN_CURSO') return;
  $('#study-context').textContent=`${consultation.id} · ${patientName(consultation.patientId)} · Sin análisis automático ni archivos.`;
  $('#study-type').innerHTML='<option value="">Seleccionar estudio</option>'+options(state.studyTypes);
- const update=()=>{
-  const type=state.studyTypes.find(item=>item.id===$('#study-type').value);
-  $('#study-provider').innerHTML=type?options(state.providers.filter(provider=>provider.mode===type.mode),type.providerId):'';
- };
- $('#study-type').onchange=update; update();
  $('#study-error').textContent=''; openDialog('#study-dialog');
 }
 $('#study-form').onsubmit=event=>{
  event.preventDefault();
  const consultation=activeConsultation(), type=state.studyTypes.find(item=>item.id===$('#study-type').value);
- const provider=state.providers.find(item=>item.id===$('#study-provider').value);
- if(!consultation || consultation.status!=='EN_CURSO' || !type || !provider || provider.mode!==type.mode) {
-  $('#study-error').textContent='Selecciona un estudio y proveedor compatible en una consulta activa.';return;
+ if(!consultation || consultation.status!=='EN_CURSO' || !type) {
+  $('#study-error').textContent='Selecciona un tipo de estudio válido en una consulta activa.';return;
  }
  if(state.studies.some(item=>item.consultationId===consultation.id && item.typeId===type.id && item.status!=='CANCELADO')) {
   $('#study-error').textContent='Este estudio ya está solicitado en la consulta.';return;
  }
- state.studies.push({id:newId('ST'),consultationId:consultation.id,patientId:consultation.patientId,typeId:type.id,providerId:provider.id,mode:type.mode,status:'PENDIENTE',result:'',reference:''});
+ state.studies.push({id:newId('ST'),consultationId:consultation.id,patientId:consultation.patientId,typeId:type.id,mode:type.mode,status:'PENDIENTE',result:'',reference:''});
  closeDialog($('#study-dialog')); renderStudies(); $('#request-study').focus();
 };
 let resultStudyId=null;

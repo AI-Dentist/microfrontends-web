@@ -49,17 +49,30 @@ try {
     await page.goto(htmlURL.href);
     return page;
   }
+  async function noProviderUI(target) {
+    check(!/proveedor|provider/i.test(await target.locator('body').innerText()), 'No visible provider concepts in current page/dialog');
+  }
   const page = await openPage({width:1440,height:1000});
   const text = selector => page.locator(selector).innerText();
   const go = async id => {
     await page.locator(`#navigation [data-page="${id}"]`).click();
     check(await page.locator(`#navigation [data-page="${id}"]`).getAttribute('aria-current') === 'page', `Active navigation ${id}`);
+    await noProviderUI(page);
   };
   const rows = selector => page.locator(`${selector} tbody tr`);
   const noOverflow = async target => check(await target.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No page horizontal overflow');
   const snapshotKPIs = () => page.locator('[data-kpi]').allTextContents();
 
-  // Reopened S11: assert the missing configuration surface before any implementation.
+  // S12 RED boundary: direct modality catalogs have no intermediate resource tabs.
+  for(const route of ['laboratory','imaging']) {
+    await go(route);
+    check(await page.locator('#catalog-add').count()===1 && await page.locator('#view [role="tab"]').count()===0 && !/proveedor|provider/i.test(await text('#view')), `S12 ${route} is direct study CRUD without providers`);
+    await page.locator('#catalog-add').click();
+    check(await page.locator('#catalog-fields input').count()===2 && await page.locator('#catalog-fields select').count()===0, 'Study form has only name/price with implicit menu modality');
+    await page.keyboard.press('Escape');
+  }
+  check(!/provider|proveedor/i.test(source), 'Provider layer entirely absent from artboard source, including state, defaults and request coupling');
+  // Reopened S11: preserve the configuration surface.
   await go('triage');
   check(await page.locator('#catalog-add').count()===1 && await page.locator('#triage-patient').count()===0, 'S11 Triage is configuration CRUD, not patient assessment');
   await go('overview');
@@ -226,12 +239,14 @@ try {
     const route=catalogRoutes[kind] || (mode==='IMAGEN'?'imaging':'laboratory');
     if(await target.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await target.locator('#menu-toggle').click();
     await target.locator(`#navigation [data-page="${route}"]`).click();
-    if(['providers','studyTypes'].includes(kind)) await target.locator(`[data-catalog-tab="${kind}"]`).click();
+    // Each study modality now opens its CRUD directly.
+    await noProviderUI(target);
   }
   async function catalogTab(kind,mode) { await selectCatalog(page,kind,mode); }
   async function catalogForm(values, edit=false) {
     await page.locator(edit ? '#catalog-results [data-catalog-edit]' : '#catalog-add').last().click();
     for(const [field,value] of Object.entries(values)) await page.locator(`#cat-${field}`).fill(value);
+    await noProviderUI(page);
   }
   async function saveCatalog() { await page.locator('#catalog-form button[type=submit]').click(); }
   async function rejectCatalog(message, before) {
@@ -297,24 +312,11 @@ try {
   check(await page.locator('#agenda-room option').filter({hasText:'Consultorio 3'}).count()===1, 'New consultorio visible in agenda');
   await page.locator('#agenda-room').selectOption({label:'Consultorio 1'});
   check(await rows('#agenda-results').count()===2, 'Existing room fixtures retained and filter coherent');
-  await go('catalogs'); await catalogTab('providers');
-  for(const [mode,name] of [['LABORATORIO','Laboratorio demo'],['IMAGEN','Imagen demo']]) {
-    await catalogTab('providers',mode);
-    await catalogForm({name,contact:'Contacto ficticio'});
-    await page.locator('#cat-mode').selectOption(mode); await saveCatalog();
-    check((await text('#catalog-results')).includes(name) && (await text('#catalog-results')).includes(mode), `Create provider ${mode}`);
-  }
-  await catalogForm({contact:'Contacto editado'},true); await saveCatalog();
-  check((await text('#catalog-results')).includes('Contacto editado'), 'Edit provider');
-  before=await text('#catalog-results');
-  await catalogForm({name:'Imagen demo'}); await rejectCatalog('ya existe',before); await page.keyboard.press('Escape');
-  await catalogTab('studyTypes');
-  for(const [mode,name,provider] of [['LABORATORIO','Hemograma demo','Laboratorio demo'],['IMAGEN','Radiografía demo','Imagen demo']]) {
+  await go('catalogs'); await catalogTab('studyTypes');
+  for(const [mode,name] of [['LABORATORIO','Hemograma demo'],['IMAGEN','Radiografía demo']]) {
     await catalogTab('studyTypes',mode);
-    await catalogForm({name,price:'125.50'});
-    await page.locator('#cat-mode').selectOption(mode);
-    await page.locator('#cat-provider').selectOption({label:provider}); await saveCatalog();
-    check((await text('#catalog-results')).includes(name) && (await text('#catalog-results')).includes('Bs 125,50') && (await text('#catalog-results')).includes(provider), `Study type ${mode} has price and default provider`);
+    await catalogForm({name,price:'125.50'}); await saveCatalog();
+    check((await text('#catalog-results')).includes(name) && (await text('#catalog-results')).includes('Bs 125,50') && (await text('#catalog-results')).includes(mode), `Study type ${mode} has price and implicit modality`);
   }
   await catalogForm({price:'150.25'},true); await saveCatalog();
   check((await text('#catalog-results')).includes('Bs 150,25'), 'Edit study type price');
@@ -323,12 +325,8 @@ try {
   await catalogForm({name:'Precio inválido',price:'1.001'}); await rejectCatalog('centavos',before); await page.keyboard.press('Escape');
   await catalogForm({name:'Descartar catálogo'}); await page.locator('#catalog-dialog [data-close]').click();
   check(await text('#catalog-results')===before, 'Catalog Cancel preserves list');
-  await catalogTab('providers','IMAGEN');
-  before=await text('#catalog-results');
-  await catalogForm({},true); await page.locator('#cat-mode').selectOption('LABORATORIO');
-  await rejectCatalog('vinculada',before); await page.keyboard.press('Escape');
-  await go('overview'); await catalogTab('providers','IMAGEN');
-  check((await text('#catalog-results')).includes('Contacto editado'), 'Catalog edits persist across views');
+  await go('overview'); await catalogTab('studyTypes','IMAGEN');
+  check((await text('#catalog-results')).includes('Radiografía demo') && (await text('#catalog-results')).includes('Bs 150,25'), 'Study catalog edits persist across views');
   await catalogTab('physicians');
   await page.setViewportSize({width:390,height:844});
   await noOverflow(page);
@@ -418,6 +416,7 @@ try {
   const fg = async id => {
     if(await flow.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await flow.locator('#menu-toggle').click();
     await flow.locator(`#navigation [data-page="${id}"]`).click();
+    await noProviderUI(flow);
   };
   await fg('agenda');
   check(await flow.getByRole('button',{name:'Agendar cita',exact:true}).count()===1, 'T3 discoverable appointment creation');
@@ -451,12 +450,10 @@ try {
     await flow.getByLabel('Especialidad flujo',{exact:true}).check();
     await flow.locator('.slot-room').selectOption({label:'Sala flujo'});
   });
-  for(const [mode,provider,study,price] of [['LABORATORIO','Lab flujo','Estudio lab flujo','100.10'],['IMAGEN','Imagen flujo','Estudio imagen flujo','200.20']]) {
-    await fcCreate('providers',{name:provider},()=>flow.locator('#cat-mode').selectOption(mode),mode);
-    await fcCreate('studyTypes',{name:study,price},async()=>{
-      await flow.locator('#cat-mode').selectOption(mode);
-      await flow.locator('#cat-provider').selectOption({label:provider});
-    },mode);
+  const flowTypeIds=new Map();
+  for(const [mode,study,price] of [['LABORATORIO','Estudio lab flujo','100.10'],['IMAGEN','Estudio imagen flujo','200.20']]) {
+    await fcCreate('studyTypes',{name:study,price},async()=>{},mode);
+    flowTypeIds.set(study,await flow.locator('#catalog-results tbody tr').filter({hasText:study}).locator('[data-catalog-edit]').getAttribute('data-catalog-edit'));
   }
   await fg('agenda');
   const appointmentBefore=await ft('#agenda-results');
@@ -552,15 +549,19 @@ try {
   await flow.locator('#request-study').click();
   const noStudies=await ft('#consultation-studies');
   await flow.locator('#study-form button[type=submit]').click();
-  check((await ft('#study-error')).includes('compatible') && await ft('#consultation-studies')===noStudies, 'Unknown study/provider rejected without request mutation');
+  check(await ft('#study-error')==='Selecciona un tipo de estudio válido en una consulta activa.' && await ft('#consultation-studies')===noStudies, 'Empty study type rejected without request mutation');
+  await flow.locator('#study-type').evaluate(node=>node.add(new Option('Tipo inexistente','UNKNOWN-TYPE')));
+  await flow.locator('#study-type').selectOption('UNKNOWN-TYPE'); await flow.locator('#study-form button[type=submit]').click();
+  check(await ft('#study-error')==='Selecciona un tipo de estudio válido en una consulta activa.' && await ft('#consultation-studies')===noStudies, 'Unknown type rejected without request mutation or unrelated dependency');
   await flow.keyboard.press('Escape');
   for(const study of ['Estudio lab flujo','Estudio imagen flujo']) {
     await flow.locator('#request-study').click();
     await flow.locator('#study-type').selectOption({label:study});
-    const compatible=await flow.locator('#study-provider option').allTextContents();
-    check(compatible.join('|')===(study.includes('lab')?'Lab flujo':'Imagen flujo'), 'Request provider choices match lab/image modality');
+    await noProviderUI(flow);
+    check(await flow.locator('#study-form select').count()===1 && await flow.locator('#study-type').inputValue()===flowTypeIds.get(study), 'Request uses catalog stable type ID with no provider selector');
     await flow.locator('#study-form button[type=submit]').click();
     check((await ft('#consultation-studies')).includes(study) && (await ft('#consultation-studies')).includes('PENDIENTE'), `Request ${study}`);
+    check((await ft('#consultation-studies')).includes(study.includes('lab')?'LABORATORIO':'IMAGEN') && !/proveedor|provider|Sin registrar/.test(await ft('#consultation-studies')), 'Requested study shows type/modality/status without missing-resource placeholder');
     const studyRow=flow.locator('[data-study-row]').filter({hasText:study});
     await studyRow.getByRole('button',{name:'Registrar resultado',exact:true}).click();
     await flow.locator('#result-form button[type=submit]').click();
@@ -607,7 +608,7 @@ try {
   await flow.locator('#catalog-form button[type=submit]').click();
   await fg('payments'); await flowOrder().locator('[data-order-detail]').click();
   check(await ft('#order-detail-lines')===immutableLines, 'Historic order unchanged after catalog edits'); await flow.keyboard.press('Escape');
-  async function openQr() { await flowOrder().locator('[data-qr]').click(); }
+  async function openQr() { await flowOrder().locator('[data-qr]').click(); await noProviderUI(flow); }
   async function generateQr(amount) {
     await flow.locator('#qr-amount').fill(amount); await flow.locator('#qr-form button[type=submit]').click();
   }
@@ -758,33 +759,32 @@ try {
   const eg=async id=>{
     if(await expanded.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await expanded.locator('#menu-toggle').click();
     await expanded.locator(`#navigation [data-page="${id}"]`).click();
+    await noProviderUI(expanded);
   };
   for(const [id,label] of Object.entries(resourceMenus)) {
     await eg(id);
     check(await et('#page-title')===label && await et('#breadcrumb')===`Clínica / ${label}` && await expanded.locator(`#navigation [data-page="${id}"]`).getAttribute('aria-current')==='page', `Own title, breadcrumb and active menu: ${label}`);
   }
+  const modalityIds=new Map();
   for(const [route,mode,other] of [['laboratory','LABORATORIO','IMAGEN'],['imaging','IMAGEN','LABORATORIO']]) {
-    await eg(route); await expanded.locator('[data-catalog-tab="providers"]').click();
-    await expanded.locator('#catalog-add').click(); await expanded.locator('#cat-name').fill(`Proveedor ${mode}`);
-    check(await expanded.locator('#cat-mode').inputValue()===mode, `Provider form defaults to own modality: ${mode}`);
-    await expanded.locator('#catalog-form button[type=submit]').click();
-    const providerBefore=await et('#catalog-results');
-    await expanded.locator('[data-catalog-edit]').click(); await expanded.locator('#cat-mode').selectOption(other);
-    await expanded.locator('#catalog-form button[type=submit]').click();
-    check((await et('#catalog-error')).includes('este menú') && await et('#catalog-results')===providerBefore, `Cross-modality save rejects without disappearing provider: ${mode}`);
-    await expanded.keyboard.press('Escape');
-    await expanded.locator('[data-catalog-tab="studyTypes"]').click(); await expanded.locator('#catalog-add').click();
+    await eg(route);
+    check(await expanded.locator('#view [role="tab"]').count()===0, `No resource subtabs in ${mode}`);
+    await expanded.locator('#catalog-add').click();
     await expanded.locator('#cat-name').fill(`Estudio ${mode}`); await expanded.locator('#cat-price').fill('12.34');
-    check((await expanded.locator('#cat-provider option').allTextContents()).join('|')===`Sin proveedor predeterminado|Proveedor ${mode}`, `Study defaults show only own providers: ${mode}`);
-    await expanded.locator('#cat-provider').selectOption({label:`Proveedor ${mode}`});
+    check(await expanded.locator('#catalog-fields select').count()===0 && (await et('#catalog-fields')).includes(mode), `Study modality is fixed to current menu: ${mode}`);
     await expanded.locator('#catalog-form button[type=submit]').click();
     check((await et('#catalog-results')).includes(`Estudio ${mode}`) && !(await et('#catalog-results')).includes(`Estudio ${other}`), `Own study list filters modality: ${mode}`);
+    modalityIds.set(mode,await expanded.locator('[data-catalog-edit]').getAttribute('data-catalog-edit'));
+    await expanded.locator('[data-master-view]').click();
+    check((await et('#master-detail-content')).includes(`Estudio ${mode}`) && (await et('#master-detail-content')).includes(`Modalidad: ${mode}`) && (await et('#master-detail-content')).includes('Bs 12,34'), `Study detail contains saved type/modality/price: ${mode}`);
+    await noProviderUI(expanded); await expanded.keyboard.press('Escape');
   }
+  check(new Set(modalityIds.values()).size===2, 'Both modality records have distinct stable IDs');
   for(const [route,mode,other] of [['laboratory','LABORATORIO','IMAGEN'],['imaging','IMAGEN','LABORATORIO']]) {
-    await eg(route); await expanded.locator('[data-catalog-tab="providers"]').click();
-    check((await et('#catalog-results')).includes(`Proveedor ${mode}`) && !(await et('#catalog-results')).includes(`Proveedor ${other}`), `Own provider list filters modality: ${mode}`);
-    await expanded.locator('[data-catalog-tab="studyTypes"]').click();
+    await eg(route);
+    check((await et('#catalog-results')).includes(mode) && !(await et('#catalog-results')).includes(other), `Own study modality isolated: ${mode}`);
     check((await et('#catalog-results')).includes(`Estudio ${mode}`) && !(await et('#catalog-results')).includes(`Estudio ${other}`), `Both studies retained after route switches: ${mode}`);
+    check(await expanded.locator('[data-catalog-edit]').getAttribute('data-catalog-edit')===modalityIds.get(mode) && await expanded.locator(`[data-catalog-edit="${modalityIds.get(other)}"]`).count()===0, `Modality route retains only its own stable IDs: ${mode}`);
   }
   await eg('catalogs');
   const tariffCount=await expanded.locator('[data-catalog-edit]').count();
@@ -958,7 +958,7 @@ try {
   // Full S13 CRUD on free records; public DOM only, independent fixtures.
   const masters=await openPage({width:1440,height:1000});
   const mt=selector=>masters.locator(selector).innerText();
-  async function mg(route) { await masters.locator(`#navigation [data-page="${route}"]`).click(); }
+  async function mg(route) { await masters.locator(`#navigation [data-page="${route}"]`).click(); await noProviderUI(masters); }
   async function mc(kind,mode) { await selectCatalog(masters,kind,mode); }
   async function submitMaster() { await masters.locator('#catalog-form button[type=submit]').click(); }
   async function detailMaster(row,name,detail) {
@@ -1091,7 +1091,13 @@ try {
   await mg('overview'); check((await masters.locator('[data-kpi]').allTextContents()).join('|')==='Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'All master CRUD leaves financial fixture untouched');
   await mg('triage'); await masters.locator('#catalog-add').click();
   await masters.locator('#cat-name').fill('Clasificación de ejemplo'); await masters.locator('#cat-description').fill('Referencia configurable de demostración; sin valoración de pacientes.'); await submitMaster();
+  await mc('studyTypes','LABORATORIO'); await masters.locator('#catalog-add').click();
+  await masters.locator('#cat-name').fill('Hemograma de ejemplo'); await masters.locator('#cat-price').fill('100.10'); await submitMaster();
   await masters.screenshot({path:fileURLToPath(new URL('desktop.png',import.meta.url)),fullPage:true});
+  await mc('studyTypes','IMAGEN'); await masters.locator('#catalog-add').click();
+  await masters.locator('#cat-name').fill('Imagen de ejemplo'); await masters.locator('#cat-price').fill('200.20'); await submitMaster();
+  check((await mt('#catalog-results')).includes('Imagen de ejemplo') && !(await mt('#catalog-results')).includes('Hemograma de ejemplo'), 'Final modality catalog isolation');
+  await mg('triage');
   await masters.setViewportSize({width:390,height:844}); await noOverflow(masters);
   await masters.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
   for (const context of contexts) for (const item of context.pages()) check(await item.evaluate(()=>window.demoViolations.length) === 0, 'No API or storage writes');

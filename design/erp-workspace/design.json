@@ -1,12 +1,12 @@
 {
   "title": "ERP · Unified clinical workspace",
-  "brief": "Offline Spanish-language staff ERP demo for fictional Clínica Dental Andina. Full editable-master create/detail/edit/confirmed-delete for physicians, specialties, rooms, modality-filtered study types, disease/allergy references, configuration Triage, tariffs, patients, inventory and local roles. Triage requires unique trimmed classification and plain description, not patient assessment. Reference deletion protects linked clinical/financial records; stable IDs, integer cents and issued snapshots remain. Existing history/habits, appointment, consultation, studies, cash/non-payable QR and DEMO receipts preserved. Provider layer deliberately retained until next T3 (S12 pending). In-memory only; reload resets. Public-UI smoke PASS 608 checks; zero HTTP/API/storage writes or page errors. No production clinical/payment/security readiness.",
+  "brief": "Offline Spanish-language staff ERP demo for fictional Clínica Dental Andina. Full editable-master create/detail/edit/confirmed-delete for physicians, specialties, rooms, modality-filtered study types, disease/allergy references, configuration Triage, tariffs, patients, inventory and local roles. Triage requires unique trimmed classification and plain description, not patient assessment. Reference deletion protects linked clinical/financial records; stable IDs, integer cents and issued snapshots remain. Existing history/habits, appointment, consultation, studies, cash/non-payable QR and DEMO receipts preserved. S12 complete: provider layer removed entirely; direct laboratory/imaging study CRUD has implicit menu modality, name and price, and requests need only a valid catalog type. In-memory only; reload resets. Public-UI smoke PASS 812 checks; zero HTTP/API/storage writes or page errors. No production clinical/payment/security readiness.",
   "feature": "odd/tasks/erp-prototype-full-workflows.md",
   "artboards": [
     {
       "file": "01-unified-workspace.html",
       "title": "Unified business workspace",
-      "tradeoff": "Complete editable-master CRUD and configuration-only Triage in the preserved single shell and connected clinical/receipt demo. Providers remain pending T3 removal; no real medicine, payment, authorization, backend or persistence.",
+      "tradeoff": "Complete editable-master CRUD and configuration-only Triage in the preserved single shell and connected clinical/receipt demo. Provider-free laboratory/imaging study catalogs and requests, with referenced-type deletion protection; no real medicine, payment, authorization, backend or persistence.",
       "width": 1440,
       "height": 1000
     }
