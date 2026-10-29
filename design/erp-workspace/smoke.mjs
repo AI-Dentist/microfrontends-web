@@ -1,15 +1,17 @@
-// Offline public-interface smoke. No server, installation, app data, or persistence.
+// Public-interface smoke through the owned loopback preview; no backend or persistence.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { request } from 'node:http';
+import { startPreview } from './preview.mjs';
 
 const root = new URL('../../', import.meta.url);
 process.env.PLAYWRIGHT_BROWSERS_PATH = fileURLToPath(new URL('apps/mf-erp/node_modules/.cache/playwright/', root));
 const require = createRequire(new URL('apps/mf-erp/package.json', root));
 const { chromium } = require('playwright');
-const htmlURL = new URL('01-unified-workspace.html', import.meta.url);
-const source = await readFile(htmlURL, 'utf8');
+const artifactURL = new URL('01-unified-workspace.html', import.meta.url);
+const source = await readFile(artifactURL, 'utf8');
 const system = await readFile(new URL('design/system.md', root), 'utf8');
 let checks = 0;
 function check(condition, message) { assert.ok(condition, message); checks++; }
@@ -22,10 +24,44 @@ check(source.includes('rgba(15,23,42,.6)') && source.includes('rgb(0 0 0 / .05)'
 console.log(`Palette self-check: ${colors.join(', ')}; font: ${families.join('; ')}; sourced overlay/shadow alpha only.`);
 
 let browser;
+let preview;
 const contexts = [];
 const errors = [];
 const network = [];
+const documents = [];
+const operations = [];
 try {
+  preview = await startPreview();
+  const htmlURL = new URL(preview.url);
+  check(htmlURL.hostname === '127.0.0.1' && Number(htmlURL.port) > 0, 'Preview uses ephemeral IPv4 loopback URL');
+  async function boundary(path, method = 'GET') {
+    return new Promise((accept, reject) => {
+      const req = request({hostname:htmlURL.hostname, port:htmlURL.port, path, method}, response => {
+        const chunks = [];
+        response.on('data', chunk => chunks.push(chunk));
+        response.on('end', () => accept({status:response.statusCode, headers:response.headers, body:Buffer.concat(chunks).toString('utf8')}));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+  }
+  for (const path of ['/', '/01-unified-workspace.html']) {
+    const get = await boundary(path);
+    check(get.status === 200 && get.body === source, `GET ${path} serves exactly the known artifact`);
+    check(get.headers['cache-control'] === 'no-store' && get.headers['content-type'] === 'text/html; charset=utf-8' && get.headers['x-content-type-options'] === 'nosniff' && get.headers['referrer-policy'] === 'no-referrer', 'Preview no-cache and content/privacy headers');
+    const csp = get.headers['content-security-policy'];
+    check(csp.includes("connect-src 'none'") && csp.includes("default-src 'none'") && csp.includes("script-src 'unsafe-inline'") && csp.includes("style-src 'unsafe-inline'") && csp.includes("base-uri 'none'") && csp.includes("form-action 'none'") && csp.includes("frame-ancestors 'none'") && !/sandbox/i.test(csp), 'Standalone CSP blocks network and framing without sandboxing native forms');
+    const head = await boundary(path, 'HEAD');
+    check(head.status === 200 && head.body === '' && head.headers['content-length'] === get.headers['content-length'], `HEAD ${path} returns document headers without body`);
+  }
+  for (const path of ['/missing', '/design/', '/preview.mjs', '/arbitrary.txt', '/../arbitrary.txt', '/%2e%2e/arbitrary.txt', '/01-unified-workspace.html/extra', '/?file=arbitrary.txt']) {
+    const result = await boundary(path);
+    check(result.status === 404 && result.body === '', `No directory/arbitrary path exposure: ${path}`);
+  }
+  for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
+    const result = await boundary('/', method);
+    check(result.status === 405 && result.headers.allow === 'GET, HEAD' && result.body === '', `${method} rejected without mutation`);
+  }
   // Use the existing full Chromium binary, never trigger a download.
   browser = await chromium.launch({ headless:true, executablePath:chromium.executablePath() });
   async function enterDemo(target) {
@@ -34,10 +70,17 @@ try {
   async function openPage(viewport,{signedIn=true}={}) {
     const context = await browser.newContext({ viewport, reducedMotion:'reduce' });
     contexts.push(context);
-    await context.route(/^https?:/i, async route => { network.push(route.request().url()); await route.abort(); });
+    await context.exposeBinding('recordDemoOperation', (_source, label) => operations.push(label));
+    await context.route('**/*', async route => {
+      const req = route.request();
+      const url = new URL(req.url());
+      const ownDocument = url.origin === htmlURL.origin && ['/', '/01-unified-workspace.html'].includes(url.pathname) && !url.search && ['GET','HEAD'].includes(req.method()) && req.isNavigationRequest() && req.resourceType() === 'document';
+      if (ownDocument) { documents.push(`${req.method()} ${url.pathname}`); await route.continue(); }
+      else { network.push(`${req.method()} ${req.url()}`); await route.abort(); }
+    });
     await context.addInitScript(() => {
       window.demoViolations = [];
-      const record = label => { window.demoViolations.push(label); throw new Error(`Forbidden demo operation: ${label}`); };
+      const record = label => { window.demoViolations.push(label); window.recordDemoOperation(label); throw new Error(`Forbidden demo operation: ${label}`); };
       for (const method of ['setItem','removeItem','clear']) Storage.prototype[method] = () => record(`storage.${method}`);
       Object.defineProperty(document, 'cookie', { get:() => '', set:() => record('cookie') });
       window.fetch = () => record('fetch');
@@ -57,6 +100,12 @@ try {
     check(!/proveedor|provider/i.test(await target.locator('body').innerText()), 'No visible provider concepts in current page/dialog');
     await iconButtons(target);
   }
+  // S21 focused regression: native visible click, never dispatch a synthetic submit.
+  const delivery = await openPage({width:1440,height:1000},{signedIn:false});
+  check(await delivery.locator('#login-screen').isVisible() && !await delivery.locator('#workspace').isVisible(), 'S21 HTTP entry begins at visible login');
+  await enterDemo(delivery);
+  check(await delivery.locator('#workspace').isVisible() && await delivery.locator('#workspace').getAttribute('inert') === null && await delivery.locator('#page-title').innerText() === 'Resumen', 'S21 actual HTTP demo-entry click opens interactive Resumen');
+  console.log('S21 focused HTTP login and server-boundary regression: PASS');
   const startup=await openPage({width:1440,height:1000},{signedIn:false});
   const startupGaps=[];
   if(!await startup.locator('#login-screen').isVisible()) startupGaps.push('initial simulated login');
@@ -1220,7 +1269,7 @@ try {
   await tooltip(session,session.locator('#expense-dialog [data-close]'),'Cancelar');
   check(await session.getByRole('button',{name:'Registrar egreso',exact:true}).evaluate(node=>node===document.activeElement), 'Expense Escape restores initiating focus');
   await expenseOpen('<img onerror=throw(1)> Insumos','100','INSUMOS','Nota <b>literal</b>');
-  await session.locator('#expense-form button[type=submit]').evaluate(node=>{node.click();node.click();node.form.requestSubmit();});
+  await session.locator('#expense-form button[type=submit]').dblclick();
   check(await st('#announcement')==='Egreso simulado registrado. Solo en memoria; sin dinero real.' && !await session.locator('#expense-dialog').isVisible(), 'Posting has exact simulated status and closes dialog');
   check(await session.locator('[data-expense-detail]').count()===2 && await session.locator('#expense-results img').count()===0, 'Duplicate posted submit cannot duplicate ledger; concept is literal');
   const firstExpenseId=await session.locator('[data-expense-detail]').last().getAttribute('data-expense-detail');
@@ -1309,12 +1358,17 @@ try {
   check(await session.getByRole('button',{name:'Cerrar sesión',exact:true}).isVisible(), 'Mobile logout still available after re-entry');
   await session.getByRole('button',{name:'Cerrar sesión',exact:true}).click(); await session.locator('#login-screen').waitFor();
   await enterDemo(session); await session.reload();
-  check(await session.locator('#login-screen').isVisible() && !await session.locator('#workspace').isVisible(), 'Ordinary file reload returns to simulated login');
+  check(await session.locator('#login-screen').isVisible() && !await session.locator('#workspace').isVisible(), 'Ordinary HTTP reload returns to simulated login');
   for (const context of contexts) for (const item of context.pages()) check(await item.evaluate(()=>window.demoViolations.length) === 0, 'No API or storage writes');
-  check(network.length === 0, `No HTTP requests: ${network.join(', ')}`);
+  check(documents.length > 0, 'Full business suite loaded documents through owned HTTP preview');
+  check(network.length === 0 && operations.length === 0, `No external/API requests or storage writes: ${network.join(', ')} ${operations.join(', ')}`);
   check(errors.length === 0, `No page errors: ${errors.join(', ')}`);
-  console.log(`PASS ${checks} checks · 1440×1000 + 390×844 · screenshots: desktop.png, mobile.png, login-desktop.png, login-mobile.png · HTTP/API/storage writes: 0 · page errors: 0`);
+  console.log(`PASS ${checks} checks · 1440×1000 + 390×844 · screenshots: desktop.png, mobile.png, login-desktop.png, login-mobile.png · allowed local HTML document loads: ${documents.length} · external/API/storage writes: 0 · page errors: 0`);
 } finally {
-  for (const context of contexts) await context.close();
-  if (browser) await browser.close();
+  try {
+    for (const context of contexts) await context.close();
+    if (browser) await browser.close();
+  } finally {
+    if (preview) await preview.close();
+  }
 }

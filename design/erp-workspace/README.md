@@ -1,8 +1,16 @@
 # ERP workspace prototype
 
-**One connected offline demo**, in Spanish, for fictional Clínica Dental Andina. Open [`01-unified-workspace.html`](01-unified-workspace.html) directly in a modern browser; no build, server, install or internet. All records are fictional and in memory: **logout or reload clears every change and returns to login**. Fixed date: Monday 18 May 2026.
+**One connected local demo**, in Spanish, for fictional Clínica Dental Andina. For the interactive ERP, run from repository root:
 
-The prototype covers **S1–S20**, including **configuration-only Triage, complete editable-master CRUD, provider-free Laboratorio / Imagenología, Pagos outgoing expenses and simulated login/logout**. The first menu/page is **Resumen**; its outgoing totals now derive from the Pagos ledger, while Cobros remains incoming money. Each study menu opens its own CRUD directly, with no subtabs, provider records, defaults or request dependency. The appointment → consultation → cash/QR → receipt flow is preserved.
+```sh
+node design/erp-workspace/preview.mjs
+```
+
+Open the printed `http://127.0.0.1:<port>/` URL in a normal browser, then click **Entrar a la demo**: **Resumen** opens. Keep the terminal running; Ctrl+C stops the server. No build, install or internet is needed. All records are fictional and in memory: **logout or reload clears every change and returns to login**. Fixed date: Monday 18 May 2026.
+
+The **review/annotation canvas is for visual feedback**, not functional acceptance: its provider-owned sandbox can block native login/form interaction. The direct canvas `/files/` URL has the same restriction. Use the separate HTTP URL above; do not weaken canvas security. Alternatively, open [`01-unified-workspace.html`](01-unified-workspace.html) as a normal standalone `file://` document outside the canvas. The HTTP mode is the regression-tested interactive delivery.
+
+The prototype covers **S1–S21**, including **configuration-only Triage, complete editable-master CRUD, provider-free Laboratorio / Imagenología, Pagos outgoing expenses and simulated login/logout**. The first menu/page is **Resumen**; its outgoing totals now derive from the Pagos ledger, while Cobros remains incoming money. Each study menu opens its own CRUD directly, with no subtabs, provider records, defaults or request dependency. The appointment → consultation → cash/QR → receipt flow is preserved.
 
 Feature: [`../../odd/tasks/erp-prototype-full-workflows.md`](../../odd/tasks/erp-prototype-full-workflows.md). The parent owns tracking, commits, review and canvas opening. This is not production medical, accounting, inventory or authorization software. Never enter real personal or medical information.
 
@@ -10,7 +18,7 @@ Feature: [`../../odd/tasks/erp-prototype-full-workflows.md`](../../odd/tasks/erp
 
 The initial screen is **Inicio de sesión simulado · No ingreses credenciales reales**. Use the entry-arrow icon beside **Entrar a la demo**, or focus it and press Enter. No username/password fields are presented or read; this is a no-credential visual simulation, not authentication. The workspace stays hidden and inert until entry.
 
-**Cerrar sesión** is the exit-arrow icon in the header, visible on desktop and mobile. It immediately hides the workspace and reloads the same file: every record, preference, custom role, draft, pending QR, payment and receipt is discarded. Re-entry restores the original fixtures, clinic, menu, theme and totals. Ordinary browser reload also returns to login. No cookies, storage, session tokens, auth query parameters or external service are involved. Real application authentication and role authorization remain unimplemented.
+**Cerrar sesión** is the exit-arrow icon in the header, visible on desktop and mobile. It immediately hides the workspace and reloads the same document: every record, preference, custom role, draft, pending QR, payment and receipt is discarded. Re-entry restores the original fixtures, clinic, menu, theme and totals. Ordinary browser reload also returns to login. No cookies, storage, session tokens, auth query parameters or external service are involved. Real application authentication and role authorization remain unimplemented.
 
 ## Pagos: simulated outgoing expenses
 
@@ -82,7 +90,13 @@ Blocked confirmation explains the reference and leaves dependent records and fin
 - Every sidebar menu retains its readable name and has its own semantic inline SVG geometry (17 distinct icons). Action buttons—including settings tabs, row actions, dialogs, QR and menu controls—show only SVG icons, retain accessible names and have at least 44×44px targets. Hover or keyboard focus shows a shared, viewport-clamped tooltip in the top layer; it remains visible outside scrolling tables and inside native dialogs. Escape dismisses it and preserves existing dialog close/focus restoration. Touch actions remain directly operable with accessible names.
 - Laboratorio exposes **Crear Laboratorio**; Imagenología exposes **Crear Imagen**. Their create/edit/detail/delete labels identify the entity, with name/price and implicit modality unchanged. Consultation selection says **Laboratorio / Imagen**, never generic tipo de estudio.
 - Labeled fields, semantic tables/captions, status/error announcements and visible focus. Shared native detail/edit/delete dialogs trap Tab/Shift+Tab, support Escape/Cancel and restore initiating focus when it survives. Keyboard tabs and mobile drawer trapping/Escape remain. Long tables scroll inside labeled regions, never across the page. Reduced motion supported.
-- All HTML/CSS/JS/SVG inline. No external assets/fonts, HTTP/API/backend, authentication, credentials, cookies, localStorage, service worker or durable storage. The header session and permissions are simulated. No medical diagnosis/ML, prescription, real QR/provider integration or accounting certification. Source authority: [`../system.md`](../system.md).
+- All HTML/CSS/JS/SVG inline. Only local HTML document loads use HTTP; no external assets/fonts, external/API/backend calls, authentication, credentials, cookies, localStorage, service worker or durable storage. The header session and permissions are simulated. No medical diagnosis/ML, prescription, real QR/provider integration or accounting certification. Source authority: [`../system.md`](../system.md).
+
+## Preview boundary
+
+`preview.mjs` exports **`startPreview()` → `{ url, close }`** for ephemeral test ownership; importing it does not listen. CLI invocation binds only **127.0.0.1**, on an OS-assigned port, and prints readiness. SIGINT/SIGTERM close owned connections. Tests always close the server in `finally`; no persistent worker server is left running.
+
+Only GET/HEAD `/` and `/01-unified-workspace.html` serve the fixed artifact resolved relative to the module. GET reads the latest source. All other raw paths (including queries/traversal) return 404; mutating/unsupported methods return 405. There is no directory mapping, proxy, upload, configuration/secrets lookup, dependency or request-input logging. Responses use `no-store`, HTML UTF-8, `nosniff` and `no-referrer`. CSP allows only inline JS/CSS, denies network connections/external assets, base URLs, native form navigation and embedding, **without CSP sandbox**. Existing handlers prevent native form navigation; the HTML itself is unchanged.
 
 ## Verify
 
@@ -92,7 +106,13 @@ Run in the foreground from repository root with a timeout **at least 360 seconds
 node design/erp-workspace/smoke.mjs
 ```
 
-Uses existing Playwright via `apps/mf-erp/package.json` and its existing Chromium cache; never downloads or installs. Tests use file URLs and **public DOM only**, never internal arrays or Git history. HTTP is blocked; API/storage writes and page errors are trapped. Browser contexts close in `finally`; scratch stays outside the worktree.
+Uses existing Playwright via `apps/mf-erp/package.json` and its existing Chromium cache; never downloads or installs. The suite starts `startPreview()` and navigates **all journeys through actual HTTP**, using public DOM controls, never internal arrays or Git history. Browser routing permits only the owned server's GET/HEAD document loads/reloads; all other requests are blocked and reported. Fetch/API/storage writes and page errors are trapped across reloads. Own HTML loads are reported separately, not falsely counted as zero HTTP. Browser contexts and the ephemeral server close in `finally`; no test scratch is created in the worktree.
+
+S21 RED evidence is the parent's actual delivered-canvas reproduction (feature log L25–L26): native click left the workspace hidden under the served sandbox; scripted handler invocation opened Resumen. No HTML fix or provider-security change was justified. Focused HTTP login/server-boundary regression passes with native button clicks. Boundary checks cover exact GET/HEAD bodies/headers, loopback URL, restrictive non-sandbox CSP, unknown/arbitrary/traversal paths, no directory exposure and 405 methods.
+
+Current HTTP result: `node design/erp-workspace/smoke.mjs` exited **0**, **PASS 1266 checks**, **14 allowed local HTML document loads**, **0 external/API/storage writes**, **0 page errors**. Desktop 1440×1000 and mobile 390×844 screenshots were refreshed. A first HTTP run exposed a test-only post-submit Enter reopening the focused launch button; native double-click corrected the duplicate-submit stimulus without changing the HTML.
+
+The historical file-only counts below are prior business evidence, **not proof of canvas interactivity**. Current HTTP verification retains those 1240 checks, with only intentional transport/message changes and a native double-click replacing synthetic repeated submission. It also captures all four screenshots over HTTP.
 
 | Run | Observed evidence |
 | --- | --- |
@@ -134,4 +154,4 @@ Everything stays in the artboard closure's `state`, not a fake global API:
 
 - Presentation uses **`decorateActions` / `actionIcon`** as a shared adapter for static and dynamically rendered buttons. It preserves existing nodes, types, handlers and tab state; new action vocabulary must map to a semantic SVG rather than a fallback. A narrow MutationObserver decorates inserted controls and changed accessible menu labels. The shared manual-popover tooltip is owned by the active dialog when needed, clamps to the viewport and dismisses on Escape, scrolling, click or resize.
 
-Coverage: **S1–S20 implemented at prototype scope; all CRUD/reference and clinical/payment invariants preserved. Pagos is outgoing posting/read-only history; login/logout is an explicit no-credential simulation with full reload reset.** Parent final verification/native review, tracking, commits and canvas remain outside this unit.
+Coverage: **S1–S21 implemented at prototype scope; all CRUD/reference and clinical/payment invariants preserved. Pagos is outgoing posting/read-only history; login/logout is an explicit no-credential simulation with full reload reset.** Parent final verification/native review, tracking, commits and canvas remain outside this unit.
