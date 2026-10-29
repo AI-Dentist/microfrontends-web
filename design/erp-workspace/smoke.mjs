@@ -14,7 +14,7 @@ const artifactURL = new URL('01-unified-workspace.html', import.meta.url);
 const source = await readFile(artifactURL, 'utf8');
 const system = await readFile(new URL('design/system.md', root), 'utf8');
 let checks = 0;
-function check(condition, message) { assert.ok(condition, message); checks++; }
+function check(condition, message) { if(!condition) console.log(`FAIL after ${checks} passing checks: ${message}`); assert.ok(condition, message); checks++; }
 const colors = [...new Set(source.match(/#[0-9a-f]{6}\b/gi))].sort();
 for (const color of colors) check(system.includes(color), `Sourced palette: ${color}`);
 const families = [...new Set([...source.matchAll(/font(?:-family)?\s*:[^;{}\n]*?(system-ui[^;{}\n]*)/g)].map(match => match[1].trim()))];
@@ -115,6 +115,158 @@ try {
   if(await startup.getByRole('button',{name:'Entrar a la demo',exact:true}).count()) await enterDemo(startup);
   if(!await startup.getByRole('button',{name:'Pagos',exact:true}).count()) startupGaps.push('Pagos outgoing menu');
   check(startupGaps.length===0,`S17/S19/S20 missing: ${startupGaps.join('; ')}`);
+  // S27 tests-first: actual matrix and selector, never closure state or fabricated routes.
+  await startup.locator('#navigation [data-page="settings"]').click();
+  await startup.getByRole('tab',{name:'Roles',exact:true}).click();
+  await startup.locator('[data-role="Administrador"] [data-catalog-edit]').click();
+  const hasProfile=await startup.getByRole('combobox',{name:'Simular rol',exact:true}).count()===1;
+  const fullMatrix=await startup.locator('#catalog-dialog input[name="menu-access"]').count()===17;
+  let restricted=false;
+  await startup.keyboard.press('Escape');
+  if(hasProfile && fullMatrix) {
+    await startup.getByRole('combobox',{name:'Simular rol',exact:true}).selectOption('ROLE-2');
+    restricted=await startup.locator('#navigation [data-page="settings"]').count()===0 && await startup.locator('#navigation button').count()===5;
+  }
+  check(hasProfile && fullMatrix && restricted, 'S27 requires Simular rol, 17-menu Acceder matrix and effective restricted navigation');
+  console.log(`S27 focused public HTTP contract: PASS (${checks} checks so far)`);
+  // S28 tests first. This initial assertion deliberately uses ONLY existing UI/DOM.
+  // Parent owns browser RED/GREEN; do not bypass this boundary with state injection.
+  await startup.getByRole('combobox',{name:'Simular rol',exact:true}).selectOption('ROLE-3');
+  await startup.locator('#navigation [data-page="overview"]').click();
+  async function noOverviewFinance(target,label) {
+    const markup=await target.locator('#view').innerHTML();
+    const actions=await target.locator('#page-actions').innerHTML();
+    check(await target.locator('#view [data-kpi],#view .chart,#view .amount,#view [data-page="payments"],#view [data-page="expenses"]').count()===0 && !/Ingresos|Egresos|Flujo neto|Por cobrar|Cobros pendientes|Ver cobros|Ver todos los cobros|\bBs\b/i.test(markup+actions), `S28 ${label}: financial KPI/chart/labels/shortcuts/attributes are absent from rendered Resumen, not CSS-hidden`);
+  }
+  await noOverviewFinance(startup,'Médico');
+
+  // Proposed public contract: data-overview-block=finance|agenda|clinical;
+  // role controls name=overview-access, value=the same stable key;
+  // details data-overview-access=key, data-granted=true|false;
+  // modal #overview-dialog/#overview-form; rows data-overview-preference=key,
+  // checkbox name=overview-visible, text move buttons data-overview-move=up|down;
+  // #overview-reset restores permitted default visibility/order, never grants.
+  const overview=await openPage({width:1440,height:1000});
+  const op=()=>overview.getByRole('combobox',{name:'Simular rol',exact:true});
+  const og=async route=>{
+    if(await overview.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await overview.locator('#menu-toggle').click();
+    await overview.locator(`#navigation [data-page="${route}"]`).click();
+  };
+  const blocks=()=>overview.locator('#view [data-overview-block]').evaluateAll(nodes=>nodes.map(node=>node.dataset.overviewBlock));
+  const expectBlocks=async(keys,label)=>check(JSON.stringify(await blocks())===JSON.stringify(keys),`S28 ${label}`);
+  const roleEditor=async id=>{
+    await op().selectOption('ROLE-1'); await og('settings');
+    await overview.getByRole('tab',{name:'Roles',exact:true}).click();
+    await overview.locator(`[data-catalog-edit="${id}"]`).click();
+  };
+  const capability=key=>overview.locator(`#catalog-dialog [name="overview-access"][value="${key}"]`);
+  const overviewGrant=()=>overview.locator('#catalog-dialog [name="menu-access"][value="overview"]');
+  const commitRole=()=>overview.locator('#catalog-form button[type=submit]').click();
+  const personalize=()=>overview.getByRole('button',{name:'Personalizar Resumen',exact:true}).click();
+  const preference=key=>overview.locator(`#overview-dialog [data-overview-preference="${key}"]`);
+  const commitPreferences=()=>overview.locator('#overview-form button[type=submit]').click();
+  const baselineOverview='Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00';
+  await expectBlocks(['finance','agenda','clinical'],'Administrator stable default block order');
+  check((await overview.locator('[data-kpi]').allTextContents()).join('|')===baselineOverview,'S28 granted Administrator preserves all four exact financial values');
+  check((await overview.locator('.chart').getAttribute('aria-label')).includes('18 mayo, ingresos 700 Bs, egresos 250 Bs'),'S28 granted Administrator preserves chart ledger');
+  for(const [id,grants] of [['ROLE-1',['finance','agenda','clinical']],['ROLE-2',['agenda']],['ROLE-3',['agenda','clinical']]]) {
+    await roleEditor(id);
+    check(await overview.locator('[name="menu-access"]').count()===17 && await overview.locator('[name="overview-access"]').count()===3,'S28 separate complete menu matrix and three content controls');
+    check((await overview.locator('#catalog-fields fieldset').last().innerText()).includes('Contenido de Resumen'),'S28 content grants have a distinct named section after menu access');
+    for(const key of ['finance','agenda','clinical']) check(await capability(key).isChecked()===grants.includes(key),`S28 explicit configurable seed capability ${id}/${key}`);
+    await overview.keyboard.press('Escape');
+    await overview.locator(`[data-master-view="${id}"]`).click();
+    check(await overview.locator('#master-detail-content input').count()===0 && await overview.locator('#master-detail-content [data-overview-access]').count()===3,'S28 readonly details display all saved capabilities');
+    for(const key of ['finance','agenda','clinical']) check(await overview.locator(`#master-detail-content [data-overview-access="${key}"]`).getAttribute('data-granted')===String(grants.includes(key)),`S28 detail reports saved grant ${id}/${key}`);
+    await overview.keyboard.press('Escape');
+  }
+  await op().selectOption('ROLE-3'); await og('overview');
+  await expectBlocks(['agenda','clinical'],'Médico gets operational panels only'); await noOverviewFinance(overview,'Médico operational panels');
+  check(await overview.locator('[data-overview-block="agenda"] .appointment').count()===3 && (await overview.locator('[data-overview-block="agenda"]').innerText()).includes('Alba Ejemplo'),'S28 agenda uses existing reference-day appointments');
+  for(const [status,count] of [['scheduled','3'],['in_progress','0'],['completed','0']]) check(await overview.locator(`[data-overview-status="${status}"]`).innerText()===count,`S28 reference-day operational count ${status}, confirmed appointments included as scheduled`);
+  check(!/diagnóstico|mis pacientes|mi[s]? consulta[s]?|propios|\bBs\b/i.test(await overview.locator('[data-overview-block="clinical"]').innerText()),'S28 operational indicators infer neither diagnosis nor own-doctor scope');
+  await personalize();
+  check(JSON.stringify(await overview.locator('[data-overview-preference]').evaluateAll(nodes=>nodes.map(node=>node.dataset.overviewPreference)))===JSON.stringify(['agenda','clinical']),'S28 personalization exposes only authorized panels, cannot grant finance');
+  await preference('clinical').locator('[data-overview-move="up"]').click();
+  await preference('agenda').locator('[name="overview-visible"]').uncheck(); await commitPreferences();
+  await expectBlocks(['clinical'],'Saved personal hide/order narrows grants');
+  for(const dismissal of ['cancel','escape']) {
+    await personalize(); await preference('agenda').locator('[name="overview-visible"]').check();
+    await preference('agenda').locator('[data-overview-move="up"]').click();
+    if(dismissal==='cancel') await overview.locator('#overview-dialog [data-close]').click(); else await overview.keyboard.press('Escape');
+    await expectBlocks(['clinical'],`Personalization ${dismissal} leaves saved visibility unchanged`);
+    check(await overview.getByRole('button',{name:'Personalizar Resumen',exact:true}).evaluate(node=>node===document.activeElement),`S28 ${dismissal} restores personalization trigger focus`);
+    await personalize();
+    check(JSON.stringify(await overview.locator('[data-overview-preference]').evaluateAll(nodes=>nodes.map(node=>[node.dataset.overviewPreference, node.querySelector('input').checked])))===JSON.stringify([['clinical',true],['agenda',false]]),`S28 ${dismissal} leaves saved order and visibility unchanged`);
+    await overview.keyboard.press('Escape');
+  }
+  await roleEditor('ROLE-3'); await overview.locator('#cat-name').fill('Equipo renombrado'); await commitRole();
+  check(await op().locator('option[value="ROLE-3"]').innerText()==='Equipo renombrado','S28 rename retains stable role ID');
+  await op().selectOption('ROLE-3'); await og('overview'); await expectBlocks(['clinical'],'Rename preserves role-ID-bound personal preferences'); await noOverviewFinance(overview,'renamed Médico');
+  await op().selectOption('ROLE-2'); await expectBlocks(['agenda'],'Receptionist preferences isolated from Médico');
+  await op().selectOption('ROLE-1'); await expectBlocks(['finance','agenda','clinical'],'Administrator preferences isolated from Médico');
+  await roleEditor('ROLE-3'); await capability('finance').check(); await commitRole();
+  await op().selectOption('ROLE-3'); await og('overview'); await personalize();
+  check(await preference('finance').count()===1,'S28 explicit finance grant becomes available to personalization');
+  await preference('finance').locator('[name="overview-visible"]').check(); await commitPreferences();
+  check(await overview.locator('[data-kpi]').count()===4,'S28 explicit finance grant plus visibility renders finance after rename');
+  await roleEditor('ROLE-3'); await capability('finance').uncheck(); await capability('clinical').uncheck(); await commitRole();
+  await op().selectOption('ROLE-3'); await og('overview'); await noOverviewFinance(overview,'revoked finance despite selected preference');
+  check(await overview.locator('[data-overview-block="clinical"]').count()===0,'S28 revoked clinical grant defeats previously visible preference');
+  await personalize(); check(await preference('finance').count()===0 && await preference('clinical').count()===0,'S28 revoked panels cannot be resurrected by personalization');
+  await overview.locator('#overview-reset').click(); await commitPreferences();
+  await expectBlocks(['agenda'],'Reset restores only granted blocks');
+  await roleEditor('ROLE-3'); await capability('clinical').check(); await commitRole();
+  await op().selectOption('ROLE-3'); await og('overview'); await personalize();
+  await overview.locator('#overview-reset').click(); await commitPreferences(); await expectBlocks(['agenda','clinical'],'Regrant then reset restores permitted stable default order only');
+  await personalize();
+  for(const control of await overview.locator('#overview-dialog [name="overview-visible"]').all()) await control.uncheck();
+  await commitPreferences(); await expectBlocks([],'All authorized panels may be personally hidden');
+  check((await overview.locator('#view').innerText()).trim().length>0,'S28 all-hidden view explains empty state');
+  await personalize(); await overview.locator('#overview-reset').click(); await commitPreferences(); await expectBlocks(['agenda','clinical'],'All-hidden recovery remains accessible');
+  await roleEditor('ROLE-3'); await overviewGrant().uncheck(); await commitRole();
+  await op().selectOption('ROLE-3');
+  check(await overview.locator('#navigation [data-page="overview"],#view [data-overview-block]').count()===0 && await overview.locator('#page-title').innerText()!=='Resumen','S28 subsection flags cannot bypass revoked Resumen menu access');
+  await roleEditor('ROLE-3'); await overviewGrant().check(); await commitRole();
+  await overview.locator('#new-role').fill('Resumen sin contenido'); await overview.locator('#add-role').click();
+  const emptyRole=await overview.locator('[data-role="Resumen sin contenido"] [data-catalog-edit]').getAttribute('data-catalog-edit');
+  await roleEditor(emptyRole); check(await overview.locator('[name="overview-access"]:checked').count()===0,'S28 new roles default to no content capabilities');
+  await overviewGrant().check(); await commitRole(); await op().selectOption(emptyRole); await og('overview');
+  await expectBlocks([],'Acceder Resumen alone grants no blocks'); await noOverviewFinance(overview,'new custom role with menu only');
+  check((await overview.locator('#view').innerText()).trim().length>0,'S28 zero grants gives friendly recovery explanation, not privileged fallback');
+  await op().selectOption('ROLE-1'); await og('overview');
+  await personalize(); await preference('finance').locator('[name="overview-visible"]').uncheck(); await commitPreferences();
+  await roleEditor('ROLE-1'); await overview.keyboard.press('Escape');
+  await overview.locator('#new-role').fill('Contenido contador A'); await overview.locator('#add-role').click();
+  const contentCounterA=await overview.locator('[data-role="Contenido contador A"] [data-catalog-edit]').getAttribute('data-catalog-edit');
+  for(const dismissal of ['cancel','escape']) {
+    await roleEditor('ROLE-1'); await capability('agenda').uncheck();
+    if(dismissal==='cancel') await overview.locator('#catalog-dialog [data-close]').click(); else await overview.keyboard.press('Escape');
+    await roleEditor('ROLE-1'); check(await capability('agenda').isChecked(),`S28 role editor ${dismissal} preserves saved content grant`); await overview.keyboard.press('Escape');
+  }
+  await roleEditor('ROLE-1'); const rolesBeforeInvalid=await overview.locator('#role-list').innerText();
+  await capability('agenda').uncheck(); await overview.locator('[name="menu-access"][value="settings"]').uncheck(); await commitRole();
+  check(await overview.locator('#catalog-error').innerText()==='El último Administrador debe conservar Acceder a Configuración.' && await overview.locator('#role-list').innerText()===rolesBeforeInvalid,'S28 protected Administrator rejection is atomic for content and menu grants');
+  await overview.keyboard.press('Escape'); await roleEditor('ROLE-1');
+  check(await capability('agenda').isChecked(),'S28 rejected Administrator save preserved saved capability'); await overview.keyboard.press('Escape');
+  await overview.locator('#new-role').fill('Contenido contador B'); await overview.locator('#add-role').click();
+  const contentCounterB=await overview.locator('[data-role="Contenido contador B"] [data-catalog-edit]').getAttribute('data-catalog-edit');
+  check(Number(contentCounterB.split('-').at(-1))===Number(contentCounterA.split('-').at(-1))+1,'S28 canceled and rejected content saves allocate no public IDs');
+  await og('overview'); await expectBlocks(['agenda','clinical'],'Rejected role save preserves personal visibility');
+  await personalize(); await overview.locator('#overview-reset').click(); await commitPreferences();
+  check((await overview.locator('[data-kpi]').allTextContents()).join('|')===baselineOverview,'S28 all capability and preference edits preserve financial baseline');
+  await overview.setViewportSize({width:390,height:844}); await personalize();
+  check(await overview.locator('#overview-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth) && await overview.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'S28 mobile personalization has no internal/page horizontal overflow');
+  check(await overview.locator('#overview-dialog [data-overview-move]').evaluateAll(nodes=>nodes.every(node=>node.textContent.trim() && !node.querySelector('svg') && node.scrollWidth<=node.clientWidth)),'S28 modal move controls have visible unclipped text');
+  await overview.locator('#overview-form button[type=submit]').focus(); await overview.keyboard.press('Tab');
+  check(await overview.evaluate(()=>!!document.activeElement.closest('#overview-dialog')),'S28 personalization Tab stays in modal'); await overview.keyboard.press('Shift+Tab');
+  check(await overview.locator('#overview-form button[type=submit]').evaluate(node=>node===document.activeElement),'S28 personalization reverse wrap returns to save'); await overview.keyboard.press('Escape');
+  await overview.reload(); await enterDemo(overview); await expectBlocks(['finance','agenda','clinical'],'Reload resets profile and preferences');
+  await op().selectOption('ROLE-3'); await og('overview'); await personalize(); await preference('agenda').locator('[name="overview-visible"]').uncheck(); await commitPreferences();
+  await overview.locator('#logout').click(); await overview.locator('#login-screen').waitFor(); await enterDemo(overview);
+  check(await op().inputValue()==='ROLE-1','S28 logout resets selected simulated role'); await expectBlocks(['finance','agenda','clinical'],'Logout resets content preferences');
+  await op().selectOption('ROLE-3'); await expectBlocks(['agenda','clinical'],'Logout resets renamed role, grants and personal visibility'); await noOverviewFinance(overview,'reset Médico');
+  console.log(`S28 public HTTP capability/personalization contract: PASS (${checks} checks so far)`);
   const page = await openPage({width:1440,height:1000});
   const text = selector => page.locator(selector).innerText();
   const go = async id => {
@@ -169,7 +321,7 @@ try {
   check(await page.locator('#context-allergies').innerText()==='Sin registrar', 'Seed context never applies to another patient');
   await go('settings'); await page.getByRole('tab',{name:'Roles',exact:true}).click();
   await adding(page,page.locator('#add-role'),'Agregar rol local');
-  check(await page.locator('.role').count()===3, 'Existing fictional role list preserved; Acceder deferred');
+  check(await page.locator('.role').count()===3, 'Existing fictional role identities preserved with Acceder');
   await go('physicians'); await page.locator('#catalog-add').click();
   await adding(page,page.locator('#add-slot'),'Agregar horario','Agregar horario +');
   await page.keyboard.press('Escape');
@@ -522,12 +674,16 @@ try {
   check((await text('#role-error')).includes('no un rol'), 'Patient role rejected');
   await page.locator('#new-role').fill('Coordinación');
   await page.locator('#add-role').click();
-  await page.locator('[data-role="Coordinación"] input[value="Agenda"]').check();
+  await page.locator('[data-role="Coordinación"] [data-catalog-edit]').click();
+  await page.getByRole('checkbox',{name:'Acceder Agenda',exact:true}).check();
+  await page.locator('#catalog-form button[type=submit]').click();
   await page.getByRole('button',{name:'Guardar cambios de demo',exact:true}).click();
   await go('overview');
   await go('settings');
   await page.getByRole('tab',{name:'Roles',exact:true}).click();
-  check(await page.locator('[data-role="Coordinación"] input[value="Agenda"]').isChecked(), 'Local role permission saved across views');
+  await page.locator('[data-role="Coordinación"] [data-catalog-edit]').click();
+  check(await page.getByRole('checkbox',{name:'Acceder Agenda',exact:true}).isChecked(), 'Local role menu grant saved across views');
+  await page.keyboard.press('Escape');
   await page.getByRole('tab',{name:'Navegación',exact:true}).click();
   await page.locator('[data-nav-id="inventory"] input').check();
   await page.getByRole('button',{name:'Guardar cambios de demo',exact:true}).click();
@@ -690,6 +846,9 @@ try {
   check(await flow.locator('#consultation-diagnosis').inputValue()==='', 'No fabricated diagnosis');
   await adding(flow,flow.locator('#request-study'),'Agregar Laboratorio / Imagen');
   check(await clinicalAppointmentBadge().innerText()==='En atención', 'Starting consultation marks linked appointment En atención');
+  await fg('overview');
+  check((await flow.locator('[data-overview-status]').allTextContents()).join('|')==='3|1|0','S28 operational indicators derive started appointment lifecycle, not fixed counts');
+  await fg('agenda'); await flow.locator(`[data-attend="${appointmentId}"]`).click();
   check(await flow.getByRole('heading',{name:'Citas y consultas',exact:true}).count()===1, 'Clinical heading includes all appointment lifecycle states');
   await flow.locator('#complete-consultation').click();
   check((await ft('#consultation-error')).includes('Completa') && (await ft('#consultation-status'))==='EN_CURSO', 'Incomplete consultation rejected');
@@ -746,6 +905,8 @@ try {
   await flow.locator('#complete-consultation').click();
   check(await ft('#consultation-status')==='CERRADA' && !await flow.locator('#consultation-form').count(), 'Completed consultation read-only');
   check(await clinicalAppointmentBadge().innerText()==='Atendida', 'Successful completion marks clinical appointment Atendida');
+  await fg('overview');
+  check((await flow.locator('[data-overview-status]').allTextContents()).join('|')==='3|0|1','S28 operational indicators derive completed appointment lifecycle');
   await fg('agenda'); await flow.locator('#agenda-status').selectOption('attended');
   check(await flow.locator('#agenda-results tbody tr').count()===1 && await flow.locator(`#agenda-results [data-attend="${appointmentId}"]`).count()===1 && await appointmentRow.locator('.badge').innerText()==='Atendida', 'Agenda Atendida filter selects the linked completed appointment');
   await flow.locator('#agenda-status').selectOption('in_progress');
@@ -754,6 +915,10 @@ try {
   await flow.locator(`[data-attend="${appointmentId}"]`).click();
   check(await clinicalAppointmentBadge().innerText()==='Atendida', 'Reopening closed consultation cannot regress appointment state');
   const issuedOrder=await flow.locator('#consultation-order').getAttribute('data-order-id');
+  await flow.getByRole('combobox',{name:'Simular rol',exact:true}).selectOption('ROLE-3');
+  await flow.locator('#consultation-order').click();
+  check(await ft('#page-title')==='Atención clínica' && !await flow.locator('#order-search').count() && await ft('#consultation-status')==='CERRADA', 'Restricted clinical-to-Cobros crosslink preserves closed consultation without target DOM errors');
+  await flow.getByRole('combobox',{name:'Simular rol',exact:true}).selectOption('ROLE-1');
   await flow.locator('#consultation-order').click();
   const flowOrder=()=>flow.locator('#order-results tbody tr').filter({hasText:issuedOrder});
   check((await flowOrder().innerText()).includes('Bs 600,30'), 'Procedure 300 + lab100.10 + image200.20 exact order sum');
@@ -1257,8 +1422,8 @@ try {
   await detailMaster(roleRow,'Rol libre','Ninguno');
   await roleRow.locator('[data-catalog-edit]').click(); await masters.locator('#cat-name').fill('Paciente'); await submitMaster();
   check((await mt('#catalog-error')).includes('no un rol') && (await mt('#role-list')).includes('Rol libre'), 'Role edit rejects patient login role');
-  await masters.locator('#cat-name').fill('Rol libre editado'); await masters.locator('input[name="role-permission"][value="Agenda"]').check(); await submitMaster();
-  check(await roleRow.locator('[data-catalog-edit]').getAttribute('data-catalog-edit')===roleId && await roleRow.locator('input[value="Agenda"]').isChecked(), 'Role edit preserves stable ID and saves simulated permission');
+  await masters.locator('#cat-name').fill('Rol libre editado'); await masters.getByRole('checkbox',{name:'Acceder Agenda',exact:true}).check(); await submitMaster();
+  check(await roleRow.locator('[data-catalog-edit]').getAttribute('data-catalog-edit')===roleId && (await roleRow.innerText()).includes('1 / 17'), 'Role edit preserves stable ID and saves simulated menu grant');
   await detailMaster(roleRow,'Rol libre editado','Agenda'); await deleteFree(roleRow,'#role-list','Rol libre editado');
   check(await mt('#role-list')===rolesBefore, 'Role CRUD restores original staff roles');
   await mg('overview'); check((await masters.locator('[data-kpi]').allTextContents()).join('|')==='Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00', 'All master CRUD leaves financial fixture untouched');
@@ -1425,6 +1590,137 @@ try {
   await session.getByRole('button',{name:'Cerrar sesión',exact:true}).click(); await session.locator('#login-screen').waitFor();
   await enterDemo(session); await session.reload();
   check(await session.locator('#login-screen').isVisible() && !await session.locator('#workspace').isVisible(), 'Ordinary HTTP reload returns to simulated login');
+  // S27 independent public-UI journey, preserving every business scenario above.
+  const access=await openPage({width:1440,height:1000});
+  const at=selector=>access.locator(selector).innerText();
+  const profile=()=>access.getByRole('combobox',{name:'Simular rol',exact:true});
+  const ag=async route=>{
+    if(await access.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await access.locator('#menu-toggle').click();
+    await access.locator(`#navigation [data-page="${route}"]`).click();
+  };
+  const roleTab=async()=>{await ag('settings');await access.getByRole('tab',{name:'Roles',exact:true}).click();};
+  const editRole=async id=>access.locator(`[data-catalog-edit="${id}"]`).click();
+  const grant=id=>access.locator(`#catalog-dialog input[name="menu-access"][value="${id}"]`);
+  const saveRole=async()=>{await access.locator('#catalog-form button[type=submit]').click();};
+  const visibleMenus=()=>access.locator('#navigation button').evaluateAll(nodes=>nodes.map(node=>node.dataset.page));
+  const roleSnapshot=async()=>{
+    await editRole('ROLE-1');
+    const snapshot=JSON.stringify({name:await access.locator('#cat-name').inputValue(),matrix:await access.locator('[name="menu-access"]').evaluateAll(nodes=>nodes.map(node=>[node.value,node.checked]))});
+    await access.keyboard.press('Escape'); return snapshot;
+  };
+  check(await profile().inputValue()==='ROLE-1' && await access.locator('#navigation button').count()===17, 'Initial simulated Administrator sees all 17 menus');
+  check((await at('#profile-help')).includes('No es autenticación') && await profile().getAttribute('aria-describedby')==='profile-help', 'Profile selector explicitly describes demo-only inspection');
+  await roleTab();
+  for(const [id,count] of [['ROLE-1',17],['ROLE-2',5],['ROLE-3',4]]) {
+    await editRole(id);
+    check(await access.locator('[name="menu-access"]').count()===17 && await access.locator('[name="menu-access"]:checked').count()===count, `All 17 explicit menu grants for ${id}`);
+    const menuIDs=await access.locator('[name="menu-access"]').evaluateAll(nodes=>nodes.map(node=>node.value));
+    check(new Set(menuIDs).size===17 && menuIDs.every(id=>Object.hasOwn(navMotifs,id)), 'Matrix uses unique stable menu IDs');
+    for(const control of await access.locator('[name="menu-access"]').all()) check((await control.getAttribute('aria-label')).startsWith('Acceder '), 'Each menu checkbox is explicitly labeled Acceder');
+    await iconButtons(access); await access.keyboard.press('Escape');
+  }
+  const unchangedRole=await roleSnapshot();
+  for(const dismissal of ['cancel','escape']) {
+    await editRole('ROLE-1'); await grant('inventory').uncheck();
+    if(dismissal==='cancel') await access.locator('#catalog-dialog [data-close]').click(); else await access.keyboard.press('Escape');
+    check(await roleSnapshot()===unchangedRole && await access.locator('#navigation button').count()===17, `Role ${dismissal} preserves matrix and navigation`);
+  }
+  await editRole('ROLE-1'); await grant('inventory').uncheck(); await saveRole();
+  check(await access.locator('#navigation [data-page="inventory"]').count()===0 && await at('#page-title')==='Configuración', 'Saved revocation immediately filters navigation without losing allowed current view');
+  await editRole('ROLE-1'); await grant('inventory').check(); await saveRole();
+  check(await access.locator('#navigation [data-page="inventory"]').count()===1, 'Saved grant immediately restores a personally visible menu');
+  // Counter proof surrounds last-Administrator rejection and abandoned saves.
+  await access.locator('#new-role').fill('Contador acceso A'); await access.locator('#add-role').click();
+  const counterA=await access.locator('[data-role="Contador acceso A"] [data-catalog-edit]').getAttribute('data-catalog-edit');
+  const protectedRoles=await at('#role-list'), protectedProfile=await profile().innerHTML(), adminBefore=await roleSnapshot();
+  await editRole('ROLE-1'); await grant('settings').uncheck(); await saveRole();
+  check(await at('#catalog-error')==='El último Administrador debe conservar Acceder a Configuración.' && await access.locator('#catalog-dialog').isVisible() && !await grant('settings').isChecked(), 'Last Administrator revocation explicitly rejects, never silently rechecks draft');
+  check(await at('#role-list')===protectedRoles && await profile().innerHTML()===protectedProfile && await access.locator('#navigation button').count()===17, 'Rejected revocation leaves records, role IDs, profile and navigation unchanged');
+  await access.keyboard.press('Escape'); check(await roleSnapshot()===adminBefore, 'Rejected save leaves the stored complete matrix unchanged');
+  await access.locator('#new-role').fill('Contador acceso B'); await access.locator('#add-role').click();
+  const counterB=await access.locator('[data-role="Contador acceso B"] [data-catalog-edit]').getAttribute('data-catalog-edit');
+  check(Number(counterB.split('-').at(-1))===Number(counterA.split('-').at(-1))+1, 'Rejected role save consumes no public IDs');
+  await ag('overview'); check((await access.locator('[data-kpi]').allTextContents()).join('|')===baseline, 'Role validation and grant edits leave money unchanged');
+  for(const [id,menus] of [['ROLE-2',['overview','payments','expenses','patients','agenda']],['ROLE-3',['overview','patients','agenda','clinical']]]) {
+    await profile().selectOption(id);
+    check(JSON.stringify(await visibleMenus())===JSON.stringify(menus) && !await access.locator('#navigation [data-page="settings"]').count(), `Conservative configurable demo seeds: ${id}`);
+  }
+  // S28 removes forbidden financial shortcuts entirely. Preserve the S27 central
+  // crosslink guard proof with the independently authorized agenda content block.
+  check(!await access.locator('#view [data-page="payments"]').count(),'S28 Médico has no financial shortcut to invoke');
+  await profile().selectOption('ROLE-1'); await roleTab(); await editRole('ROLE-3'); await grant('agenda').uncheck(); await saveRole();
+  await profile().selectOption('ROLE-3'); await ag('overview');
+  await access.locator('#view [data-page="agenda"]').click();
+  check(await at('#page-title')==='Resumen' && await at('#announcement')==='Menú no disponible para este perfil de demostración.', 'Central guard rejects overview-to-Agenda crosslink despite agenda content capability');
+  await profile().selectOption('ROLE-1'); await roleTab(); await editRole('ROLE-3'); await grant('agenda').check(); await saveRole();
+  await profile().selectOption('ROLE-2'); await ag('patients');
+  const directory=await at('#patient-results');
+  await access.locator('[data-chart="DEMO-001"]').click();
+  check(await at('#page-title')==='Pacientes' && await at('#patient-results')===directory && !await access.locator('#clinical-patient').count(), 'Restricted patient chart crosslink neither renders clinical page nor throws');
+  await ag('agenda'); const agendaBefore=await at('#agenda-results');
+  await access.locator('[data-attend="AP-1"]').click();
+  check(await at('#agenda-results')===agendaBefore && !await access.locator('#consultation-record').count(), 'Restricted start-consultation crosslink leaves appointment and consultation unchanged');
+  await profile().selectOption('ROLE-1'); await roleTab();
+  await access.locator('#new-role').fill('Inspector sin módulos'); await access.locator('#add-role').click();
+  const customID=await access.locator('[data-role="Inspector sin módulos"] [data-catalog-edit]').getAttribute('data-catalog-edit');
+  await editRole(customID); check(await access.locator('[name="menu-access"]:checked').count()===0, 'New custom role defaults to all false; no inherited grants'); await access.keyboard.press('Escape');
+  await profile().selectOption(customID);
+  check(await at('#page-title')==='Sin módulos disponibles' && await access.locator('#navigation button,#page-actions button').count()===0 && (await at('#view')).includes('Simular rol'), 'Empty role clears stale settings/actions and offers selector recovery, not forbidden Resumen');
+  await noOverflow(access);
+  await access.setViewportSize({width:390,height:844}); await profile().focus();
+  await access.locator('#menu-toggle').click();
+  check(await access.locator('#menu-toggle').getAttribute('aria-expanded')==='false' && await profile().evaluate(node=>node===document.activeElement), 'Empty mobile drawer safely returns focus to always-available profile selector');
+  await noOverflow(access); await profile().selectOption('ROLE-1');
+  check(await access.locator('#navigation button').count()===17 && await at('#page-title')==='Resumen', 'Mobile selector intentionally restores demo Administrator');
+  await access.setViewportSize({width:1440,height:1000});
+  await access.waitForFunction(()=>document.querySelector('#menu-toggle').getAttribute('aria-expanded')==='true');
+  await roleTab();
+  await editRole(customID); await access.locator('#cat-name').fill('Inspector renombrado'); await grant('settings').check(); await grant('patients').check(); await saveRole();
+  check(await access.locator('[data-role="Inspector renombrado"] [data-catalog-edit]').getAttribute('data-catalog-edit')===customID && await profile().locator(`option[value="${customID}"]`).innerText()==='Inspector renombrado', 'Rename preserves stable ID and updates profile options');
+  await profile().selectOption(customID);
+  check(JSON.stringify(await visibleMenus())===JSON.stringify(['patients','settings']) && await at('#page-title')==='Configuración', 'Role switching preserves permitted current view, no implicit missing grants');
+  await access.getByRole('tab',{name:'Roles',exact:true}).click();
+  const activeRoleList=await at('#role-list');
+  await access.locator(`[data-master-delete="${customID}"]`).click(); await access.locator('#master-delete-confirm').click();
+  check((await at('#master-delete-error')).includes('perfil actualmente simulado') && await profile().inputValue()===customID && await at('#role-list')===activeRoleList, 'Deleting the actively simulated custom role rejects without switching profile');
+  await access.keyboard.press('Escape');
+  await editRole(customID); await grant('settings').uncheck(); await saveRole();
+  check(await at('#page-title')==='Pacientes' && JSON.stringify(await visibleMenus())===JSON.stringify(['patients']) && !await access.locator('#settings-form').count(), 'Revoking current Configuration routes to first permitted page; never force-visible');
+  await profile().selectOption('ROLE-1'); await roleTab();
+  await editRole(customID); await grant('settings').check(); await grant('inventory').check(); await saveRole();
+  await access.getByRole('tab',{name:'Navegación',exact:true}).click(); await access.locator('[data-nav-id="inventory"] input').uncheck(); await access.locator('#settings-form button[type=submit]').click();
+  await profile().selectOption(customID);
+  check(!await access.locator('#navigation [data-page="inventory"]').count(), 'Role grant cannot unhide personal hidden menu');
+  await access.getByRole('tab',{name:'Roles',exact:true}).click(); await editRole(customID); await grant('inventory').uncheck(); await saveRole();
+  await access.getByRole('tab',{name:'Navegación',exact:true}).click(); await access.locator('[data-nav-id="inventory"] input').check(); await access.locator('#settings-form button[type=submit]').click();
+  check(!await access.locator('#navigation [data-page="inventory"]').count(), 'Personal visible preference cannot bypass false role grant');
+  await access.getByRole('tab',{name:'Roles',exact:true}).click(); await editRole(customID); await grant('patients').uncheck(); await grant('settings').uncheck(); await saveRole();
+  check(await at('#page-title')==='Sin módulos disponibles' && await access.locator('#navigation button').count()===0, 'Revoking final current role grants enters no-modules state');
+  await profile().selectOption('ROLE-1'); await roleTab();
+  await access.locator(`[data-master-view="${customID}"]`).click();
+  check(await access.locator('#master-detail-content [data-menu-access]').count()===17 && (await at('#master-detail-content')).includes(customID), 'Role detail shows every menu grant and stable ID');
+  await access.keyboard.press('Escape');
+  await access.locator(`[data-master-delete="${customID}"]`).click(); await access.locator('#master-delete-confirm').click();
+  check(!await profile().locator(`option[value="${customID}"]`).count(), 'Confirmed inactive custom role deletion refreshes selector');
+  await editRole('ROLE-2'); await grant('laboratory').check(); await saveRole();
+  await profile().selectOption('ROLE-2'); await access.reload(); await enterDemo(access);
+  check(await profile().inputValue()==='ROLE-1' && await access.locator('#navigation button').count()===17, 'Reload restores initial Administrator and all menu grants');
+  await roleTab(); await editRole('ROLE-2'); check(!await grant('laboratory').isChecked(), 'Reload resets edited seeded role matrix'); await access.keyboard.press('Escape');
+  await editRole('ROLE-1'); await grant('inventory').uncheck(); await saveRole(); await profile().selectOption('ROLE-3');
+  await access.locator('#logout').click(); await access.locator('#login-screen').waitFor(); await enterDemo(access);
+  check(await profile().inputValue()==='ROLE-1' && await access.locator('#navigation button').count()===17 && (await access.locator('[data-kpi]').allTextContents()).join('|')===baseline, 'Logout/re-entry resets profile, grants and money together');
+  await roleTab(); await editRole('ROLE-2'); await iconButtons(access);
+  await access.screenshot({path:fileURLToPath(new URL('desktop.png',import.meta.url)),fullPage:true});
+  await access.setViewportSize({width:390,height:844}); await noOverflow(access);
+  check(await access.locator('#catalog-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth), 'Mobile 17-menu matrix fits dialog width');
+  await access.locator('#catalog-form button[type=submit]').scrollIntoViewIfNeeded();
+  check(await access.locator('#catalog-form .dialog-actions').evaluate(node=>[...node.querySelectorAll('button')].every(button=>{const r=button.getBoundingClientRect(),d=node.closest('dialog').getBoundingClientRect();return button.textContent.trim()===button.getAttribute('aria-label') && r.left>=d.left && r.right<=d.right && button.scrollWidth<=button.clientWidth;})), 'Mobile role footer has readable, unclipped Guardar/Cancelar text');
+  await access.locator('#catalog-form button[type=submit]').focus(); await access.keyboard.press('Tab');
+  check(await access.locator('#cat-name').evaluate(node=>node===document.activeElement), 'Mobile full matrix Tab wraps to name');
+  await access.keyboard.press('Shift+Tab');
+  check(await access.locator('#catalog-form button[type=submit]').evaluate(node=>node===document.activeElement), 'Mobile full matrix reverse Tab wraps to Guardar');
+  await access.screenshot({path:fileURLToPath(new URL('mobile.png',import.meta.url)),fullPage:true});
+  await access.keyboard.press('Escape');
   for (const context of contexts) for (const item of context.pages()) check(await item.evaluate(()=>window.demoViolations.length) === 0, 'No API or storage writes');
   check(documents.length > 0, 'Full business suite loaded documents through owned HTTP preview');
   check(network.length === 0 && operations.length === 0, `No external/API requests or storage writes: ${network.join(', ')} ${operations.join(', ')}`);

@@ -61,7 +61,12 @@ nav button[aria-current=page] { background:var(--action); color:#ffffff; }
 .sidebar :focus-visible { outline-color:#ffffff; }
 .sidebar-footer { margin-top:auto; border-top:1px solid #334155; padding:16px 8px 0; }
 .advanced { border:1px solid #334155; color:#cbd5e1; border-radius:10px; padding:12px; font-size:12px; }
-.topbar { min-width:0; background:#ffffff; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 24px; }
+.topbar { min-width:0; background:#ffffff; border-bottom:1px solid var(--line); display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,240px) auto; align-items:center; gap:16px; padding:16px 24px; }
+.profile-inspection { min-width:0; }
+.profile-inspection .help { margin-top:4px; font-size:12px; }
+.menu-access-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); }
+.menu-access-row > span { overflow-wrap:anywhere; }
+.menu-access-row label { flex-shrink:0; }
 .header-start { display:flex; align-items:center; gap:16px; min-width:0; }
 .clinic { font-size:16px; overflow-wrap:anywhere; }
 .header-end { display:flex; align-items:center; gap:12px; flex-shrink:0; font-size:12px; }
@@ -166,7 +171,8 @@ body.nav-collapsed .sidebar { display:none; }
  .sidebar { display:none; position:fixed; inset:0 auto 0 0; width:min(300px,85vw); z-index:5; overflow-y:auto; }
  body.drawer-open .sidebar { display:flex; }
  body.drawer-open .scrim { display:block; position:fixed; inset:0; z-index:4; background:rgba(15,23,42,.6); }
- .topbar { padding:12px 16px; gap:8px; }
+ .topbar { padding:12px 16px; gap:8px; grid-template-columns:minmax(0,1fr) auto; }
+ .profile-inspection { grid-column:1 / -1; grid-row:2; }
  .header-start { gap:12px; }
  .header-end { display:none; }
  main { padding:20px 16px; }
@@ -216,7 +222,8 @@ body.nav-collapsed .sidebar { display:none; }
 </aside>
 <header class="topbar">
  <div class="header-start"><button id="menu-toggle" class="menu-button" aria-controls="sidebar" aria-expanded="true" aria-label="Contraer menú"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div><strong id="clinic-name" class="clinic">Clínica Dental Andina</strong><p class="muted small">Clínica sintética de demostración</p></div></div>
- <div class="header-actions"><div class="header-end"><span class="badge confirmed">Solo demo</span><div class="session"><strong>Equipo de recepción</strong><br><span class="muted">Administrador · simulado</span></div><span class="avatar" aria-hidden="true">AD</span></div><button type="button" id="logout">Cerrar sesión</button></div>
+ <div class="profile-inspection"><label>Simular rol<select id="demo-role" aria-describedby="profile-help"></select></label><p class="help" id="profile-help">Perfil de demostración · No es autenticación. Puedes simular Administrador.</p></div>
+ <div class="header-actions"><div class="header-end"><span class="badge confirmed">Solo demo</span></div><button type="button" id="logout">Cerrar sesión</button></div>
 </header>
 <main id="main" tabindex="-1">
  <div class="breadcrumb" id="breadcrumb">Clínica / Resumen</div>
@@ -226,6 +233,15 @@ body.nav-collapsed .sidebar { display:none; }
  <footer class="fixture">Prototipo · datos ficticios · sin backend · Fecha fija: lunes 18 de mayo de 2026. Los cambios se pierden al recargar.</footer>
 </main>
 </div>
+<dialog id="overview-dialog" aria-labelledby="overview-title">
+ <form id="overview-form">
+  <h2 id="overview-title">Personalizar Resumen</h2>
+  <p class="help">Preferencias del rol simulado, solo en memoria; no son ajustes de un usuario real. Mostrar u ordenar no concede permisos. Configuración → Roles define el contenido permitido.</p>
+  <div id="overview-preferences" class="form-section"></div>
+  <button type="button" id="overview-reset">Restablecer vista permitida</button>
+  <div class="dialog-actions"><button type="button" data-close="overview-dialog">Cancelar</button><button type="submit" class="primary">Guardar vista</button></div>
+ </form>
+</dialog>
 <dialog id="expense-dialog" aria-labelledby="expense-title">
  <form id="expense-form" novalidate>
   <h2 id="expense-title">Registrar egreso</h2>
@@ -413,10 +429,30 @@ const pages = {
  inventory:['Inventario','Inventario','Disponibilidad y alertas de insumos de demostración.'],
  settings:['Configuración','Configuración','Personaliza este espacio. Todo se guarda solo en memoria.']
 };
+// One complete boolean model, shared by fixtures, new roles and validated edits.
+function menuAccess(granted=[]) {
+ const allowed=new Set(granted);
+ return Object.fromEntries(Object.keys(pages).map(id=>[id,allowed.has(id)]));
+}
+const overviewLabels={finance:'Finanzas',agenda:'Agenda',clinical:'Indicadores de consulta'};
+function overviewAccess(granted=[]) {
+ const allowed=new Set(granted);
+ return Object.fromEntries(Object.keys(overviewLabels).map(key=>[key,allowed.has(key)]));
+}
+function overviewAllows(role,key) {
+ return Object.hasOwn(overviewLabels,key) && !!role && Object.hasOwn(role.overviewAccess || {},key) && role.overviewAccess[key]===true;
+}
 const state = {
+ overviewPreferences:new Map(),
  page:'overview', clinic:'Clínica Dental Andina', contact:'recepcion@andina.example (ficticio)', brand:'#0369a1', density:'comfortable',
  menu:Object.keys(pages).map(id => ({id, visible:true})),
- roles:[{id:'ROLE-1',name:'Administrador', permissions:['Cobros','Agenda','Clínica']},{id:'ROLE-2',name:'Recepcionista', permissions:['Cobros','Agenda']},{id:'ROLE-3',name:'Médico', permissions:['Agenda','Clínica']}],
+ activeRoleId:'ROLE-1',
+ // Demo inspection examples, not production authorization policy.
+ roles:[
+  {id:'ROLE-1',name:'Administrador',menuAccess:menuAccess(Object.keys(pages)),overviewAccess:overviewAccess(['finance','agenda','clinical'])},
+  {id:'ROLE-2',name:'Recepcionista',menuAccess:menuAccess(['overview','patients','agenda','payments','expenses']),overviewAccess:overviewAccess(['agenda'])},
+  {id:'ROLE-3',name:'Médico',menuAccess:menuAccess(['overview','patients','agenda','clinical']),overviewAccess:overviewAccess(['agenda','clinical'])}
+ ],
  patients:[{id:'DEMO-001', name:'Alba Ejemplo', note:'Control preventivo'},{id:'DEMO-002', name:'Bruno Muestra', note:'Seguimiento'},{id:'DEMO-003', name:'Celia Prueba', note:'Consulta inicial'}],
  orders:[
   {id:'ORD-101',patient:'DEMO-001',service:'Limpieza y control',totalCents:60000,paidCents:0,due:'18 may 2026'},
@@ -476,13 +512,45 @@ function patientName(id) { return state.patients.find(patient => patient.id === 
 function balance(order) { return order.totalCents-order.paidCents; }
 function orderStatus(order) { return balance(order)===0?'paid':order.paidCents>0?'partial':'pending'; }
 function announce(text) { $('#announcement').textContent = text; }
+function roleAllows(role,page) {
+ return Object.hasOwn(pages,page) && !!role && Object.hasOwn(role.menuAccess || {},page) && role.menuAccess[page]===true;
+}
+function canNavigate(page) {
+ return roleAllows(state.roles.find(role=>role.id===state.activeRoleId),page) && state.menu.some(item=>item.id===page && item.visible===true);
+}
+function permittedMenus() { return state.menu.filter(item=>canNavigate(item.id)); }
+function renderProfile() {
+ $('#demo-role').innerHTML=options(state.roles,state.activeRoleId);
+ // An unknown active ID never becomes Administrator (or the browser's first option).
+ $('#demo-role').value=state.roles.some(role=>role.id===state.activeRoleId)?state.activeRoleId:'';
+}
+function reconcileAccess() {
+ renderNav();
+ reconcileOverviewPreferences();
+ if(canNavigate(state.page)) {
+  if(state.page==='overview') {$('#page-actions').replaceChildren();renderOverview();}
+  return;
+ }
+ const first=permittedMenus()[0];
+ if(first) {navigate(first.id);return;}
+ state.page=null;
+ $('#breadcrumb').textContent='Clínica / Sin módulos disponibles';
+ $('#page-title').textContent='Sin módulos disponibles';
+ $('#page-subtitle').textContent='Este perfil no tiene menús habilitados en las preferencias actuales.';
+ $('#page-actions').replaceChildren();
+ $('#view').innerHTML='<section class="card"><p>Sin módulos disponibles. Usa Simular rol en el encabezado para inspeccionar otro perfil de demostración.</p></section>';
+ announce(''); renderNav(); setDrawer(false);
+}
 function renderNav() {
- $('#navigation').innerHTML = state.menu.filter(item => item.visible).map(item => `<button type="button" data-page="${item.id}" ${state.page === item.id ? 'aria-current="page"' : ''}>${icon(item.id)}<span>${pages[item.id][0]}</span></button>`).join('');
+ $('#navigation').innerHTML = permittedMenus().map(item => `<button type="button" data-page="${item.id}" ${state.page === item.id ? 'aria-current="page"' : ''}>${icon(item.id)}<span>${pages[item.id][0]}</span></button>`).join('');
 }
 function setDrawer(open) {
- document.body.classList.toggle('drawer-open', open);
+ const first=$('#navigation button');
+ const emptyRequest=open && !first;
+ document.body.classList.toggle('drawer-open', open && !!first);
  syncMenuButton();
- if (open) $('#navigation button').focus();
+ if(open && first) first.focus();
+ else if(emptyRequest) $('#demo-role').focus();
 }
 function syncMenuButton() {
  const mobile = matchMedia('(max-width:760px)').matches;
@@ -492,6 +560,8 @@ function syncMenuButton() {
  $('#sidebar').inert = !expanded;
 }
 function navigate(page, moveFocus = true) {
+ // Every sidebar and internal crosslink passes this same fail-closed intersection.
+ if(!canNavigate(page)) {announce('Menú no disponible para este perfil de demostración.');return false;}
  state.page = page;
  $('#breadcrumb').textContent = `Clínica / ${pages[page][0]}`;
  $('#page-title').textContent = pages[page][1];
@@ -507,6 +577,7 @@ function navigate(page, moveFocus = true) {
  else renderers[page]();
  setDrawer(false);
  if (moveFocus) $('#main').focus();
+ return true;
 }
 function action(label, handler) {
  const button = document.createElement('button'); button.className = 'primary'; button.textContent = label; button.type='button'; button.onclick = handler; $('#page-actions').append(button);
@@ -524,15 +595,77 @@ function orderTable(orders,caption,allowPayment) {
   </tr>`).join('') || `<tr><td colspan="${allowPayment?6:5}" class="empty">No hay órdenes que coincidan con estos filtros.</td></tr>`}</tbody>
  </table></div>`;
 }
+function overviewRole() { return state.roles.find(role=>role.id===state.activeRoleId); }
+function defaultOverviewPreferences(role) {
+ return Object.keys(overviewLabels).filter(key=>overviewAllows(role,key)).map(key=>({key,visible:true}));
+}
+function allowedOverviewPreferences(role) {
+ const saved=state.overviewPreferences.get(role?.id) || [];
+ const allowed=defaultOverviewPreferences(role);
+ return [...saved.filter(item=>overviewAllows(role,item.key)).map(item=>({...item})),
+  ...allowed.filter(item=>!saved.some(prior=>prior.key===item.key))];
+}
+function reconcileOverviewPreferences() {
+ // A revoked grant is removed, not left as a latent override. IDs survive renames.
+ for(const role of state.roles) if(state.overviewPreferences.has(role.id))
+  state.overviewPreferences.set(role.id,allowedOverviewPreferences(role));
+}
 function renderOverview() {
+ if(!canNavigate('overview')) return;
+ const preferences=allowedOverviewPreferences(overviewRole());
+ if(preferences.length && !$('#page-actions button')) action('Personalizar Resumen',openOverviewPreferences);
+ const renderers={finance:overviewFinance,agenda:overviewAgenda,clinical:overviewClinical};
+ $('#view').innerHTML=preferences.filter(item=>item.visible).map(item=>`<section data-overview-block="${item.key}" style="margin-bottom:24px">${renderers[item.key]()}</section>`).join('') ||
+  `<section class="card"><h2>Tu Resumen está vacío</h2><p>${preferences.length?'Todos los bloques permitidos están ocultos. Usa Personalizar Resumen para mostrarlos o restablecer la vista.':'Este rol no tiene contenido de Resumen habilitado. Usa Simular rol → Administrador y Configuración → Roles para configurar los permisos de contenido.'}</p></section>`;
+}
+function overviewAgenda() {
+ const appointments=state.appointments.filter(item=>item.date==='2026-05-18');
+ return `<section class="card"><div class="card-heading"><h2>Agenda de hoy</h2><button type="button" data-page="agenda">Ver agenda</button></div><p class="small muted">18 de mayo · ${appointments.length} citas ficticias</p>${appointments.map(item=>`<div class="appointment"><span class="time">${item.time}</span><div><strong>${escapeText(patientName(item.patient))}</strong><p>${escapeText(item.service)} · ${escapeText(resourceName('rooms',item.roomId))}</p></div></div>`).join('') || '<p>Sin citas registradas para hoy.</p>'}</section>`;
+}
+function overviewClinical() {
+ const appointments=state.appointments.filter(item=>item.date==='2026-05-18');
+ const indicators=[['scheduled','Programadas / confirmadas',['scheduled','confirmed']],['in_progress','En atención',['in_progress']],['completed','Completadas',['attended']]];
+ return `<section class="card"><h2>Indicadores de consulta</h2><p class="help">Actividad operativa de la clínica · 18 de mayo. Sin vínculo entre el perfil simulado y un médico concreto.</p><dl>${indicators.map(([key,label,statuses])=>`<dt>${label}</dt><dd data-overview-status="${key}">${appointments.filter(item=>statuses.includes(item.status)).length}</dd>`).join('')}</dl></section>`;
+}
+let overviewDraft=null;
+function renderOverviewPreferences() {
+ $('#overview-preferences').innerHTML=overviewDraft.items.map((item,index)=>`<fieldset data-overview-preference="${item.key}"><legend>${overviewLabels[item.key]}</legend><label class="check"><input type="checkbox" name="overview-visible" value="${item.key}" ${item.visible?'checked':''}>Mostrar ${overviewLabels[item.key]}</label><div class="workflow-actions"><button type="button" data-overview-move="up" ${index===0?'disabled':''}>Subir ${overviewLabels[item.key]}</button><button type="button" data-overview-move="down" ${index===overviewDraft.items.length-1?'disabled':''}>Bajar ${overviewLabels[item.key]}</button></div></fieldset>`).join('');
+}
+function openOverviewPreferences() {
+ if(!canNavigate('overview')) return;
+ overviewDraft={roleId:state.activeRoleId,items:allowedOverviewPreferences(overviewRole())};
+ renderOverviewPreferences(); openDialog('#overview-dialog');
+}
+$('#overview-preferences').onchange=event=>{
+ const item=overviewDraft?.items.find(item=>item.key===event.target.value);
+ if(item && event.target.name==='overview-visible') item.visible=event.target.checked;
+};
+$('#overview-preferences').onclick=event=>{
+ const button=event.target.closest('[data-overview-move]'); if(!button || !overviewDraft) return;
+ const key=button.closest('[data-overview-preference]').dataset.overviewPreference;
+ const from=overviewDraft.items.findIndex(item=>item.key===key), to=from+(button.dataset.overviewMove==='up'?-1:1);
+ if(to<0 || to>=overviewDraft.items.length) return;
+ [overviewDraft.items[from],overviewDraft.items[to]]=[overviewDraft.items[to],overviewDraft.items[from]];
+ renderOverviewPreferences();
+ $(`[data-overview-preference="${key}"] [data-overview-move]:not(:disabled)`)?.focus();
+};
+$('#overview-reset').onclick=()=>{
+ overviewDraft.items=defaultOverviewPreferences(overviewRole()); renderOverviewPreferences();
+};
+$('#overview-form').onsubmit=event=>{
+ event.preventDefault();
+ if(!$('#overview-dialog').open || !canNavigate('overview') || overviewDraft?.roleId!==state.activeRoleId) return;
+ state.overviewPreferences.set(state.activeRoleId,overviewDraft.items.filter(item=>overviewAllows(overviewRole(),item.key)).map(item=>({...item})));
+ // Keep the initiating button alive so the shared native close handler restores focus.
+ closeDialog($('#overview-dialog')); renderOverview();
+};
+function overviewFinance() {
  const income = 70000 + state.paymentTotalCents;
  const pending = state.orders.reduce((sum, order) => sum + balance(order),0);
  const outgoing=expenseTotal();
  const kpis = [['Ingresos de hoy',income,'Efectivo y QR · cobros de demo','payments'],['Egresos de hoy',outgoing,'Pagos · egresos simulados de la jornada','inventory'],['Flujo neto',income-outgoing,'Ingresos menos egresos','overview'],['Por cobrar',pending,`Saldo de ${state.orders.length} órdenes de demo`,'patients']];
- action('Ver cobros', () => navigate('payments'));
- $('#view').innerHTML = `<section class="kpis" aria-label="Indicadores del 18 de mayo de 2026">${kpis.map(([label,value,detail,key]) => `<article class="card"><div class="kpi-label">${label}${icon(key)}</div><p class="kpi-value amount" data-kpi="${key}">${money(value)}</p><p class="small muted">${detail}</p></article>`).join('')}</section>
- <div class="split"><section class="card"><div class="card-heading"><div><h2>Ingresos y egresos</h2><p class="small muted">Últimos 5 días de actividad · Bs</p></div><span class="badge">14–18 may</span></div><div class="legend"><span><i class="key"></i>Ingresos</span><span><i class="key expense"></i>Egresos</span></div>${chart(income)}<p class="small muted">Hoy: ${money(income)} ingresados / ${money(outgoing)} en egresos.</p></section>
- <section class="card"><div class="card-heading"><h2>Agenda de hoy</h2><button type="button" data-page="agenda">Ver agenda</button></div><p class="small muted">18 de mayo · ${state.appointments.filter(item=>item.date==='2026-05-18').length} citas ficticias</p>${state.appointments.filter(item => item.date==='2026-05-18').map(item => `<div class="appointment"><span class="time">${item.time}</span><div><strong>${escapeText(patientName(item.patient))}</strong><p>${escapeText(item.service)} · ${escapeText(resourceName('rooms',item.roomId))}</p></div></div>`).join('')}</section></div>
+ return `<div class="workflow-actions"><button type="button" data-page="payments">Ver cobros</button></div><section class="kpis" aria-label="Indicadores del 18 de mayo de 2026">${kpis.map(([label,value,detail,key]) => `<article class="card"><div class="kpi-label">${label}${icon(key)}</div><p class="kpi-value amount" data-kpi="${key}">${money(value)}</p><p class="small muted">${detail}</p></article>`).join('')}</section>
+ <section class="card" style="margin-bottom:24px"><div class="card-heading"><div><h2>Ingresos y egresos</h2><p class="small muted">Últimos 5 días de actividad · Bs</p></div><span class="badge">14–18 may</span></div><div class="legend"><span><i class="key"></i>Ingresos</span><span><i class="key expense"></i>Egresos</span></div>${chart(income)}<p class="small muted">Hoy: ${money(income)} ingresados / ${money(outgoing)} en egresos.</p></section>
  <section class="card"><div class="card-heading"><div><h2>Cobros pendientes</h2><p class="small muted">Prioriza el seguimiento de los saldos de hoy.</p></div><button type="button" data-page="payments">Ver todos los cobros</button></div>${orderTable(state.orders.filter(order=>balance(order)>0),'Órdenes con saldo pendiente · datos ficticios',false)}</section>`;
 }
 function chart(income) {
@@ -785,7 +918,7 @@ function catalogDetails(kind,item) {
  if(kind==='diseases' || kind==='allergyCatalog' || kind==='triage') return item.description || 'Sin descripción';
  if(kind==='patients') return `${item.id} · ${item.note}`;
  if(kind==='inventory') return `Código: ${item.code || item.id} · Cantidad: ${item.stock} · Umbral: ${item.min}`;
- if(kind==='roles') return `Permisos simulados: ${item.permissions.join(', ') || 'Ninguno'}${item.id==='ROLE-1'?' · Administrador activo protegido':''}`;
+ if(kind==='roles') return `Menús con Acceder: ${Object.keys(pages).filter(id=>roleAllows(item,id)).map(id=>pages[id][0]).join(', ') || 'Ninguno'}${item.id==='ROLE-1'?' · Administrador activo protegido':''}`;
  return 'Especialidad de demo';
 }
 function renderCatalogs() {
@@ -825,7 +958,8 @@ function openCatalog(id,trigger) {
  } else if(kind==='inventory') {
   markup+=field('cat-code','Código requerido',item.code || (id?item.id:''))+field('cat-stock','Cantidad (entero no negativo)',item.stock ?? 0,'number')+field('cat-min','Umbral (entero no negativo)',item.min ?? 0,'number');
  } else if(kind==='roles') {
-  markup+=`<fieldset><legend>Permisos simulados · sin seguridad real</legend>${['Cobros','Agenda','Clínica'].map(permission=>`<label class="check"><input type="checkbox" name="role-permission" value="${permission}" ${item.permissions?.includes(permission)?'checked':''}>${permission}</label>`).join('')}</fieldset>`;
+  markup+=`<fieldset><legend>Acceder por menú · simulación de interfaz</legend><p class="help">Cada opción controla visibilidad y navegación de demo, no autorización real. Guarda para aplicar.</p>${Object.entries(pages).map(([page,labels])=>`<div class="menu-access-row"><span>${labels[0]}</span><label class="check"><input type="checkbox" name="menu-access" value="${page}" aria-label="Acceder ${labels[0]}" ${roleAllows(item,page)?'checked':''}>Acceder</label></div>`).join('')}</fieldset>
+   <fieldset class="form-section"><legend>Contenido de Resumen</legend><p class="help">Permisos del rol: define qué bloques puede ver, además de Acceder a Resumen. Personalizar Resumen solo oculta u ordena estos bloques; no concede permisos.</p>${Object.entries(overviewLabels).map(([key,label])=>`<label class="check"><input type="checkbox" name="overview-access" value="${key}" ${overviewAllows(item,key)?'checked':''}>Permitir ${label}</label>`).join('')}</fieldset>`;
  }
  if(kind==='physicians') {
   markup+=field('cat-document','Documento de demo (opcional, único)',item.document)+
@@ -877,7 +1011,9 @@ function saveCatalog() {
  } else if(kind==='roles') {
   const error=validateRoleName(name,id); if(error) return error;
   if(id==='ROLE-1' && name!=='Administrador') return 'El administrador activo conserva su nombre.';
-  values.permissions=$$('input[name=role-permission]:checked',$('#catalog-form')).map(input=>input.value);
+  values.menuAccess=menuAccess($$('input[name=menu-access]:checked',$('#catalog-form')).map(input=>input.value));
+  values.overviewAccess=overviewAccess($$('input[name=overview-access]:checked',$('#catalog-form')).map(input=>input.value));
+  if(id==='ROLE-1' && values.menuAccess.settings!==true) return 'El último Administrador debe conservar Acceder a Configuración.';
  }
  if(kind==='physicians') {
   values.document=$('#cat-document').value.trim();
@@ -934,14 +1070,17 @@ function openMasterEditor(kind,id,trigger) { catalogKind=kind; openCatalog(id,tr
 function refreshMaster(kind) {
  if(kind==='patients') {$('#patient-search').dispatchEvent(new Event('input'));$('#patient-search').focus();}
  else if(kind==='inventory') {$('#inventory-search').dispatchEvent(new Event('input'));$('#inventory-search').focus();}
- else if(kind==='roles') {$('#role-list').innerHTML=state.roles.map(roleMarkup).join('');$('#new-role').focus();}
+ else if(kind==='roles') {
+  renderProfile(); reconcileAccess();
+  if($('#role-list')) {$('#role-list').innerHTML=state.roles.map(roleMarkup).join('');$('#new-role').focus();}
+ }
  else {renderCatalogs();$('#catalog-add').focus();}
 }
 function openMasterDetail(kind,id,trigger) {
  const item=state[kind].find(entry=>entry.id===id); if(!item) return;
  $('#master-detail-title').textContent=`Detalle · ${catalogLabel(kind,item)}`;
  $('#master-detail-dialog [data-close]').textContent=kind==='studyTypes'?`Cerrar detalle ${catalogLabel(kind,item)}`:'Cerrar detalle';
- $('#master-detail-content').innerHTML=`<p><strong>${kind==='triage'?'Clasificación':'Nombre'}: ${escapeText(item.name)}</strong></p><p>ID: ${escapeText(item.id)}</p><p>${kind==='triage'?'Descripción: ':''}${escapeText(catalogDetails(kind,item))}</p>`;
+ $('#master-detail-content').innerHTML=`<p><strong>${kind==='triage'?'Clasificación':'Nombre'}: ${escapeText(item.name)}</strong></p><p>ID: ${escapeText(item.id)}</p><p>${kind==='triage'?'Descripción: ':''}${escapeText(catalogDetails(kind,item))}</p>${kind==='roles'?`<ul>${Object.entries(pages).map(([page,labels])=>`<li data-menu-access="${page}">${labels[0]} · Acceder: ${roleAllows(item,page)?'Sí':'No'}</li>`).join('')}</ul><h3>Contenido de Resumen · permisos del rol</h3><ul>${Object.entries(overviewLabels).map(([key,label])=>`<li data-overview-access="${key}" data-granted="${overviewAllows(item,key)}">${label}: ${overviewAllows(item,key)?'Sí':'No'}</li>`).join('')}</ul>`:''}`;
  openDialog('#master-detail-dialog',trigger);
 }
 function deletionBlock(kind,id) {
@@ -955,6 +1094,7 @@ function deletionBlock(kind,id) {
  if(kind==='studyTypes' && state.studies.some(item=>item.typeId===id)) return 'Laboratorio o Imagen utilizado por solicitudes.';
  if(kind==='procedures' && (state.consultations.some(item=>item.procedureIds.includes(id)) || state.orders.some(item=>item.lines.some(line=>line.kind==='PROCEDIMIENTO' && line.sourceId===id)))) return 'Arancel utilizado por consultas o líneas emitidas.';
  if(kind==='roles' && id==='ROLE-1') return 'No se puede eliminar el rol Administrador activo de la demo.';
+ if(kind==='roles' && id===state.activeRoleId) return 'No se puede eliminar el perfil actualmente simulado. Cambia Simular rol primero.';
  return '';
 }
 let deletionDraft=null;
@@ -976,6 +1116,7 @@ $('#master-delete-confirm').onclick=()=>{
  // Only owned availability and an empty patient context may be removed.
  if(kind==='physicians') state.availability=state.availability.filter(item=>item.physicianId!==id);
  if(kind==='patients') state.patientContexts=state.patientContexts.filter(item=>item.patientId!==id);
+ if(kind==='roles') state.overviewPreferences.delete(id);
  closeDialog($('#master-delete-dialog')); refreshMaster(kind);
  announce('Registro libre eliminado. Solo en memoria.');
 };
@@ -1026,6 +1167,8 @@ $('#appointment-form').onsubmit=event=>{
 
 const documentationFields={reason:'Motivo',anamnesis:'Anamnesis',exploration:'Exploración',diagnosis:'Diagnóstico escrito por el equipo'};
 function startConsultation(appointmentId) {
+ // Reject before consultation allocation or appointment lifecycle mutation.
+ if(!canNavigate('clinical')) {navigate('clinical');return;}
  const appointment=state.appointments.find(item=>item.id===appointmentId);
  if(!appointment) return;
  let consultation=state.consultations.find(item=>item.appointmentId===appointmentId);
@@ -1073,7 +1216,7 @@ function renderConsultation() {
  if(closed) {
   $('#consultation-order').onclick=()=>{
    const id=consultation.orderId;
-   navigate('payments'); $('#order-search').value=id; $('#order-search').dispatchEvent(new Event('input'));
+   if(navigate('payments')) {$('#order-search').value=id; $('#order-search').dispatchEvent(new Event('input'));}
   };
  } else {
   $('#consultation-form').onsubmit=event=>{event.preventDefault();saveConsultation(false);};
@@ -1241,7 +1384,8 @@ function navSetting(item) {
  return `<div class="nav-setting" data-nav-id="${item.id}"><label class="check"><input type="checkbox" ${item.visible?'checked':''} ${item.id==='settings'?'disabled':''}>${pages[item.id][0]}${item.id==='settings'?' · acceso protegido':''}</label><div class="moves"><button type="button" data-move="up" aria-label="Subir ${pages[item.id][0]}">↑</button><button type="button" data-move="down" aria-label="Bajar ${pages[item.id][0]}">↓</button></div></div>`;
 }
 function roleMarkup(role) {
- return `<section class="role" data-role="${escapeText(role.name)}"><h3>${escapeText(role.name)}</h3>${masterActions('roles',role)}<div class="permissions">${['Cobros','Agenda','Clínica'].map(permission=>`<label class="check"><input type="checkbox" value="${permission}" ${role.permissions.includes(permission)?'checked':''}>${permission}</label>`).join('')}</div></section>`;
+ const granted=Object.keys(pages).filter(page=>roleAllows(role,page)).length;
+ return `<section class="role" data-role="${escapeText(role.name)}"><h3>${escapeText(role.name)}</h3><p class="help">${granted} / ${Object.keys(pages).length} menús con Acceder · ID: ${escapeText(role.id)}</p>${masterActions('roles',role)}</section>`;
 }
 function validateRoleName(name,id) {
  const clean=name.trim();
@@ -1252,15 +1396,15 @@ function validateRoleName(name,id) {
 }
 function addRole(name) {
  const error=validateRoleName(name); if(error) return error;
- state.roles.push({id:newId('ROLE'),name:name.trim(),permissions:[]}); return '';
+ state.roles.push({id:newId('ROLE'),name:name.trim(),menuAccess:menuAccess(),overviewAccess:overviewAccess()}); return '';
 }
 function renderSettings() {
  $('#view').innerHTML=`<section class="card"><div class="tabs" role="tablist" aria-label="Secciones de configuración">${[['clinic','Clínica'],['appearance','Apariencia'],['navigation','Navegación'],['roles','Roles']].map(([id,label],index)=>`<button type="button" role="tab" id="tab-${id}" aria-controls="panel-${id}" aria-selected="${index===0}" tabindex="${index===0?'0':'-1'}" data-tab="${id}">${label}</button>`).join('')}</div>
  <form id="settings-form" novalidate>
  <section id="panel-clinic" role="tabpanel" aria-labelledby="tab-clinic"><div class="form-grid"><label>Nombre de la clínica<input id="setting-clinic" maxlength="80" required value="${escapeText(state.clinic)}"></label><label>Contacto ficticio<input id="setting-contact" maxlength="100" value="${escapeText(state.contact)}"></label></div><p class="help" style="margin-top:16px">Identidad sintética: no introduzcas datos de una clínica real.</p></section>
  <section id="panel-appearance" role="tabpanel" aria-labelledby="tab-appearance" hidden><div class="form-grid"><label>Color de acción<select id="setting-brand"><option value="#0369a1" ${state.brand==='#0369a1'?'selected':''}>Azul clínico · #0369a1</option><option value="#0f766e" ${state.brand==='#0f766e'?'selected':''}>Verde azulado · #0f766e</option></select></label><label>Densidad<select id="setting-density"><option value="comfortable" ${state.density==='comfortable'?'selected':''}>Cómoda</option><option value="compact" ${state.density==='compact'?'selected':''}>Compacta</option></select></label></div><p class="help" style="margin-top:16px">Tema claro. Solo colores de acción validados del sistema.</p></section>
- <section id="panel-navigation" role="tabpanel" aria-labelledby="tab-navigation" hidden><p class="help">Muestra, oculta y ordena las secciones de demo. Configuración siempre queda disponible.</p><div id="nav-settings">${state.menu.map(navSetting).join('')}</div></section>
- <section id="panel-roles" role="tabpanel" aria-labelledby="tab-roles" hidden><p class="help" style="margin-bottom:16px">Simulación visual de permisos. La autenticación y autorización reales de backend no están implementadas. Los permisos no bloquean esta demo; Configuración siempre es accesible. Pacientes son registros de negocio, no roles.</p><div class="form-section" id="role-list">${state.roles.map(roleMarkup).join('')}</div><div class="card-heading"><label>Nuevo rol local<input id="new-role" maxlength="40" placeholder="Ej. Coordinación"></label><button type="button" id="add-role">Agregar rol local</button></div><p id="role-error" class="error" role="alert"></p></section>
+ <section id="panel-navigation" role="tabpanel" aria-labelledby="tab-navigation" hidden><p class="help">Muestra, oculta y ordena las secciones de demo. La visibilidad requiere también Acceder del rol simulado. La preferencia de Configuración se conserva, pero sin Acceder no se muestra.</p><div id="nav-settings">${state.menu.map(navSetting).join('')}</div></section>
+ <section id="panel-roles" role="tabpanel" aria-labelledby="tab-roles" hidden><p class="help" style="margin-bottom:16px">Acceder controla los menús de cada perfil de demostración. Edita un rol y guarda su matriz; usa Simular rol para inspeccionarlo. No es autenticación ni autorización de backend. Los ejemplos iniciales son configurables, no una política de producto. Pacientes son registros de negocio, no roles.</p><div class="form-section" id="role-list">${state.roles.map(roleMarkup).join('')}</div><div class="card-heading"><label>Nuevo rol local<input id="new-role" maxlength="40" placeholder="Ej. Coordinación"></label><button type="button" id="add-role">Agregar rol local</button></div><p id="role-error" class="error" role="alert"></p></section>
  <p id="settings-error" class="error" role="alert"></p><div class="settings-save"><button class="primary" type="submit">Guardar cambios de demo</button><p class="help">Solo en memoria; se pierde al recargar</p></div></form></section>`;
  const selectTab=id=>{ $$('[role=tab]').forEach(tab=>{const active=tab.dataset.tab===id; tab.setAttribute('aria-selected',String(active)); tab.tabIndex=active?0:-1;}); $$('[role=tabpanel]').forEach(panel=>panel.hidden=panel.id!==`panel-${id}`); };
  $$('[role=tab]').forEach(tab=>{
@@ -1269,7 +1413,7 @@ function renderSettings() {
  });
  function updateMoveButtons() { const rows=$$('.nav-setting'); rows.forEach((row,index)=>{ $('[data-move=up]',row).disabled=index===0; $('[data-move=down]',row).disabled=index===rows.length-1; }); }
  $('#nav-settings').onclick=event=>{const button=event.target.closest('[data-move]'); if(!button) return; const row=button.closest('.nav-setting'); const previous=row.previousElementSibling,next=row.nextElementSibling; if(button.dataset.move==='up'&&previous) row.parentNode.insertBefore(row,previous); else if(button.dataset.move==='down'&&next) row.parentNode.insertBefore(next,row); updateMoveButtons(); if(button.disabled) $('[data-move]:not(:disabled)',row)?.focus(); else button.focus();}; updateMoveButtons();
- $('#add-role').onclick=()=>{const error=addRole($('#new-role').value); $('#role-error').textContent=error; if(error) return; $('#role-list').insertAdjacentHTML('beforeend',roleMarkup(state.roles.at(-1))); $('#new-role').value=''; announce('Rol local añadido. Simulación visual; sin autorización real.');};
+ $('#add-role').onclick=()=>{const error=addRole($('#new-role').value); $('#role-error').textContent=error; if(error) return; $('#role-list').insertAdjacentHTML('beforeend',roleMarkup(state.roles.at(-1))); $('#new-role').value=''; renderProfile(); announce('Rol local añadido. Simulación visual; sin autorización real.');};
  $('#settings-form').onsubmit=event=>{
   event.preventDefault(); const name=$('#setting-clinic').value.trim();
   if(name.length<2) { $('#settings-error').textContent='Introduce un nombre de clínica de al menos 2 caracteres.'; selectTab('clinic'); $('#setting-clinic').focus(); return; }
@@ -1277,12 +1421,11 @@ function renderSettings() {
   if(!['#0369a1','#0f766e'].includes(brand)||!['comfortable','compact'].includes(density)) return;
   state.clinic=name; state.contact=$('#setting-contact').value.trim(); state.brand=brand; state.density=density;
   state.menu=$$('.nav-setting').map(row=>({id:row.dataset.navId,visible:row.dataset.navId==='settings'||$('input',row).checked}));
-  $$('.role').forEach(row=>{const role=state.roles.find(item=>item.name===row.dataset.role); role.permissions=$$('input:checked',row).map(input=>input.value);});
   document.documentElement.style.setProperty('--action',state.brand);
   document.documentElement.style.setProperty('--cell-y',density==='compact'?'8px':'12px');
   document.documentElement.style.setProperty('--card-pad',density==='compact'?'16px':'24px');
   document.body.dataset.density=density;
-  $('#clinic-name').textContent=state.clinic; $('#settings-error').textContent=''; renderNav();
+  $('#clinic-name').textContent=state.clinic; $('#settings-error').textContent=''; reconcileAccess();
   announce('Cambios de demo guardados. Solo en memoria; se pierde al recargar');
  };
 }
@@ -1292,7 +1435,7 @@ document.addEventListener('click',event=>{
  const expenseDetail=event.target.closest('[data-expense-detail]');
  if(expenseDetail) openExpenseDetail(expenseDetail.dataset.expenseDetail,expenseDetail);
  const chartButton=event.target.closest('[data-chart]');
- if(chartButton) {navigate('clinical');$('#clinical-patient').value=chartButton.dataset.chart;$('#clinical-patient').dispatchEvent(new Event('change'));}
+ if(chartButton && navigate('clinical')) {$('#clinical-patient').value=chartButton.dataset.chart;$('#clinical-patient').dispatchEvent(new Event('change'));}
  const habits=event.target.closest('[data-habits-edit]');
  if(habits) openHabits(habits);
  const addContext=event.target.closest('[data-context-add]');
@@ -1342,7 +1485,8 @@ document.addEventListener('keydown',event=>{
  if(event.key==='Escape'&&document.body.classList.contains('drawer-open')) { setDrawer(false); $('#menu-toggle').focus(); }
  if(event.key==='Tab'&&document.body.classList.contains('drawer-open')) {
   const buttons=$$('button:not(:disabled)', $('#sidebar')); const first=buttons[0],last=buttons.at(-1);
-  if(event.shiftKey&&document.activeElement===first) {event.preventDefault();last.focus();}
+  if(!first) {event.preventDefault();setDrawer(false);$('#demo-role').focus();}
+  else if(event.shiftKey&&document.activeElement===first) {event.preventDefault();last.focus();}
   else if(!event.shiftKey&&document.activeElement===last) {event.preventDefault();first.focus();}
  }
 });
@@ -1355,6 +1499,7 @@ function actionIcon(button,label) {
  if(button.id==='menu-toggle') return 'menu';
  if(button.id==='login-enter') return 'login';
  if(button.id==='logout') return 'logout';
+ if(label==='Personalizar Resumen') return 'appearance';
  if(/egreso/i.test(label)) return /ver/i.test(label)?'view':/confirm/i.test(label)?'confirm':'expenses';
  if(button.dataset.tab) return {clinic:'clinical',appearance:'appearance',navigation:'menu',roles:'patients'}[button.dataset.tab];
  if(button.hasAttribute('data-receipt')) return 'receipt';
@@ -1454,7 +1599,13 @@ $('#login-form').onsubmit=event=>{
  if($('#login-screen').hidden) return;
  $('#login-screen').hidden=true; $('#login-screen').inert=true;
  $('#workspace').hidden=false; $('#workspace').inert=false; $('#workspace-skip').hidden=false;
+ renderProfile(); reconcileAccess();
  navigate('overview');
+};
+$('#demo-role').onchange=()=>{
+ state.activeRoleId=$('#demo-role').value;
+ if($('#overview-dialog').open) closeDialog($('#overview-dialog'));
+ hideTooltip(); reconcileAccess();
 };
 $('#logout').onclick=()=>{
  hideTooltip(); $('#workspace').hidden=true; $('#workspace').inert=true;
