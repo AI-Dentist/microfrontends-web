@@ -133,6 +133,35 @@ try {
   if(await initiallyPaid.locator('[data-pay],[data-qr]').count() || (await initiallyPaid.innerText()).includes('Sin saldo pendiente')) t7Gaps.push('paid order retains payment/QR/filler');
   check(t7Gaps.length===0,`T7 S31–S36/S38–S39 missing: ${t7Gaps.join('; ')}`);
   console.log(`T7 aggregate public HTTP contract: PASS (${checks} checks so far)`);
+  // T8 aggregate RED: native Agenda → consultation before long legacy journeys.
+  // Inspect actual controls, never closure state or invented diagnostic content.
+  const t8Early=await openPage({width:1440,height:1000});
+  await t8Early.locator('#navigation [data-page="agenda"]').click();
+  await t8Early.locator('[data-attend="AP-1"]').click();
+  const t8Gaps=[];
+  for(const [id,label] of [['save-consultation','Guardar progreso'],['complete-consultation','Completar consulta demo']]) {
+    const button=t8Early.locator(`#${id}`);
+    if(await button.innerText()!==label || await button.locator('svg').count()) t8Gaps.push(`visible text ${label}`);
+  }
+  for(const [selector,label] of [['select#diagnosis-disease','Enfermedad'],['select#prescription-medication','Medicamento'],['#consultation-recommendations','Recomendaciones'],['#diagnosis-notes','Notas del diagnóstico'],['#prescription-instructions','Indicaciones manuales']]) {
+    if(!await t8Early.locator(selector).count()) t8Gaps.push(label);
+  }
+  if(!await t8Early.getByRole('textbox',{name:'Notas clínicas',exact:true}).count()) t8Gaps.push('separate Notas clínicas');
+  check(t8Gaps.length===0,`T8 S37 missing: ${t8Gaps.join('; ')}`);
+  console.log(`T8 aggregate public HTTP contract: PASS (${checks} checks so far)`);
+
+  // Public helper contract shared by new/legacy clinical journeys. Select values
+  // are catalog IDs exposed by DOM options; these helpers never save implicitly.
+  async function addDiagnosis(target,diseaseId='FIX-DIS',notes='') {
+    await target.locator('#diagnosis-disease').selectOption(diseaseId);
+    await target.locator('#diagnosis-notes').fill(notes);
+    await target.locator('#add-diagnosis').click();
+  }
+  async function addPrescription(target,medicationId='FIX-MED',instructions='Indicación humana ficticia') {
+    await target.locator('#prescription-medication').selectOption(medicationId);
+    await target.locator('#prescription-instructions').fill(instructions);
+    await target.locator('#add-prescription').click();
+  }
   const startup=await openPage({width:1440,height:1000},{signedIn:false});
   const startupGaps=[];
   if(!await startup.locator('#login-screen').isVisible()) startupGaps.push('initial simulated login');
@@ -549,7 +578,7 @@ try {
   if(navGeometry.length!==17 || new Set(navGeometry).size!==17) presentationFailures.push('17 distinct semantic navigation geometries');
   async function iconButtons(target) {
     const invalid=await target.locator('button:visible').evaluateAll(nodes=>nodes.filter(button=>{
-      const textException=button.closest('dialog,.settings-save') || button.hasAttribute('data-tab') || button.matches('#catalog-add,#add-role,#add-slot,#request-study,[data-context-add]') || (button.closest('#page-actions') && button.textContent==='Agregar +');
+      const textException=button.closest('dialog,.settings-save') || button.hasAttribute('data-tab') || button.matches('#catalog-add,#add-role,#add-slot,#request-study,#add-diagnosis,#add-prescription,#save-consultation,#complete-consultation,[data-context-add]') || (button.closest('#page-actions') && button.textContent==='Agregar +');
       if(textException) return !button.textContent.trim() || button.querySelector('svg') || button.classList.contains('icon-action') || !button.getAttribute('aria-label');
       return !button.querySelector('svg path') || (!button.closest('#navigation') && (button.textContent.trim() || !button.getAttribute('aria-label')));
     }).map(button=>button.id || button.outerHTML));
@@ -774,6 +803,230 @@ try {
   // T8 will expose disease/medicine selection. Until then optional-array deletion
   // guards are an implementation source-review obligation, not fake UI injection.
   console.log(`T7 focused descriptive CRUD/patient/Navigation contract: PASS (${checks} checks so far)`);
+
+  // T8 public selectors: inline #diagnosis-disease/#diagnosis-notes/#add-diagnosis,
+  // #prescription-medication/#prescription-instructions/#add-prescription;
+  // lists #consultation-diagnoses/#consultation-prescriptions have rows keyed by
+  // data-diagnosis-row=diseaseId / data-prescription-row=medicationId, with
+  // [data-entry-name] and [data-entry-text] snapshots. Row edit/remove controls:
+  // data-diagnosis-edit/remove, data-prescription-edit/remove. Edit uses shared
+  // #clinical-entry-dialog/#clinical-entry-form, #clinical-entry-select/text,
+  // #clinical-entry-error and native Cancel/Escape. Notes retain the legacy
+  // #consultation-diagnosis ID; #consultation-recommendations is independent.
+  const clinical=await openPage({width:1440,height:1000});
+  const cg=async route=>{
+    if(await clinical.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await clinical.locator('#menu-toggle').click();
+    await clinical.locator(`#navigation [data-page="${route}"]`).click();
+  };
+  const ct=selector=>clinical.locator(selector).innerText();
+  const resumeClinical=async()=>{await cg('agenda');await clinical.locator('[data-attend="AP-1"]').click();};
+  const diagnosisRow=id=>clinical.locator(`[data-diagnosis-row="${id}"]`);
+  const prescriptionRow=id=>clinical.locator(`[data-prescription-row="${id}"]`);
+  const clinicalFields=['reason','anamnesis','exploration','diagnosis','recommendations'];
+  const fieldValues=()=>clinical.locator(clinicalFields.map(key=>`#consultation-${key}`).join(',')).evaluateAll(nodes=>nodes.map(node=>[node.id,node.value]));
+  const entryValues=()=>clinical.locator('[data-diagnosis-row],[data-prescription-row]').evaluateAll(nodes=>nodes.map(node=>[node.getAttribute('data-diagnosis-row'),node.getAttribute('data-prescription-row'),node.querySelector('[data-entry-name]').textContent,node.querySelector('[data-entry-text]').textContent]));
+  const clinicalSnapshot=async()=>JSON.stringify({fields:await fieldValues(),entries:await entryValues(),id:await clinical.locator('#consultation-record').getAttribute('data-consultation-id'),status:await ct('#consultation-status')});
+  const saveClinical=()=>clinical.locator('#save-consultation').click();
+  const editEntry=async(kind,id)=>{
+    await clinical.locator(`[data-${kind}-row="${id}"] [data-${kind}-edit]`).click();
+  };
+  const commitEntry=()=>clinical.locator('#clinical-entry-form button[type=submit]').click();
+  const noClinicalMoney=async()=>{
+    await cg('overview'); const money=(await clinical.locator('[data-kpi]').allTextContents()).join('|');
+    await cg('payments'); const orders=await ct('#order-results');
+    return JSON.stringify({money,orders});
+  };
+  // Create catalog terms only via their existing public CRUD. IDs are discovered.
+  const terms={};
+  for(const [route,name] of [['diseases','Enfermedad T8 <demo>'],['medications','Medicamento T8 <demo>']]) {
+    await cg(route); await clinical.locator('#catalog-add').click();
+    await clinical.locator('#cat-name').fill(name); await clinical.locator('#cat-description').fill('Referencia ficticia, sin recomendaciones automáticas');
+    await clinical.locator('#catalog-form button[type=submit]').click();
+    terms[route]=await clinical.locator('#catalog-results tr').filter({hasText:name}).locator('[data-catalog-edit]').getAttribute('data-catalog-edit');
+  }
+  await resumeClinical();
+  const clinicalId=await clinical.locator('#consultation-record').getAttribute('data-consultation-id');
+  check((await fieldValues()).length===5 && (await fieldValues()).every(([,value])=>value===''),'S37 new consultation has five blank human text fields; no clinical defaults');
+  check(await clinical.locator('#diagnosis-disease').inputValue()==='' && await clinical.locator('#prescription-medication').inputValue()==='' && await clinical.locator('#diagnosis-notes').inputValue()==='' && await clinical.locator('#prescription-instructions').inputValue()==='' && (await entryValues()).length===0,'S37 disease/medicine placeholders and blank notes/instructions; no inferred entries');
+  check(await clinical.locator('#diagnosis-disease option[value=""]').count()===1 && await clinical.locator('#prescription-medication option[value=""]').count()===1,'S37 both reference selects have an explicit blank placeholder');
+  await adding(clinical,clinical.locator('#add-diagnosis'),'Agregar diagnóstico');
+  await adding(clinical,clinical.locator('#add-prescription'),'Agregar medicamento recetado');
+  await iconButtons(clinical);
+  const initialClinical=await clinicalSnapshot();
+  const clinicalMoney=await noClinicalMoney(); await resumeClinical();
+  const draftText={reason:'Motivo T8',anamnesis:'Anamnesis T8',exploration:'Exploración T8',diagnosis:'Nota clínica <img onerror=throw(1)>',recommendations:'Recomendación escrita <b>literal</b>'};
+  async function fillClinical(values=draftText) {
+    for(const [key,value] of Object.entries(values)) await clinical.locator(`#consultation-${key}`).fill(value);
+  }
+  await fillClinical();
+  const draftFields=JSON.stringify(await fieldValues());
+  await addDiagnosis(clinical,'FIX-DIS','Nota diagnóstica humana');
+  await addPrescription(clinical,'FIX-MED','Indicación humana, sin dosis generada');
+  check(JSON.stringify(await fieldValues())===draftFields && (await entryValues()).length===2,'S37 adding entries preserves every other form field');
+  await resumeClinical();
+  check(await clinicalSnapshot()===initialClinical,'S37 adding rows/text never autosaves: navigating away discards the entire unsaved draft');
+  // Public consecutive-ID proof surrounds all rejected/draft/save operations.
+  const clinicalCounter=async name=>{
+    await cg('specialties'); await clinical.locator('#catalog-add').click(); await clinical.locator('#cat-name').fill(name); await clinical.locator('#catalog-form button[type=submit]').click();
+    return Number((await clinical.locator('#catalog-results tr').filter({hasText:name}).locator('[data-catalog-edit]').getAttribute('data-catalog-edit')).split('-').at(-1));
+  };
+  const clinicalCounterA=await clinicalCounter('Contador clínico A'); await resumeClinical();
+  await fillClinical(); await clinical.locator('input[name=procedure]').first().check();
+  await clinical.locator('#complete-consultation').click();
+  check(await ct('#consultation-status')==='EN_CURSO' && (await ct('#consultation-error')).length>0 && !await clinical.locator('#consultation-order').count(),'S37 free-text diagnosis alone cannot complete even with documentation and a positive service');
+  await resumeClinical(); check(await clinicalSnapshot()===initialClinical,'S37 rejected completion saves no partial documentation or entries');
+  await fillClinical();
+  for(const kind of ['diagnosis','prescription']) {
+    const selector=kind==='diagnosis'?'#diagnosis-disease':'#prescription-medication';
+    const input=kind==='diagnosis'?'#diagnosis-notes':'#prescription-instructions';
+    const error=kind==='diagnosis'?'#diagnoses-error':'#prescriptions-error';
+    for(const value of ['',`UNKNOWN-${kind}`]) {
+      if(value) await clinical.locator(selector).evaluate((node,value)=>node.add(new Option('Referencia inexistente',value)),value);
+      await clinical.locator(selector).selectOption(value); await clinical.locator(input).fill('Texto explícito');
+      const before=JSON.stringify(await entryValues()); await clinical.locator(`#add-${kind}`).click();
+      check((await ct(error)).length>0 && JSON.stringify(await entryValues())===before && JSON.stringify(await fieldValues())===draftFields,`S37 ${kind} missing/unknown selection rejects without draft/field mutation`);
+    }
+    await clinical.locator(selector).selectOption(kind==='diagnosis'?'FIX-DIS':'FIX-MED');
+    await clinical.locator(input).evaluate(node=>node.removeAttribute('maxlength')); await clinical.locator(input).fill('x'.repeat(2001));
+    await clinical.locator(`#add-${kind}`).click();
+    check((await ct(error)).length>0 && (await entryValues()).length===0,`S37 ${kind} rejects 2001-character text without adding a row`);
+  }
+  await addPrescription(clinical,'FIX-MED','   ');
+  check((await ct('#prescriptions-error')).length>0 && await prescriptionRow('FIX-MED').count()===0,'S37 manual medication instructions are required, not automatically supplied');
+  await resumeClinical(); check(await clinicalSnapshot()===initialClinical,'S37 rejected selections/text/instructions and rejected completion never mutate the stored record'); await fillClinical();
+  await addDiagnosis(clinical,'FIX-DIS','');
+  await addDiagnosis(clinical,terms.diseases,'d'.repeat(2000));
+  await addPrescription(clinical,'FIX-MED','i'.repeat(2000));
+  await addPrescription(clinical,terms.medications,'Indicación <script>throw(1)</script>');
+  check((await entryValues()).length===4 && await diagnosisRow('FIX-DIS').locator('[data-entry-text]').innerText()==='' && (await diagnosisRow(terms.diseases).locator('[data-entry-text]').innerText()).length===2000 && (await prescriptionRow('FIX-MED').locator('[data-entry-text]').innerText()).length===2000,'S37 multiple diagnoses/prescriptions accept optional diagnosis notes and exact 2000-character boundaries');
+  check(JSON.stringify(await fieldValues())===draftFields && await clinical.locator('#consultation-diagnoses img,#consultation-diagnoses script,#consultation-prescriptions img,#consultation-prescriptions script').count()===0,'S37 entry operations preserve text fields and render supplied text literally');
+  const fourEntries=JSON.stringify(await entryValues());
+  await addDiagnosis(clinical,'FIX-DIS','Duplicado'); await addPrescription(clinical,'FIX-MED','Duplicado');
+  check(JSON.stringify(await entryValues())===fourEntries && (await ct('#diagnoses-error')).length>0 && (await ct('#prescriptions-error')).length>0,'S37 duplicate disease/medication IDs reject without replacing original notes/instructions');
+  for(const [kind,id,duplicate] of [['diagnosis',terms.diseases,'FIX-DIS'],['prescription',terms.medications,'FIX-MED']]) {
+    const beforeKindEdit=JSON.stringify(await entryValues());
+    for(const dismiss of ['cancel','escape']) {
+      const before=await clinicalSnapshot(); await editEntry(kind,id);
+      await clinical.locator('#clinical-entry-text').fill('Edición descartada');
+      if(dismiss==='cancel') await clinical.locator('#clinical-entry-dialog [data-close]').click(); else await clinical.keyboard.press('Escape');
+      check(await clinicalSnapshot()===before && await clinical.locator(`[data-${kind}-row="${id}"] [data-${kind}-edit]`).evaluate(node=>node===document.activeElement),`S37 ${kind} edit ${dismiss} preserves complete draft and focus`);
+    }
+    await editEntry(kind,id); await clinical.locator('#clinical-entry-select').selectOption(duplicate); await commitEntry();
+    check(await clinical.locator('#clinical-entry-dialog').isVisible() && (await ct('#clinical-entry-error')).length>0 && JSON.stringify(await entryValues())===beforeKindEdit,`S37 ${kind} edit cannot duplicate another reference ID`);
+    await clinical.keyboard.press('Escape');
+    await editEntry(kind,id); await clinical.locator('#clinical-entry-text').evaluate(node=>node.removeAttribute('maxlength')); await clinical.locator('#clinical-entry-text').fill('x'.repeat(2001)); await commitEntry();
+    check(await clinical.locator('#clinical-entry-dialog').isVisible() && JSON.stringify(await entryValues())===beforeKindEdit,`S37 ${kind} overlong edit leaves original entries intact`); await clinical.keyboard.press('Escape');
+    if(kind==='prescription') {
+      await editEntry(kind,id); await clinical.locator('#clinical-entry-text').fill('   '); await commitEntry();
+      check(await clinical.locator('#clinical-entry-dialog').isVisible() && (await ct('#clinical-entry-error')).length>0 && JSON.stringify(await entryValues())===beforeKindEdit,'S37 editing medication instructions to blank rejects without changing the entry'); await clinical.keyboard.press('Escape');
+    }
+    await editEntry(kind,id); await clinical.locator('#clinical-entry-text').fill(`Texto editado ${kind} <b>literal</b>`); await commitEntry();
+    check(JSON.stringify(await fieldValues())===draftFields && (await clinical.locator(`[data-${kind}-row="${id}"] [data-entry-text]`).innerText()).includes(`Texto editado ${kind}`),`S37 ${kind} accepted edit preserves all other clinical fields`);
+  }
+  await diagnosisRow(terms.diseases).locator('[data-diagnosis-remove]').click();
+  await prescriptionRow(terms.medications).locator('[data-prescription-remove]').click();
+  check(await diagnosisRow(terms.diseases).count()===0 && await prescriptionRow(terms.medications).count()===0 && JSON.stringify(await fieldValues())===draftFields,'S37 removing draft entries preserves unrelated documentation');
+  await addDiagnosis(clinical,terms.diseases,'Nota de diagnóstico <b>literal</b>');
+  await addPrescription(clinical,terms.medications,'Indicación <script>throw(1)</script>');
+  await saveClinical();
+  check(await ct('#consultation-status')==='EN_CURSO' && !await clinical.locator('#consultation-order').count(),'S37 Guardar progreso persists without closing or issuing an order');
+  const savedClinical=await clinicalSnapshot();
+  await resumeClinical(); check(await clinicalSnapshot()===savedClinical,'S37 saved multiple entries and all text fields load for the same consultation ID');
+  const savedEntryValues=JSON.stringify(await entryValues());
+  await diagnosisRow(terms.diseases).locator('[data-diagnosis-remove]').click();
+  await prescriptionRow(terms.medications).locator('[data-prescription-remove]').click();
+  await saveClinical(); await resumeClinical();
+  check((await entryValues()).length===2 && await diagnosisRow(terms.diseases).count()===0 && await prescriptionRow(terms.medications).count()===0 && JSON.stringify(await fieldValues())===draftFields,'S37 explicit progress save persists entry removals without losing other clinical fields');
+  await addDiagnosis(clinical,terms.diseases,'Nota de diagnóstico <b>literal</b>');
+  await addPrescription(clinical,terms.medications,'Indicación <script>throw(1)</script>');
+  await saveClinical(); await resumeClinical(); check(await clinicalSnapshot()===savedClinical,'S37 explicitly re-added entries persist with the same disease/medicine references and text');
+  await addDiagnosis(clinical,'FIX-DIS','Intento de reemplazo'); await addPrescription(clinical,'FIX-MED','Intento de reemplazo');
+  check(await clinicalSnapshot()===savedClinical,'S37 duplicate add on a saved record cannot replace its original entry text');
+  await resumeClinical(); check(await clinicalSnapshot()===savedClinical,'S37 duplicate add rejection leaves persisted fields and references unchanged');
+  // Entry edits/removals remain drafts even when the record was previously saved.
+  await diagnosisRow(terms.diseases).locator('[data-diagnosis-remove]').click();
+  await prescriptionRow(terms.medications).locator('[data-prescription-remove]').click();
+  await resumeClinical(); check(await clinicalSnapshot()===savedClinical,'S37 unsaved entry removal cannot mutate an already-saved consultation');
+  for(const field of clinicalFields) {
+    await diagnosisRow(terms.diseases).locator('[data-diagnosis-remove]').click();
+    await clinical.locator(`#consultation-${field}`).evaluate(node=>node.removeAttribute('maxlength'));
+    await clinical.locator(`#consultation-${field}`).fill('x'.repeat(2001)); await saveClinical();
+    check((await ct('#consultation-error')).length>0 && await ct('#consultation-status')==='EN_CURSO' && !await clinical.locator('#consultation-order').count(),`S37 ${field} submit-time 2001 rejection keeps record open`);
+    await resumeClinical(); check(await clinicalSnapshot()===savedClinical,`S37 ${field} rejected save persists neither fields nor draft row removal`);
+  }
+  // Visible unadded fields must not silently disappear or be added twice by Save.
+  for(const [select,text,id] of [['diagnosis-disease','diagnosis-notes','FIX-DIS'],['prescription-medication','prescription-instructions','FIX-MED']]) {
+    for(const pending of ['selection','text']) for(const action of ['#save-consultation','#complete-consultation']) {
+      if(pending==='selection') await clinical.locator(`#${select}`).selectOption(id);
+      else await clinical.locator(`#${text}`).fill('Texto pendiente sin Agregar');
+      await clinical.locator(action).click();
+      check((await ct('#consultation-error')).includes('Agregar') && await ct('#consultation-status')==='EN_CURSO' && !await clinical.locator('#consultation-order').count(),'S37 Save/Complete explicitly rejects visible unadded selections/text without issuing or closing');
+      await resumeClinical(); check(await clinicalSnapshot()===savedClinical,'S37 pending-entry rejection leaves the entire persisted record unchanged');
+    }
+  }
+  check(await noClinicalMoney()===clinicalMoney,'S37 draft/invalid/save operations leave all orders and financial totals unchanged');
+  check(await clinicalCounter('Contador clínico B')===clinicalCounterA+1,'S37 draft/invalid/explicit progress operations allocate no shared IDs'); await resumeClinical();
+  for(const field of clinicalFields) {
+    check(await clinical.locator(`#consultation-${field}`).getAttribute('maxlength')==='2000',`S37 ${field} advertises its 2000-character limit`);
+    await clinical.locator(`#consultation-${field}`).fill('z'.repeat(2000));
+  }
+  await saveClinical(); await resumeClinical();
+  check((await fieldValues()).every(([,value])=>value.length===2000),'S37 all human fields accept exact 2000-character boundary');
+  await fillClinical(); await saveClinical();
+  await clinical.locator('#clinical-patient').selectOption('DEMO-002');
+  check(!await clinical.locator('#consultation-record').count() && !(await ct('#clinical-results')).includes('Indicación <script>'),'S37 patient switch exposes no other patient consultation or prescription'); await resumeClinical();
+  check(JSON.stringify(await entryValues())===savedEntryValues,'S37 patient switch preserves stable consultation reference entries');
+  await cg('patients'); await clinical.locator('[data-catalog-edit="DEMO-001"]').click();
+  await clinical.locator('#cat-document').fill('T8-ALBA'); await clinical.locator('#catalog-form button[type=submit]').click(); await resumeClinical();
+  check(await clinical.locator('#consultation-record').getAttribute('data-consultation-id')===clinicalId && JSON.stringify(await entryValues())===savedEntryValues,'S32/S37 patient document edit cannot relink consultation/disease/medicine entries');
+  async function protectedClinicalReference(route,id,closed=false) {
+    await cg(route); const before=await ct('#catalog-results');
+    await clinical.locator(`[data-master-delete="${id}"]`).click(); await clinical.locator('#master-delete-confirm').click();
+    check((await ct('#master-delete-error')).includes('No eliminado') && await ct('#catalog-results')===before,`S37 ${closed?'closed':'saved open'} ${route} reference blocks deletion atomically`); await clinical.keyboard.press('Escape');
+    await resumeClinical(); check(JSON.stringify(await entryValues())===savedEntryValues,`S37 rejected ${route} deletion preserves clinical reference snapshots`);
+  }
+  await protectedClinicalReference('diseases',terms.diseases); await protectedClinicalReference('medications',terms.medications);
+  for(const [route,id] of [['diseases',terms.diseases],['medications',terms.medications]]) {
+    await cg(route); await clinical.locator(`[data-catalog-edit="${id}"]`).click(); await clinical.locator('#cat-name').fill(`Referencia renombrada ${route}`); await clinical.locator('#catalog-form button[type=submit]').click();
+  }
+  await resumeClinical(); check(JSON.stringify(await entryValues())===savedEntryValues,'S37 saved open terms are name snapshots, not rewritten by catalog rename');
+  await clinical.locator('#request-study').click(); await clinical.locator('#study-type').selectOption('FIX-LAB'); await clinical.locator('#study-form button[type=submit]').click();
+  await clinical.locator('#complete-consultation').click();
+  check(await ct('#consultation-status')==='EN_CURSO' && !await clinical.locator('#consultation-order').count(),'S34/S36/S39 diagnoses, prescriptions and free study never substitute for a selected priced service');
+  await clinical.locator('input[name=procedure]').first().check();
+  await clinical.locator('#complete-consultation').click();
+  check(await ct('#consultation-status')==='CERRADA' && await clinical.locator('#consultation-form,#save-consultation,#complete-consultation,[data-diagnosis-edit],[data-diagnosis-remove],[data-prescription-edit],[data-prescription-remove]').count()===0,'S37 completed clinical documentation and all structured entries are read-only');
+  check(JSON.stringify(await entryValues())===savedEntryValues && (await ct('#consultation-record')).includes(draftText.diagnosis) && (await ct('#consultation-record')).includes(draftText.recommendations) && await clinical.locator('#consultation-record img,#consultation-record script,#consultation-record b').count()===0,'S37 closed text/terms/instructions preserve literal snapshots without HTML execution');
+  const closedClinical=await ct('#consultation-record');
+  await protectedClinicalReference('diseases',terms.diseases,true); await protectedClinicalReference('medications',terms.medications,true);
+  for(const [route,id] of [['diseases',terms.diseases],['medications',terms.medications]]) {
+    await cg(route); await clinical.locator(`[data-catalog-edit="${id}"]`).click(); await clinical.locator('#cat-name').fill(`Catálogo posterior al cierre ${route}`); await clinical.locator('#catalog-form button[type=submit]').click();
+  }
+  await resumeClinical(); check(await ct('#consultation-record')===closedClinical,'S37 reopening/deletion rejection cannot rewrite closed clinical content');
+  await clinical.locator('#consultation-order').click(); const clinicalOrderId=await clinical.locator('#order-results [data-order-detail]').getAttribute('data-order-detail');
+  await clinical.locator('#order-results [data-order-detail]').click();
+  check(await clinical.locator('#order-detail-lines tbody tr').count()===1 && (await ct('#order-detail-lines')).includes('PROCEDIMIENTO') && !/Medicamento|Enfermedad|Indicación|LABORATORIO/.test(await ct('#order-detail-lines')) && (await ct('#order-detail-lines')).includes('Bs 300,00'),'S34/S36/S39 only the selected service reaches the issued order'); await clinical.keyboard.press('Escape');
+  await clinical.locator(`[data-pay="${clinicalOrderId}"]`).click(); await clinical.locator('#payment-form button[type=submit]').click();
+  await clinical.locator('#order-results [data-receipt]').click();
+  check(await clinical.locator('#receipt-content tbody tr').count()===1 && !/Medicamento|Enfermedad|Indicación|LABORATORIO/.test(await ct('#receipt-content')),'S39 prescriptions/studies do not become receipt lines'); await clinical.keyboard.press('Escape');
+  await cg('overview'); check((await clinical.locator('[data-kpi]').allTextContents()).join('|')==='Bs 1.000,00|Bs 250,00|Bs 750,00|Bs 1.400,00','S37 structured clinical records leave money to the selected-service settlement path only');
+  // Rx is optional; separate notes/recommendations may also stay blank.
+  await cg('agenda'); await clinical.locator('[data-attend="AP-2"]').click();
+  check((await entryValues()).length===0 && (await fieldValues()).every(([,value])=>value===''),'S37 another patient starts blank despite saved histories/catalogs/other prescriptions');
+  await fillClinical({reason:'Motivo explícito',anamnesis:'Anamnesis explícita',exploration:'Exploración explícita'}); await addDiagnosis(clinical);
+  await clinical.setViewportSize({width:390,height:844});
+  await noOverflow(clinical); await iconButtons(clinical);
+  await editEntry('diagnosis','FIX-DIS');
+  check(await clinical.locator('#clinical-entry-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth),'S37 mobile clinical entry editor fits');
+  await clinical.locator('#clinical-entry-form button[type=submit]').focus(); await clinical.keyboard.press('Tab');
+  check(await clinical.locator('#clinical-entry-select').evaluate(node=>node===document.activeElement),'S37 entry editor Tab wraps to reference select'); await clinical.keyboard.press('Shift+Tab');
+  check(await clinical.locator('#clinical-entry-form button[type=submit]').evaluate(node=>node===document.activeElement),'S37 entry editor reverse wrap restores save'); await clinical.keyboard.press('Escape');
+  await clinical.locator('input[name=procedure]').first().check(); await clinical.locator('#complete-consultation').click();
+  check(await ct('#consultation-status')==='CERRADA' && await clinical.locator('[data-prescription-row]').count()===0,'S37 one human-selected diagnosis and positive service can complete without Rx or free-text diagnosis');
+  await noOverflow(clinical);
+  await cg('agenda'); await clinical.locator('[data-attend="AP-3"]').click();
+  check((await ct('[data-context-history]')).includes('Sustancia ficticia') && (await entryValues()).length===0 && (await fieldValues()).every(([,value])=>value==='') && await clinical.locator('#diagnosis-disease').inputValue()==='' && await clinical.locator('#prescription-medication').inputValue()==='','S37 populated patient history and physician specialty never infer diagnoses, medicines, notes or recommendations');
+  console.log(`T8 public HTTP structured clinical draft/snapshot/billing contract: PASS (${checks} checks so far)`);
 
   // S38 supersedes the old catalog, including state, routes and known role keys.
   check(!/triage/i.test(source),'S38 no obsolete Triage UI, state, route or role key remains');
@@ -1265,6 +1518,8 @@ try {
   check((await ft('#consultation-error')).includes('Completa') && (await ft('#consultation-status'))==='EN_CURSO', 'Incomplete consultation rejected');
   check(await clinicalAppointmentBadge().innerText()==='En atención', 'Invalid completion leaves linked appointment En atención');
   for(const [field,value] of Object.entries({reason:'Motivo documentado',anamnesis:'Anamnesis ficticia',exploration:'Exploración ficticia',diagnosis:'Texto humano ficticio <sin IA>'})) await flow.locator(`#consultation-${field}`).fill(value);
+  // S37: this textarea is now separate notes, never the diagnosis requirement.
+  await addDiagnosis(flow);
   await flow.locator('#complete-consultation').click();
   check((await ft('#consultation-error')).includes('facturable'), 'Completion requires billables');
   check(await clinicalAppointmentBadge().innerText()==='En atención', 'Missing billables do not mark appointment attended');
@@ -1463,6 +1718,7 @@ try {
     check(await flow.locator('#clinical-results .appointment:has([data-attend="AP-1"]) .badge').innerText()==='En atención', `Result ${dismiss} does not change linked appointment lifecycle`);
   }
   for(const key of ['reason','anamnesis','exploration','diagnosis']) await flow.locator(`#consultation-${key}`).fill('Texto ficticio explícito');
+  await addDiagnosis(flow);
   await flow.locator('input[name=procedure]').first().check();
   await flow.locator('#complete-consultation').click();
   check(await ft('#consultation-status')==='CERRADA' && (await ft('#consultation-studies')).includes('PENDIENTE'), 'Pending studies explicitly allowed at completion without invented results');

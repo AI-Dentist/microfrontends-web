@@ -141,7 +141,7 @@ dialog form { display:grid; gap:20px; }
 .scrim { display:none; }
 .header-actions { display:flex; align-items:center; gap:12px; flex:none; }
 #logout { flex:none; }
-#expense-dialog .dialog-actions { position:sticky; bottom:0; background:#ffffff; padding:12px 0; }
+#expense-dialog .dialog-actions,#clinical-entry-dialog .dialog-actions { position:sticky; bottom:0; background:#ffffff; padding:12px 0; }
 .kpi-value { white-space:normal; overflow-wrap:anywhere; }
 .login-screen { min-height:100vh; max-width:none; padding:24px; display:grid; place-items:center; }
 .login-layout { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); width:100%; max-width:1000px; border:1px solid var(--line); border-radius:16px; overflow:hidden; background:#ffffff; box-shadow:0 10px 15px -3px rgb(0 0 0 / .1); }
@@ -344,6 +344,16 @@ body.nav-collapsed .sidebar { display:none; }
   <label>Referencia opcional (sin archivos)<input id="result-reference" maxlength="120"></label>
   <p id="result-error" class="error" role="alert"></p>
   <div class="dialog-actions"><button type="button" data-close="result-dialog">Cancelar</button><button type="submit" class="primary">Guardar resultado demo</button></div>
+ </form>
+</dialog>
+<dialog id="clinical-entry-dialog" aria-labelledby="clinical-entry-title">
+ <form id="clinical-entry-form" novalidate>
+  <h2 id="clinical-entry-title">Editar registro clínico</h2>
+  <p class="help">Edición del borrador de la consulta. Guardar progreso aplica el registro completo; no se genera consejo médico.</p>
+  <label><span id="clinical-entry-reference-label"></span><select id="clinical-entry-select"></select></label>
+  <label><span id="clinical-entry-text-label"></span><textarea id="clinical-entry-text" maxlength="2000"></textarea></label>
+  <p id="clinical-entry-error" class="error" role="alert"></p>
+  <div class="dialog-actions"><button type="button" data-close="clinical-entry-dialog">Cancelar</button><button type="submit" class="primary">Guardar en borrador</button></div>
  </form>
 </dialog>
 <dialog id="order-detail-dialog" aria-labelledby="order-detail-title">
@@ -1173,7 +1183,88 @@ $('#appointment-form').onsubmit=event=>{
  announce('Cita ficticia creada. Inicia la consulta desde su fila.');
 };
 
-const documentationFields={reason:'Motivo',anamnesis:'Anamnesis',exploration:'Exploración',diagnosis:'Diagnóstico escrito por el equipo'};
+const documentationFields={reason:'Motivo',anamnesis:'Anamnesis',exploration:'Exploración',diagnosis:'Notas clínicas',recommendations:'Recomendaciones'};
+const clinicalEntryKinds={
+ diagnosis:{collection:'diseases',list:'diagnoses',key:'diseaseId',text:'notes',label:'diagnóstico',reference:'Enfermedad',textLabel:'Notas del diagnóstico (opcional)'},
+ prescription:{collection:'medications',list:'prescriptions',key:'medicationId',text:'instructions',label:'medicamento recetado',reference:'Medicamento',textLabel:'Indicaciones manuales requeridas'}
+};
+let clinicalDraft=null, clinicalEntryEdit=null;
+function editableClinicalDraft() {
+ return clinicalDraft?.consultationId===activeConsultationId && activeConsultation()?.status==='EN_CURSO' && state.page==='clinical' && canNavigate('clinical') && !!$('#consultation-form');
+}
+function clinicalEntriesError(kind,entries) {
+ const meta=clinicalEntryKinds[kind], seen=new Set();
+ for(const entry of entries) {
+  if(!state[meta.collection].some(item=>item.id===entry[meta.key])) return 'Selecciona una referencia válida del catálogo.';
+  if(seen.has(entry[meta.key])) return 'Esta referencia ya está agregada a la consulta.';
+  seen.add(entry[meta.key]);
+  if(typeof entry.name!=='string' || !entry.name.trim()) return 'La referencia debe conservar su nombre registrado.';
+  if(typeof entry[meta.text]!=='string' || entry[meta.text].length>2000) return 'El texto admite hasta 2000 caracteres.';
+  if(kind==='prescription' && !entry.instructions.trim()) return 'Escribe indicaciones manuales para el medicamento.';
+ }
+ return '';
+}
+function clinicalEntryValue(kind,id,text,prior) {
+ const meta=clinicalEntryKinds[kind], reference=state[meta.collection].find(item=>item.id===id);
+ // Editing text on the same reference preserves its original name snapshot.
+ return {[meta.key]:id,name:prior?.[meta.key]===id?prior.name:(reference?.name || ''),[meta.text]:text.trim()};
+}
+function clinicalEntryRows(kind,entries,closed) {
+ const meta=clinicalEntryKinds[kind];
+ return entries.map(entry=>`<article class="summary" style="margin-bottom:12px" data-${kind}-row="${escapeText(entry[meta.key])}">
+  <p data-entry-name>${escapeText(entry.name)}</p><p class="summary" data-entry-text>${escapeText(entry[meta.text])}</p>
+  ${closed?'':`<span class="action-group"><button type="button" data-${kind}-edit="${escapeText(entry[meta.key])}">Editar ${meta.label}</button><button type="button" data-${kind}-remove="${escapeText(entry[meta.key])}">Eliminar ${meta.label}</button></span>`}
+ </article>`).join('') || '<p class="help">Sin registrar</p>';
+}
+function clinicalEntrySection(kind,consultation,closed) {
+ const meta=clinicalEntryKinds[kind], title=kind==='diagnosis'?'Diagnósticos seleccionados':'Medicamentos recetados';
+ const selector=kind==='diagnosis'?'diagnosis-disease':'prescription-medication';
+ const text=kind==='diagnosis'?'diagnosis-notes':'prescription-instructions';
+ return `<section aria-label="${title}"><div class="card-heading"><h3>${title}</h3>${closed?'':`<button type="button" id="add-${kind}">Agregar ${meta.label}</button>`}</div>
+  ${closed?'':`<div class="form-section"><label>${meta.reference}<select id="${selector}"><option value="">Seleccionar ${meta.reference.toLocaleLowerCase()}</option>${options(state[meta.collection])}</select></label><label>${meta.textLabel}<textarea id="${text}" maxlength="2000"></textarea></label><p id="${meta.list}-error" class="error" role="alert"></p></div>`}
+  <div id="consultation-${meta.list}">${clinicalEntryRows(kind,consultation[meta.list] || [],closed)}</div></section>`;
+}
+function renderClinicalEntries(kind) {
+ const meta=clinicalEntryKinds[kind];
+ $(`#consultation-${meta.list}`).innerHTML=clinicalEntryRows(kind,clinicalDraft[meta.list],false);
+}
+function addClinicalEntry(kind) {
+ if(!editableClinicalDraft()) return;
+ const meta=clinicalEntryKinds[kind], selector=kind==='diagnosis'?'#diagnosis-disease':'#prescription-medication';
+ const text=kind==='diagnosis'?'#diagnosis-notes':'#prescription-instructions';
+ const candidate=[...clinicalDraft[meta.list],clinicalEntryValue(kind,$(selector).value,$(text).value)];
+ const error=clinicalEntriesError(kind,candidate);
+ $(`#${meta.list}-error`).textContent=error; if(error) return;
+ clinicalDraft[meta.list]=candidate;
+ renderClinicalEntries(kind); $(selector).value=''; $(text).value='';
+ $(selector).focus();
+}
+function openClinicalEntry(kind,id,trigger) {
+ if(!editableClinicalDraft()) return;
+ const meta=clinicalEntryKinds[kind], entry=clinicalDraft[meta.list].find(item=>item[meta.key]===id);
+ if(!entry) return;
+ clinicalEntryEdit={kind,id,consultationId:activeConsultationId};
+ $('#clinical-entry-title').textContent=`Editar ${meta.label}`;
+ $('#clinical-entry-reference-label').textContent=meta.reference;
+ $('#clinical-entry-text-label').textContent=meta.textLabel;
+ $('#clinical-entry-select').innerHTML='<option value="">Seleccionar referencia</option>'+options(state[meta.collection],id);
+ $('#clinical-entry-text').value=entry[meta.text]; $('#clinical-entry-text').maxLength=2000;
+ $('#clinical-entry-error').textContent=''; openDialog('#clinical-entry-dialog',trigger);
+}
+$('#clinical-entry-form').onsubmit=event=>{
+ event.preventDefault();
+ if(!$('#clinical-entry-dialog').open || !editableClinicalDraft() || clinicalEntryEdit?.consultationId!==activeConsultationId) return;
+ const {kind,id}=clinicalEntryEdit, meta=clinicalEntryKinds[kind];
+ const entries=clinicalDraft[meta.list], index=entries.findIndex(item=>item[meta.key]===id);
+ if(index<0) return;
+ const entry=clinicalEntryValue(kind,$('#clinical-entry-select').value,$('#clinical-entry-text').value,entries[index]);
+ const candidate=entries.map((prior,position)=>position===index?entry:prior);
+ const error=clinicalEntriesError(kind,candidate);
+ if(error) {$('#clinical-entry-error').textContent=error;return;}
+ clinicalDraft[meta.list]=candidate;
+ closeDialog($('#clinical-entry-dialog')); renderClinicalEntries(kind);
+ $(`[data-${kind}-row="${entry[meta.key]}"] [data-${kind}-edit]`).focus();
+};
 function startConsultation(appointmentId) {
  // Reject before consultation allocation or appointment lifecycle mutation.
  if(!canNavigate('clinical')) {navigate('clinical');return;}
@@ -1181,7 +1272,7 @@ function startConsultation(appointmentId) {
  if(!appointment) return;
  let consultation=state.consultations.find(item=>item.appointmentId===appointmentId);
  if(!consultation) {
-  consultation={id:newId('CONS'),appointmentId,patientId:appointment.patient,status:'EN_CURSO',reason:'',anamnesis:'',exploration:'',diagnosis:'',procedureIds:[],orderId:null};
+  consultation={id:newId('CONS'),appointmentId,patientId:appointment.patient,status:'EN_CURSO',reason:'',anamnesis:'',exploration:'',diagnosis:'',recommendations:'',diagnoses:[],prescriptions:[],procedureIds:[],orderId:null};
   state.consultations.push(consultation);
  }
  appointment.status=consultation.status==='CERRADA'?'attended':'in_progress';
@@ -1197,18 +1288,26 @@ function consultationLines(consultation) {
 }
 function renderConsultation() {
  const consultation=activeConsultation();
+ clinicalDraft=null;
  if(!consultation || !$('#consultation-container')) return;
  const appointment=state.appointments.find(item=>item.id===consultation.appointmentId);
  const closed=consultation.status==='CERRADA';
+ // A render/load reads saved data; row actions update only these detached arrays
+ // and their list nodes, leaving every live narrative field and service intact.
+ if(!closed) clinicalDraft={consultationId:consultation.id,diagnoses:(consultation.diagnoses || []).map(entry=>({...entry})),prescriptions:(consultation.prescriptions || []).map(entry=>({...entry}))};
+ const narrativeField=key=>`<label>${documentationFields[key]}<textarea id="consultation-${key}" maxlength="2000">${escapeText(consultation[key] || '')}</textarea></label>`;
  $('#consultation-container').innerHTML=`<section id="consultation-record" class="summary" tabindex="-1" data-consultation-id="${consultation.id}" aria-label="Consulta ficticia">
   <h2>${consultation.id} · ${escapeText(patientName(consultation.patientId))}</h2>
   <p>${appointment.date} · ${appointment.time} · ${escapeText(resourceName('physicians',appointment.physicianId))} · ${escapeText(resourceName('rooms',appointment.roomId))}</p>
   <p>Estado: <strong id="consultation-status">${consultation.status}</strong></p>
-  <p class="help">Documentación humana ficticia. Completar exige los cuatro campos y servicios seleccionados con total positivo. Laboratorio e Imagen son gratuitos; sus solicitudes y resultados no generan cobros ni bloquean el cierre.</p>
-  ${closed?`<div class="form-section" style="margin-top:20px">${Object.entries(documentationFields).map(([key,label])=>`<div><h3>${label}</h3><p>${escapeText(consultation[key]) || 'Sin registrar'}</p></div>`).join('')}</div>
+  <p class="help">Documentación humana ficticia, sin contenido clínico automático. Completar requiere motivo, anamnesis, exploración, un diagnóstico seleccionado y servicios con total positivo. Notas, recomendaciones y medicamentos son opcionales. Laboratorio, Imagen y medicamentos no generan cobros.</p>
+  ${closed?`<div class="form-section" style="margin-top:20px">${Object.entries(documentationFields).map(([key,label])=>`<div><h3>${label}</h3><p>${escapeText(consultation[key] || '') || 'Sin registrar'}</p></div>`).join('')}${clinicalEntrySection('diagnosis',consultation,true)}${clinicalEntrySection('prescription',consultation,true)}</div>
    <button type="button" id="consultation-order" data-order-id="${consultation.orderId}">Ver cobro · ${consultation.orderId}</button>`:
    `<form id="consultation-form" class="form-section" style="margin-top:20px" novalidate>
-    ${Object.entries(documentationFields).map(([key,label])=>`<label>${label}<textarea id="consultation-${key}" maxlength="2000">${escapeText(consultation[key])}</textarea></label>`).join('')}
+    ${['reason','anamnesis','exploration'].map(narrativeField).join('')}
+    ${clinicalEntrySection('diagnosis',consultation,false)}${narrativeField('diagnosis')}
+    ${clinicalEntrySection('prescription',consultation,false)}${narrativeField('recommendations')}
+    <p class="help">Textos: máximo 2000 caracteres. Agregar, editar o eliminar solo cambia el borrador. Usa Guardar progreso antes de navegar; los cambios sin guardar se descartan. Agrega o limpia cualquier selección/texto pendiente antes de guardar o completar.</p>
     <fieldset><legend>Servicios / Aranceles a cobrar</legend>${state.procedures.map(procedure=>`<label class="check"><input type="checkbox" name="procedure" value="${procedure.id}" ${consultation.procedureIds.includes(procedure.id)?'checked':''}>${escapeText(procedure.name)} · ${money(procedure.priceCents)}</label>`).join('')}</fieldset>
     <p id="consultation-error" class="error" role="alert"></p>
     <div class="workflow-actions"><button type="submit" id="save-consultation">Guardar progreso</button><button type="button" class="primary" id="complete-consultation">Completar consulta demo</button></div>
@@ -1225,16 +1324,40 @@ function renderConsultation() {
   $('#consultation-form').onsubmit=event=>{event.preventDefault();saveConsultation(false);};
   $('#complete-consultation').onclick=()=>saveConsultation(true);
   $('#request-study').onclick=openStudy;
+  for(const [kind,meta] of Object.entries(clinicalEntryKinds)) {
+   $(`#add-${kind}`).onclick=()=>addClinicalEntry(kind);
+   $(`#consultation-${meta.list}`).onclick=event=>{
+    if(!editableClinicalDraft()) return;
+    const edit=event.target.closest(`[data-${kind}-edit]`), remove=event.target.closest(`[data-${kind}-remove]`);
+    if(edit) openClinicalEntry(kind,edit.getAttribute(`data-${kind}-edit`),edit);
+    if(remove) {
+     clinicalDraft[meta.list]=clinicalDraft[meta.list].filter(entry=>entry[meta.key]!==remove.getAttribute(`data-${kind}-remove`));
+     renderClinicalEntries(kind); $(`#add-${kind}`).focus();
+    }
+   };
+  }
  }
 }
 function saveConsultation(complete) {
  const consultation=activeConsultation();
- if(!consultation || consultation.status==='CERRADA') return;
+ if(!consultation || !editableClinicalDraft()) return;
+ const reject=message=>{$('#consultation-error').textContent=message;};
+ // Pending inline values are visible but not rows: never drop or implicitly add
+ // them on Save/Complete, including a selection or text left after an error.
+ if(['diagnosis-disease','diagnosis-notes','prescription-medication','prescription-instructions'].some(id=>$(`#${id}`).value!=='')) {
+  reject('Hay una selección o texto sin agregar. Usa Agregar en su sección o limpia sus campos antes de guardar o completar.');return;
+ }
  const values=Object.fromEntries(Object.keys(documentationFields).map(key=>[key,$(`#consultation-${key}`).value.trim()]));
- values.procedureIds=$$('input[name=procedure]:checked').map(input=>input.value);
+ if(Object.values(values).some(value=>value.length>2000)) {reject('Cada texto clínico admite hasta 2000 caracteres.');return;}
+ for(const [kind,meta] of Object.entries(clinicalEntryKinds)) {
+  values[meta.list]=clinicalDraft[meta.list].map(entry=>({...entry,[meta.text]:entry[meta.text].trim()}));
+  const error=clinicalEntriesError(kind,values[meta.list]); if(error) {reject(error);return;}
+ }
+ values.procedureIds=$$('input[name=procedure]:checked',$('#consultation-form')).map(input=>input.value);
+ if(values.procedureIds.some(id=>!state.procedures.some(item=>item.id===id))) {reject('Selecciona servicios válidos del catálogo Aranceles.');return;}
  const candidate={...consultation,...values};
- if(complete && Object.keys(documentationFields).some(key=>!values[key])) {
-  $('#consultation-error').textContent='Completa motivo, anamnesis, exploración y diagnóstico humano ficticio.';return;
+ if(complete && (['reason','anamnesis','exploration'].some(key=>!values[key]) || !values.diagnoses.length)) {
+  reject('Completa motivo, anamnesis y exploración; agrega al menos un diagnóstico seleccionado por el equipo.');return;
  }
  const lines=consultationLines(candidate), totalCents=lines.reduce((sum,line)=>sum+line.amountCents,0);
  if(complete && (!lines.length || !Number.isSafeInteger(totalCents) || totalCents<=0)) {
@@ -1553,8 +1676,10 @@ function actionPresentation(button,label) {
  else if(button.id==='add-role') addLabel='Agregar rol local';
  else if(button.id==='add-slot') addLabel='Agregar horario';
  else if(button.id==='request-study') addLabel='Agregar Laboratorio / Imagen';
+ else if(button.id==='add-diagnosis') addLabel='Agregar diagnóstico';
+ else if(button.id==='add-prescription') addLabel='Agregar medicamento recetado';
  if(addLabel) return {label:addLabel,text:button.id==='add-slot'?'Agregar horario +':'Agregar +'};
- if(button.closest('dialog') || button.dataset.tab || button.closest('.settings-save')) return {label,text:label};
+ if(button.matches('#save-consultation,#complete-consultation') || button.closest('dialog') || button.dataset.tab || button.closest('.settings-save')) return {label,text:label};
  return {label,text:null};
 }
 function decorateActions() {
