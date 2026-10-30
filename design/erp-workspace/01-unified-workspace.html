@@ -14,6 +14,8 @@ button,input,select,textarea { font-size:14px; }
 textarea { width:100%; min-height:90px; resize:vertical; padding:10px 14px; border:1px solid #64748b; border-radius:10px; color:var(--ink); background:#ffffff; }
 .summary { overflow-wrap:anywhere; }
 .workflow-actions { display:flex; flex-wrap:wrap; gap:12px; margin:16px 0; }
+.action-group { display:inline-flex; flex-wrap:wrap; gap:8px; vertical-align:middle; }
+#navigation-permissions { display:grid; gap:20px; margin:20px 0 24px; }
 .qr-art { display:block; width:100%; max-width:260px; height:auto; margin:16px auto; }
 #consultation-record { margin-top:24px; }
 .appointment { flex-wrap:wrap; }
@@ -236,7 +238,7 @@ body.nav-collapsed .sidebar { display:none; }
 <dialog id="overview-dialog" aria-labelledby="overview-title">
  <form id="overview-form">
   <h2 id="overview-title">Personalizar Resumen</h2>
-  <p class="help">Preferencias del rol simulado, solo en memoria; no son ajustes de un usuario real. Mostrar u ordenar no concede permisos. Configuración → Roles define el contenido permitido.</p>
+  <p class="help">Preferencias del rol simulado, solo en memoria; no son ajustes de un usuario real. Mostrar u ordenar no concede permisos. Configuración → Navegación define el contenido permitido.</p>
   <div id="overview-preferences" class="form-section"></div>
   <button type="button" id="overview-reset">Restablecer vista permitida</button>
   <div class="dialog-actions"><button type="button" data-close="overview-dialog">Cancelar</button><button type="submit" class="primary">Guardar vista</button></div>
@@ -275,8 +277,9 @@ body.nav-collapsed .sidebar { display:none; }
   <h2 id="patient-title">Registrar paciente ficticio</h2>
   <p class="help">Use solo datos inventados. Registro en memoria, sin historia clínica real.</p>
   <label for="patient-name">Nombre ficticio<input id="patient-name" maxlength="80" required autocomplete="off"></label>
-  <label for="patient-document">Documento de demo<input id="patient-document" maxlength="30" required autocomplete="off" aria-describedby="document-help"></label>
-  <p id="document-help" class="help">Entre 3 y 30 letras, números o guiones. Ejemplo: DEMO-004.</p>
+  <label for="patient-document">Documento de identidad<input id="patient-document" maxlength="30" required autocomplete="off" aria-describedby="document-help"></label>
+  <p id="document-help" class="help">Documento ficticio único: entre 3 y 30 letras, números o guiones. Ejemplo: 900004. El ID interno se asigna al guardar y no cambia.</p>
+  <label for="patient-note">Notas<textarea id="patient-note" maxlength="120"></textarea></label>
   <p id="patient-error" class="error" role="alert"></p>
   <div class="dialog-actions"><button type="button" data-close="patient-dialog">Cancelar</button><button class="primary" type="submit">Crear registro ficticio</button></div>
  </form>
@@ -395,7 +398,7 @@ const iconPaths = {
  imaging:'M3 4h18v16H3zM3 17l6-6 4 4 3-3 5 5M15 7h2v2h-2z',
  diseases:'M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10M12 2v5M12 17v5M2 12h5M17 12h5M5 5l4 4M15 15l4 4M5 19l4-4M15 9l4-4',
  allergyCatalog:'M12 3C9 8 5 11 5 15a7 7 0 0 0 14 0c0-4-4-7-7-12M12 10v5M12 18h.01',
- triage:'M8 4H5v17h14V4h-3M8 3h8v4H8zM8 12h2M13 12h3M8 16h2M13 16h3',
+ medications:'M8 3a5 5 0 0 1 7 0l6 6a5 5 0 0 1-7 7l-6-6a5 5 0 0 1 0-7zM10 5l9 9M3 16l5 5M3 21l5-5',
  add:'M12 4v16M4 12h16', edit:'M4 16l12-12 4 4L8 20H4zM14 6l4 4',
  record:'M5 3h10l4 4v14H5zM15 3v5h4M9 11h6M9 15h6M9 18h3',
  view:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6',
@@ -420,12 +423,12 @@ const pages = {
  physicians:['Médicos','Médicos','Especialidades y horarios conectados a la agenda.'],
  specialties:['Especialidades','Especialidades','Referencias de especialidad del equipo ficticio.'],
  rooms:['Consultorios','Consultorios','Espacios y disponibilidad de la clínica ficticia.'],
- laboratory:['Laboratorio','Laboratorio','Laboratorios · nombre y precio.'],
- imaging:['Imagenología','Imagenología','Imágenes · nombre y precio.'],
+ laboratory:['Laboratorio','Laboratorio','Nombre y descripción · solicitudes y resultados sin cobro.'],
+ imaging:['Imagenología','Imagenología','Nombre y descripción · solicitudes y resultados sin cobro.'],
  diseases:['Enfermedades','Enfermedades','Referencias de clínica, no diagnósticos de pacientes.'],
  allergyCatalog:['Alergias','Alergias','Referencias de clínica, distintas de las alergias del paciente.'],
- triage:['Triage','Triage','Configuración de clasificación y descripción · sin evaluación de pacientes'],
- catalogs:['Aranceles','Aranceles','Procedimientos y tarifas ficticias de consulta.'],
+ medications:['Medicamentos','Medicamentos','Referencias ficticias · sin inventario ni prescripción automática.'],
+ catalogs:['Aranceles','Aranceles','Servicios de la clínica: se seleccionan en Atención clínica; completar emite la orden que se paga en Cobros.'],
  inventory:['Inventario','Inventario','Disponibilidad y alertas de insumos de demostración.'],
  settings:['Configuración','Configuración','Personaliza este espacio. Todo se guarda solo en memoria.']
 };
@@ -453,7 +456,7 @@ const state = {
   {id:'ROLE-2',name:'Recepcionista',menuAccess:menuAccess(['overview','patients','agenda','payments','expenses']),overviewAccess:overviewAccess(['agenda'])},
   {id:'ROLE-3',name:'Médico',menuAccess:menuAccess(['overview','patients','agenda','clinical']),overviewAccess:overviewAccess(['agenda','clinical'])}
  ],
- patients:[{id:'DEMO-001', name:'Alba Ejemplo', note:'Control preventivo'},{id:'DEMO-002', name:'Bruno Muestra', note:'Seguimiento'},{id:'DEMO-003', name:'Celia Prueba', note:'Consulta inicial'}],
+ patients:[{id:'DEMO-001',document:'900001',name:'Alba Ejemplo',note:'Control preventivo'},{id:'DEMO-002',document:'900002',name:'Bruno Muestra',note:'Nota ficticia de control'},{id:'DEMO-003',document:'900003',name:'Celia Prueba',note:'Consulta inicial'}],
  orders:[
   {id:'ORD-101',patient:'DEMO-001',service:'Limpieza y control',totalCents:60000,paidCents:0,due:'18 may 2026'},
   {id:'ORD-102',patient:'DEMO-002',service:'Restauración',totalCents:120000,paidCents:40000,due:'18 may 2026'},
@@ -477,10 +480,10 @@ const state = {
   {id:'AV-3',physicianId:'PH-2',weekday:2,start:'08:00',end:'17:00',roomId:'RM-2'}
  ],
  // Clearly fictional, free catalog examples; IDs never consume the mutation counter.
- studyTypes:[{id:'FIX-LAB',name:'Laboratorio de muestra · ficticio',mode:'LABORATORIO',priceCents:10000},{id:'FIX-IMG',name:'Imagen de muestra · ficticia',mode:'IMAGEN',priceCents:20000}],
+ studyTypes:[{id:'FIX-LAB',name:'Laboratorio de muestra · ficticio',mode:'LABORATORIO',description:'Solicitud ficticia de laboratorio; sin cobro.'},{id:'FIX-IMG',name:'Imagen de muestra · ficticia',mode:'IMAGEN',description:'Solicitud ficticia de imagen; sin cobro.'}],
  diseases:[{id:'FIX-DIS',name:'Enfermedad de ejemplo ficticia',description:'Referencia educativa de demo; no se aplica a pacientes.'}],
  allergyCatalog:[{id:'FIX-ALG',name:'Alergia de ejemplo ficticia',description:'Referencia de catálogo, no una alergia del paciente.'}],
- triage:[{id:'FIX-TRI',name:'Clasificación de ejemplo ficticia',description:'Ejemplo configurable; no evalúa ni clasifica pacientes.'}],
+ medications:[{id:'FIX-MED',name:'Medicamento de ejemplo ficticio',description:'Referencia de demostración; sin dosis ni indicaciones predefinidas.'}],
  patientContexts:[], nextId:10
 };
 // Preserve every inherited fixture while moving references to stable resource IDs.
@@ -523,6 +526,12 @@ function renderProfile() {
  $('#demo-role').innerHTML=options(state.roles,state.activeRoleId);
  // An unknown active ID never becomes Administrator (or the browser's first option).
  $('#demo-role').value=state.roles.some(role=>role.id===state.activeRoleId)?state.activeRoleId:'';
+ if($('#navigation-role')) {
+  const previous=$('#navigation-role').value;
+  $('#navigation-role').innerHTML=options(state.roles,previous);
+  $('#navigation-role').value=state.roles.some(role=>role.id===previous)?previous:state.activeRoleId;
+  if(previous!==$('#navigation-role').value) renderNavigationPermissions();
+ }
 }
 function reconcileAccess() {
  renderNav();
@@ -573,8 +582,7 @@ function navigate(page, moveFocus = true) {
  if(catalogRoutes[page] || catalogMode()) {
   catalogKind=catalogRoutes[page];
   renderCatalogs();
- } else if(page==='triage') renderTriage();
- else renderers[page]();
+ } else renderers[page]();
  setDrawer(false);
  if (moveFocus) $('#main').focus();
  return true;
@@ -588,10 +596,10 @@ function orderTable(orders,caption,allowPayment) {
   <tbody>${orders.map(order=>`<tr>
    <td><strong>${order.id}</strong> · ${escapeText(patientName(order.patient))}<small>${escapeText(order.service)}</small>${order.priorPaidCents?`<small>Pago previo de fixture: ${money(order.priorPaidCents)} · sin recibo histórico</small>`:''}</td>
    <td>${badge(orderStatus(order))}</td><td class="amount">${money(order.totalCents)}</td><td class="amount">${money(balance(order))}</td><td>${escapeText(order.due)}</td>
-   ${allowPayment?`<td>${balance(order)>0?`<button type="button" data-pay="${order.id}">Registrar cobro<span class="small"> · ${order.id}</span></button>`:'<span class="muted">Sin saldo pendiente</span>'}
-    <button type="button" data-qr="${order.id}">QR demo</button><button type="button" data-order-detail="${order.id}">Ver detalle</button>
+   ${allowPayment?`<td><span class="action-group">${balance(order)>0?`<button type="button" data-pay="${order.id}">Registrar cobro<span class="small"> · ${order.id}</span></button><button type="button" data-qr="${order.id}">QR demo</button>`:''}
+    <button type="button" data-order-detail="${order.id}">Ver detalle</button>
     ${state.receipts.filter(receipt=>receipt.orderId===order.id).map(receipt=>`<button type="button" data-receipt="${receipt.id}">${receipt.id}</button>`).join('')}
-   </td>`:''}
+   </span></td>`:''}
   </tr>`).join('') || `<tr><td colspan="${allowPayment?6:5}" class="empty">No hay órdenes que coincidan con estos filtros.</td></tr>`}</tbody>
  </table></div>`;
 }
@@ -616,7 +624,7 @@ function renderOverview() {
  if(preferences.length && !$('#page-actions button')) action('Personalizar Resumen',openOverviewPreferences);
  const renderers={finance:overviewFinance,agenda:overviewAgenda,clinical:overviewClinical};
  $('#view').innerHTML=preferences.filter(item=>item.visible).map(item=>`<section data-overview-block="${item.key}" style="margin-bottom:24px">${renderers[item.key]()}</section>`).join('') ||
-  `<section class="card"><h2>Tu Resumen está vacío</h2><p>${preferences.length?'Todos los bloques permitidos están ocultos. Usa Personalizar Resumen para mostrarlos o restablecer la vista.':'Este rol no tiene contenido de Resumen habilitado. Usa Simular rol → Administrador y Configuración → Roles para configurar los permisos de contenido.'}</p></section>`;
+  `<section class="card"><h2>Tu Resumen está vacío</h2><p>${preferences.length?'Todos los bloques permitidos están ocultos. Usa Personalizar Resumen para mostrarlos o restablecer la vista.':'Este rol no tiene contenido de Resumen habilitado. Usa Simular rol → Administrador y Configuración → Navegación para configurar los permisos de contenido.'}</p></section>`;
 }
 function overviewAgenda() {
  const appointments=state.appointments.filter(item=>item.date==='2026-05-18');
@@ -761,20 +769,27 @@ $('#payment-form').onsubmit = event => {
  announce('Cobro simulado; no se envió al backend');
  const replacement=$(`[data-pay="${id}"]`); if(replacement) replacement.focus(); else $('#order-search').focus();
 };
-function addPatient(name, documentId) {
- const cleanName=name.trim(), cleanId=documentId.trim();
- if(cleanName.length<2 || cleanName.length>80 || !/^[\p{L}\p{N}-]{3,30}$/u.test(cleanId)) return 'Introduce un nombre ficticio de al menos 2 caracteres y un documento válido.';
- if(state.patients.some(patient=>patient.id.toLocaleLowerCase()===cleanId.toLocaleLowerCase())) return 'Este documento de demo ya existe. Usa otro identificador ficticio.';
- state.patients.push({id:cleanId,name:cleanName,note:'Nuevo registro ficticio'}); return '';
+function validatePatientFields(values,id) {
+ if(values.name.length<2 || values.name.length>80) return 'Introduce un nombre ficticio de entre 2 y 80 caracteres.';
+ if(!/^[\p{L}\p{N}-]{3,30}$/u.test(values.document)) return 'Introduce un documento ficticio válido de 3 a 30 letras, números o guiones.';
+ if(state.patients.some(patient=>patient.id!==id && patient.document.toLocaleLowerCase()===values.document.toLocaleLowerCase())) return 'Este documento de identidad ya existe. Usa otro documento ficticio.';
+ if(values.note.length>120) return 'Las notas admiten hasta 120 caracteres.';
+ return '';
+}
+function addPatient(name,document,note='') {
+ const values={name:name.trim(),document:document.trim(),note:note.trim()};
+ const error=validatePatientFields(values); if(error) return error;
+ // The editable document never owns links. Allocate only after every field is valid.
+ state.patients.push({id:newId('PAT'),...values}); return '';
 }
 function renderPatients() {
  action('Registrar paciente',()=>{ $('#patient-form').reset(); $('#patient-error').textContent=''; openDialog('#patient-dialog'); });
- $('#view').innerHTML=`<section class="card"><div class="filters"><label class="search">Buscar paciente ficticio<input id="patient-search" type="search" placeholder="Nombre o documento de demo"></label></div><div id="patient-results"></div></section>`;
- const filter=()=>{const term=$('#patient-search').value.toLocaleLowerCase(); const matches=state.patients.filter(patient=>`${patient.name} ${patient.id}`.toLocaleLowerCase().includes(term)); $('#patient-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Directorio de pacientes"><table><caption>${matches.length} registros ficticios · no usar datos personales</caption><thead><tr><th scope="col">Nombre ficticio</th><th scope="col">Documento de demo</th><th scope="col">Seguimiento</th><th scope="col">Expediente</th></tr></thead><tbody>${matches.map(patient=>`<tr><td><strong>${escapeText(patient.name)}</strong></td><td>${escapeText(patient.id)}</td><td>${escapeText(patient.note)}</td><td>${masterActions('patients',patient)}<button type="button" data-chart="${escapeText(patient.id)}">Ver expediente</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty">No se encontraron pacientes ficticios.</td></tr>'}</tbody></table></div>`;};
+ $('#view').innerHTML=`<section class="card"><div class="filters"><label class="search">Buscar paciente ficticio<input id="patient-search" type="search" placeholder="Nombre o documento de identidad"></label></div><div id="patient-results"></div></section>`;
+ const filter=()=>{const term=$('#patient-search').value.toLocaleLowerCase(); const matches=state.patients.filter(patient=>`${patient.name} ${patient.document}`.toLocaleLowerCase().includes(term)); $('#patient-results').innerHTML=`<div class="table-wrap" tabindex="0" role="region" aria-label="Directorio de pacientes"><table><caption>${matches.length} registros ficticios · no usar datos personales</caption><thead><tr><th scope="col">Nombre</th><th scope="col">Documento de identidad</th><th scope="col">Notas</th><th scope="col">Acciones</th></tr></thead><tbody>${matches.map(patient=>`<tr><td><strong>${escapeText(patient.name)}</strong></td><td>${escapeText(patient.document)}</td><td>${escapeText(patient.note)}</td><td>${masterActions('patients',patient,`<button type="button" data-chart="${escapeText(patient.id)}">Ver expediente</button>`)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">No se encontraron pacientes ficticios.</td></tr>'}</tbody></table></div>`;};
  $('#patient-search').oninput=filter; filter();
 }
 $('#patient-form').onsubmit=event=>{
- event.preventDefault(); const error=addPatient($('#patient-name').value,$('#patient-document').value);
+ event.preventDefault(); const error=addPatient($('#patient-name').value,$('#patient-document').value,$('#patient-note').value);
  if(error) { $('#patient-error').textContent=error; return; }
  closeDialog($('#patient-dialog')); $('#patient-search').value=''; $('#patient-search').dispatchEvent(new Event('input')); announce('Paciente ficticio creado. Solo en memoria; se pierde al recargar');
 };
@@ -812,7 +827,7 @@ let activeConsultationId=null;
 function activeConsultation() { return state.consultations.find(item=>item.id===activeConsultationId); }
 function renderClinical() {
  const current=activeConsultation();
- $('#view').innerHTML=`<section class="card"><div class="filters"><label>Paciente ficticio<select id="clinical-patient">${state.patients.map(patient=>`<option value="${escapeText(patient.id)}" ${current?.patientId===patient.id?'selected':''}>${escapeText(patient.name)} · ${escapeText(patient.id)}</option>`).join('')}</select></label></div><div id="clinical-results"></div></section>`;
+ $('#view').innerHTML=`<section class="card"><div class="filters"><label>Paciente ficticio<select id="clinical-patient">${state.patients.map(patient=>`<option value="${escapeText(patient.id)}" ${current?.patientId===patient.id?'selected':''}>${escapeText(patient.name)} · ${escapeText(patient.document)}</option>`).join('')}</select></label></div><div id="clinical-results"></div></section>`;
  const update=()=>{
   const id=$('#clinical-patient').value;
   if(activeConsultation()?.patientId!==id) activeConsultationId=null;
@@ -841,8 +856,8 @@ function clinicalContextMarkup(patientId,readOnly=false) {
    <div id="context-${kind}">${context[kind].map(entry=>`
     <div class="summary" style="margin-bottom:12px">
      <p>${escapeText(kind==='allergies'?`${entry.substance} · ${entry.reaction} · ${entry.severity}`:kind==='familyHistory'?`${entry.relation} · ${entry.condition}`:entry.notes)}</p>
-     ${readOnly?'':`<button type="button" data-context-edit="${entry.id}" data-kind="${kind}">Editar</button>
-     <button type="button" data-context-remove="${entry.id}" data-kind="${kind}">Eliminar</button>`}
+     ${readOnly?'':`<span class="action-group"><button type="button" data-context-edit="${entry.id}" data-kind="${kind}">Editar</button>
+     <button type="button" data-context-remove="${entry.id}" data-kind="${kind}">Eliminar</button></span>`}
     </div>`).join('') || '<p class="help">Sin registrar</p>'}</div>
   </section>`).join('')+'</div>';
 }
@@ -869,7 +884,6 @@ $('#habits-form').onsubmit=event=>{
  $('[data-habits-edit]').focus();
  announce('Hábitos guardados. Solo en memoria; sin interpretación clínica.');
 };
-function renderTriage() { catalogKind='triage'; renderCatalogs(); }
 function field(id,label,value='',type='text') {
  return `<label>${label}<input id="${id}" type="${type}" maxlength="120" value="${escapeText(value)}"></label>`;
 }
@@ -902,39 +916,42 @@ $('#context-form').onsubmit=event=>{
 };
 
 // Catalog editing has one validation/commit path; failed or closed forms never allocate IDs.
-const catalogLabels={physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',studyTypes:'Tipos de estudio',procedures:'Procedimientos',diseases:'Enfermedades',allergyCatalog:'Alergias',triage:'Triage',patients:'Pacientes',inventory:'Inventario',roles:'Roles'};
-const catalogRoutes={physicians:'physicians',specialties:'specialties',rooms:'rooms',catalogs:'procedures',diseases:'diseases',allergyCatalog:'allergyCatalog',triage:'triage',laboratory:'studyTypes',imaging:'studyTypes'};
+const catalogLabels={physicians:'Médicos',specialties:'Especialidades',rooms:'Consultorios',studyTypes:'Tipos de estudio',procedures:'Procedimientos',diseases:'Enfermedades',allergyCatalog:'Alergias',medications:'Medicamentos',patients:'Pacientes',inventory:'Inventario',roles:'Roles'};
+const catalogRoutes={physicians:'physicians',specialties:'specialties',rooms:'rooms',catalogs:'procedures',diseases:'diseases',allergyCatalog:'allergyCatalog',medications:'medications',laboratory:'studyTypes',imaging:'studyTypes'};
 function catalogLabel(kind,item) { return kind==='studyTypes' ? ((item?.mode || catalogMode())==='IMAGEN'?'Imagen':'Laboratorio') : catalogLabels[kind]; }
 function catalogMode() {return state.page==='laboratory'?'LABORATORIO':state.page==='imaging'?'IMAGEN':null;}
 let catalogKind='physicians', catalogDraft=null;
 function options(collection,selected) {
  return collection.map(item=>`<option value="${item.id}" ${item.id===selected?'selected':''}>${escapeText(item.name)}</option>`).join('');
 }
+function catalogColumns(kind,item={}) {
+ const columns=[['Nombre',item.name || '']];
+ if(kind==='physicians') columns.push(['Documento',item.document || 'Sin documento'],['Especialidades',(item.specialtyIds || []).map(id=>resourceName('specialties',id)).join(', ')],['Horarios',state.availability.filter(slot=>slot.physicianId===item.id).map(slot=>`${weekdayNames[slot.weekday]} ${slot.start}–${slot.end} · ${resourceName('rooms',slot.roomId)}`).join('; ')]);
+ if(kind==='rooms') columns.push(['Ubicación',item.location || 'Sin ubicación'],['Estado',item.active?'Activo':'Inactivo']);
+ if(kind==='procedures') columns.push(['Precio',money(item.priceCents || 0)]);
+ if(['studyTypes','diseases','allergyCatalog','medications'].includes(kind)) columns.push(['Descripción',item.description || 'Sin descripción']);
+ return columns;
+}
 function catalogDetails(kind,item) {
- if(kind==='physicians') return `${item.specialtyIds.map(id=>resourceName('specialties',id)).join(', ')} · ${item.document || 'Sin documento'} · ${state.availability.filter(slot=>slot.physicianId===item.id).map(slot=>`${weekdayNames[slot.weekday]} ${slot.start}–${slot.end} · ${resourceName('rooms',slot.roomId)}`).join('; ')}`;
- if(kind==='rooms') return `${item.location || 'Sin ubicación'} · ${item.active?'Activo':'Inactivo'}`;
- if(kind==='procedures') return money(item.priceCents);
- if(kind==='studyTypes') return `Modalidad: ${item.mode} · Precio: ${money(item.priceCents)}`;
- if(kind==='diseases' || kind==='allergyCatalog' || kind==='triage') return item.description || 'Sin descripción';
- if(kind==='patients') return `${item.id} · ${item.note}`;
+ if(kind==='patients') return `Documento de identidad: ${item.document} · Notas: ${item.note || 'Sin registrar'}`;
  if(kind==='inventory') return `Código: ${item.code || item.id} · Cantidad: ${item.stock} · Umbral: ${item.min}`;
  if(kind==='roles') return `Menús con Acceder: ${Object.keys(pages).filter(id=>roleAllows(item,id)).map(id=>pages[id][0]).join(', ') || 'Ninguno'}${item.id==='ROLE-1'?' · Administrador activo protegido':''}`;
- return 'Especialidad de demo';
+ return '';
 }
 function renderCatalogs() {
  const mode=catalogMode();
  const records=state[catalogKind].filter(item=>!mode || item.mode===mode);
- const reference=['diseases','allergyCatalog'].includes(catalogKind);
+ const reference=['diseases','allergyCatalog','medications'].includes(catalogKind);
  $('#view').innerHTML=`<section class="card">
-  <div class="card-heading"><h2>${catalogLabel(catalogKind)}${mode?` · ${mode}`:''}</h2><button type="button" id="catalog-add" class="primary">Agregar ${catalogLabel(catalogKind)}</button></div>
+  <div class="card-heading"><h2>${catalogLabel(catalogKind)}</h2><button type="button" id="catalog-add" class="primary">Agregar ${catalogLabel(catalogKind)}</button></div>
   ${reference?'<p class="help">Referencias ficticias de la clínica: no se aplican al paciente ni modifican sus alergias o antecedentes. Sin códigos médicos ni diagnósticos inferidos.</p>':''}
   <div id="catalog-results" style="margin-top:24px">
    <div class="table-wrap" tabindex="0" role="region" aria-label="Registros de catálogo"><table>
     <caption>${records.length} registros ficticios · ${catalogLabel(catalogKind)}</caption>
-    <thead><tr><th scope="col">${catalogKind==='triage'?'Clasificación':'Nombre'}</th><th scope="col">${catalogKind==='triage'?'Descripción':'Configuración'}</th><th scope="col">Acción</th></tr></thead>
-    <tbody>${records.map(item=>`<tr><td>${escapeText(item.name)}</td><td>${escapeText(catalogDetails(catalogKind,item))}</td><td>${masterActions(catalogKind,item)}</td></tr>`).join('') || '<tr><td colspan="3">Sin registrar</td></tr>'}</tbody>
+    <thead><tr>${catalogColumns(catalogKind).map(([label])=>`<th scope="col">${label}</th>`).join('')}<th scope="col">Acciones</th></tr></thead>
+    <tbody>${records.map(item=>`<tr>${catalogColumns(catalogKind,item).map(([,value])=>`<td>${escapeText(value)}</td>`).join('')}<td>${masterActions(catalogKind,item)}</td></tr>`).join('') || `<tr><td colspan="${catalogColumns(catalogKind).length+1}">Sin registrar</td></tr>`}</tbody>
    </table></div>
-  </div><p class="help" style="margin-top:24px">${catalogKind==='triage'?'Catálogo de clasificación y descripción. No evalúa pacientes ni aplica decisiones clínicas.':reference?'Lista de referencia local, no historia clínica.':'Configuración conectada a agenda, consulta y estudios de demo.'} Sin análisis de imágenes ni conexión externa.</p>
+  </div><p class="help" style="margin-top:24px">${catalogKind==='procedures'?'Servicios / Aranceles a cobrar: selecciona servicios en Atención clínica; completar emite una orden para Cobros.':mode?'Solicitudes y resultados gratuitos; no generan líneas de cobro.':reference?'Lista de referencia local, no historia clínica ni prescripción.':'Recursos conectados a la agenda de demo.'} Sin análisis de imágenes ni conexión externa.</p>
  </section>`;
  $('#catalog-add').onclick=()=>openCatalog();
 }
@@ -952,37 +969,31 @@ function openCatalog(id,trigger) {
  catalogDraft={kind,id,mode:catalogMode()};
  $('#catalog-title').textContent=`${id?'Editar':'Crear'} · ${catalogLabel(kind,item)}`;
  $('#catalog-form button[type=submit]').textContent=kind==='studyTypes'?`Guardar ${catalogLabel(kind,item)}`:'Guardar registro';
- let markup=field('cat-name',kind==='triage'?'Clasificación requerida':'Nombre requerido',item.name);
+ let markup=field('cat-name','Nombre requerido',item.name);
  if(kind==='patients') {
-  markup+=`<p class="help">Documento de demo / ID inmutable: ${escapeText(item.id)}. Se conserva para mantener los vínculos del expediente.</p>`+field('cat-note','Notas de seguimiento',item.note);
+  markup+=`<p class="help">ID interno inmutable: ${escapeText(item.id)}. Mantiene los vínculos del expediente; no es el documento de identidad.</p>`+field('cat-document','Documento de identidad requerido',item.document)+field('cat-note','Notas',item.note);
  } else if(kind==='inventory') {
   markup+=field('cat-code','Código requerido',item.code || (id?item.id:''))+field('cat-stock','Cantidad (entero no negativo)',item.stock ?? 0,'number')+field('cat-min','Umbral (entero no negativo)',item.min ?? 0,'number');
  } else if(kind==='roles') {
-  markup+=`<fieldset><legend>Acceder por menú · simulación de interfaz</legend><p class="help">Cada opción controla visibilidad y navegación de demo, no autorización real. Guarda para aplicar.</p>${Object.entries(pages).map(([page,labels])=>`<div class="menu-access-row"><span>${labels[0]}</span><label class="check"><input type="checkbox" name="menu-access" value="${page}" aria-label="Acceder ${labels[0]}" ${roleAllows(item,page)?'checked':''}>Acceder</label></div>`).join('')}</fieldset>
-   <fieldset class="form-section"><legend>Contenido de Resumen</legend><p class="help">Permisos del rol: define qué bloques puede ver, además de Acceder a Resumen. Personalizar Resumen solo oculta u ordena estos bloques; no concede permisos.</p>${Object.entries(overviewLabels).map(([key,label])=>`<label class="check"><input type="checkbox" name="overview-access" value="${key}" ${overviewAllows(item,key)?'checked':''}>Permitir ${label}</label>`).join('')}</fieldset>`;
+  markup+='<p class="help">Edita solo el nombre. Los permisos y las preferencias se conservan. Configuración → Navegación permite configurar los menús y el contenido de Resumen por rol.</p>';
  }
  if(kind==='physicians') {
   markup+=field('cat-document','Documento de demo (opcional, único)',item.document)+
    `<fieldset><legend>Especialidades (al menos una)</legend>${state.specialties.map(specialty=>`<label class="check"><input type="checkbox" name="specialty" value="${specialty.id}" ${item.specialtyIds?.includes(specialty.id)?'checked':''}>${escapeText(specialty.name)}</label>`).join('') || '<p>Crea primero una especialidad.</p>'}</fieldset>`;
   const slots=state.availability.filter(slot=>slot.physicianId===id);
   markup+=`<div class="card-heading"><h3>Disponibilidad</h3><button type="button" id="add-slot">Agregar horario</button></div><div id="availability-slots" class="form-section">${(slots.length?slots:[undefined]).map(slot=>slotMarkup(slot)).join('')}</div>`;
- } else if(kind==='diseases' || kind==='allergyCatalog' || kind==='triage') {
-  markup+=field('cat-description',kind==='triage'?'Descripción requerida':'Descripción (opcional)',item.description);
+ } else if(['diseases','allergyCatalog','medications','studyTypes'].includes(kind)) {
+  markup+=field('cat-description','Descripción (opcional)',item.description);
  } else if(kind==='rooms') {
   markup+=field('cat-location','Ubicación (opcional)',item.location)+`<label class="check"><input id="cat-active" type="checkbox" ${item.active!==false?'checked':''}>Activo</label>`;
  } else if(kind==='procedures') {
   markup+=field('cat-price','Precio del procedimiento (Bs)',((item.priceCents || 0)/100).toFixed(2),'number');
- } else if(kind==='studyTypes') {
-  markup+=`<p class="help">Modalidad: ${catalogMode()} · fija según el menú actual.</p>`+field('cat-price','Precio (Bs, máximo dos decimales)',((item.priceCents || 0)/100).toFixed(2),'number');
  }
  $('#catalog-fields').innerHTML=markup;
- if(kind==='patients') $('#cat-name').maxLength=80;
+ if(kind==='patients') {$('#cat-name').maxLength=80;$('#cat-document').maxLength=30;}
  if(kind==='roles') $('#cat-name').maxLength=40;
  if(kind==='inventory') $('#cat-code').maxLength=30;
  if(kind==='physicians') $('#add-slot').onclick=()=>$('#availability-slots').insertAdjacentHTML('beforeend',slotMarkup());
- if(kind==='studyTypes') {
-  $('#cat-price').step='0.01'; $('#cat-price').min='0';
- }
  $('#catalog-error').textContent='';
  openDialog('#catalog-dialog',trigger);
 }
@@ -996,9 +1007,8 @@ function saveCatalog() {
  const values={name};
  let slots=[];
  if(kind==='patients') {
-  if(name.length<2 || name.length>80) return 'El nombre ficticio debe tener entre 2 y 80 caracteres.';
-  values.note=$('#cat-note').value.trim();
-  if(values.note.length>120) return 'Las notas admiten hasta 120 caracteres.';
+  values.document=$('#cat-document').value.trim(); values.note=$('#cat-note').value.trim();
+  const error=validatePatientFields(values,id); if(error) return error;
  } else if(kind==='inventory') {
   values.code=$('#cat-code').value.trim();
   if(!/^[\p{L}\p{N}-]{1,30}$/u.test(values.code)) return 'Introduce un código de 1 a 30 letras, números o guiones.';
@@ -1011,9 +1021,7 @@ function saveCatalog() {
  } else if(kind==='roles') {
   const error=validateRoleName(name,id); if(error) return error;
   if(id==='ROLE-1' && name!=='Administrador') return 'El administrador activo conserva su nombre.';
-  values.menuAccess=menuAccess($$('input[name=menu-access]:checked',$('#catalog-form')).map(input=>input.value));
-  values.overviewAccess=overviewAccess($$('input[name=overview-access]:checked',$('#catalog-form')).map(input=>input.value));
-  if(id==='ROLE-1' && values.menuAccess.settings!==true) return 'El último Administrador debe conservar Acceder a Configuración.';
+  // Identity-only edits must never read absent permission controls or replace grants.
  }
  if(kind==='physicians') {
   values.document=$('#cat-document').value.trim();
@@ -1027,22 +1035,20 @@ function saveCatalog() {
    if(!state.rooms.some(room=>room.id===slot.roomId)) return 'Selecciona un consultorio de disponibilidad.';
   }
   if(slots.some((slot,index)=>slots.slice(index+1).some(other=>slot.weekday===other.weekday && slot.start<other.end && other.start<slot.end))) return 'No se permiten horarios superpuestos para el mismo médico.';
- } else if(kind==='diseases' || kind==='allergyCatalog' || kind==='triage') {
+ } else if(['diseases','allergyCatalog','medications','studyTypes'].includes(kind)) {
   values.description=$('#cat-description').value.trim();
-  if(kind==='triage' && !values.description) return 'Introduce una descripción requerida.';
   if(values.description.length>120) return 'La descripción admite hasta 120 caracteres.';
  } else if(kind==='rooms') {
   values.location=$('#cat-location').value.trim(); values.active=$('#cat-active').checked;
  } else if(kind==='procedures') {
   values.priceCents=parseCents($('#cat-price').value,true);
   if(values.priceCents===null) return 'Introduce un precio positivo o cero, sin fracciones de centavos.';
- } else if(kind==='studyTypes') {
+ }
+ if(kind==='studyTypes') {
   values.mode=catalogDraft.mode;
   if(!['LABORATORIO','IMAGEN'].includes(values.mode)) return 'Selecciona el menú Laboratorio o Imagen.';
   const existing=state.studyTypes.find(item=>item.id===id);
   if(existing && existing.mode!==values.mode) return 'El Laboratorio o Imagen pertenece a otro menú.';
-  values.priceCents=parseCents($('#cat-price').value,true);
-  if(values.priceCents===null) return 'Introduce un precio positivo o cero, sin fracciones de centavos.';
  }
  const existing=state[kind].find(item=>item.id===id);
  const saved=existing || {id:newId('CAT')};
@@ -1062,9 +1068,9 @@ $('#catalog-form').onsubmit=event=>{
  announce('Catálogo de demo guardado. Solo en memoria.');
 };
 // Master-data controls never apply to clinical or financial transactions.
-function masterActions(kind,item) {
+function masterActions(kind,item,extra='') {
  const attrs=`data-master-kind="${kind}"`, entity=kind==='studyTypes'?` ${catalogLabel(kind,item)}`:'';
- return `<button type="button" ${attrs} data-master-view="${escapeText(item.id)}">Ver${entity}</button><button type="button" ${attrs} data-catalog-edit="${escapeText(item.id)}">Editar${entity}</button><button type="button" ${attrs} data-master-delete="${escapeText(item.id)}">Eliminar${entity}</button>`;
+ return `<span class="action-group"><button type="button" ${attrs} data-master-view="${escapeText(item.id)}">Ver${entity}</button><button type="button" ${attrs} data-catalog-edit="${escapeText(item.id)}">Editar${entity}</button><button type="button" ${attrs} data-master-delete="${escapeText(item.id)}">Eliminar${entity}</button>${extra}</span>`;
 }
 function openMasterEditor(kind,id,trigger) { catalogKind=kind; openCatalog(id,trigger); }
 function refreshMaster(kind) {
@@ -1080,7 +1086,7 @@ function openMasterDetail(kind,id,trigger) {
  const item=state[kind].find(entry=>entry.id===id); if(!item) return;
  $('#master-detail-title').textContent=`Detalle · ${catalogLabel(kind,item)}`;
  $('#master-detail-dialog [data-close]').textContent=kind==='studyTypes'?`Cerrar detalle ${catalogLabel(kind,item)}`:'Cerrar detalle';
- $('#master-detail-content').innerHTML=`<p><strong>${kind==='triage'?'Clasificación':'Nombre'}: ${escapeText(item.name)}</strong></p><p>ID: ${escapeText(item.id)}</p><p>${kind==='triage'?'Descripción: ':''}${escapeText(catalogDetails(kind,item))}</p>${kind==='roles'?`<ul>${Object.entries(pages).map(([page,labels])=>`<li data-menu-access="${page}">${labels[0]} · Acceder: ${roleAllows(item,page)?'Sí':'No'}</li>`).join('')}</ul><h3>Contenido de Resumen · permisos del rol</h3><ul>${Object.entries(overviewLabels).map(([key,label])=>`<li data-overview-access="${key}" data-granted="${overviewAllows(item,key)}">${label}: ${overviewAllows(item,key)?'Sí':'No'}</li>`).join('')}</ul>`:''}`;
+ $('#master-detail-content').innerHTML=`${catalogColumns(kind,item).map(([label,value])=>`<p>${label}: ${escapeText(value)}</p>`).join('')}<p>ID interno: ${escapeText(item.id)}</p>${catalogDetails(kind,item)?`<p>${escapeText(catalogDetails(kind,item))}</p>`:''}${kind==='roles'?`<ul>${Object.entries(pages).map(([page,labels])=>`<li data-menu-access="${page}">${labels[0]} · Acceder: ${roleAllows(item,page)?'Sí':'No'}</li>`).join('')}</ul><h3>Contenido de Resumen · permisos del rol</h3><ul>${Object.entries(overviewLabels).map(([key,label])=>`<li data-overview-access="${key}" data-granted="${overviewAllows(item,key)}">${label}: ${overviewAllows(item,key)?'Sí':'No'}</li>`).join('')}</ul>`:''}`;
  openDialog('#master-detail-dialog',trigger);
 }
 function deletionBlock(kind,id) {
@@ -1092,6 +1098,8 @@ function deletionBlock(kind,id) {
   if(state.appointments.some(item=>item.patient===id) || state.consultations.some(item=>item.patientId===id) || state.orders.some(item=>item.patient===id) || state.studies.some(item=>item.patientId===id) || context.habits || Object.keys(contextLabels).some(key=>context[key].length)) return 'Paciente con citas, historia clínica, órdenes o contexto registrado.';
  }
  if(kind==='studyTypes' && state.studies.some(item=>item.typeId===id)) return 'Laboratorio o Imagen utilizado por solicitudes.';
+ if(kind==='medications' && state.consultations.some(item=>item.prescriptions?.some(entry=>entry.medicationId===id))) return 'Medicamento utilizado por prescripciones registradas.';
+ if(kind==='diseases' && state.consultations.some(item=>item.diagnoses?.some(entry=>entry.diseaseId===id))) return 'Enfermedad utilizada por diagnósticos registrados.';
  if(kind==='procedures' && (state.consultations.some(item=>item.procedureIds.includes(id)) || state.orders.some(item=>item.lines.some(line=>line.kind==='PROCEDIMIENTO' && line.sourceId===id)))) return 'Arancel utilizado por consultas o líneas emitidas.';
  if(kind==='roles' && id==='ROLE-1') return 'No se puede eliminar el rol Administrador activo de la demo.';
  if(kind==='roles' && id===state.activeRoleId) return 'No se puede eliminar el perfil actualmente simulado. Cambia Simular rol primero.';
@@ -1183,14 +1191,9 @@ function startConsultation(appointmentId) {
 }
 function consultationLines(consultation) {
  const procedures=consultation.procedureIds.map(id=>state.procedures.find(item=>item.id===id)).filter(Boolean);
- const studies=state.studies.filter(item=>item.consultationId===consultation.id && item.status!=='CANCELADO');
- return [
-  ...procedures.map(item=>({kind:'PROCEDIMIENTO',sourceId:item.id,name:item.name,amountCents:item.priceCents})),
-  ...studies.map(study=>{
-   const type=state.studyTypes.find(item=>item.id===study.typeId);
-   return {kind:study.mode,sourceId:study.id,name:type.name,amountCents:type.priceCents};
-  })
- ];
+ // Only explicitly selected clinic services charge. Studies retain clinical
+ // requests/results but never create lines, even zero-price ones.
+ return procedures.map(item=>({kind:'PROCEDIMIENTO',sourceId:item.id,name:item.name,amountCents:item.priceCents}));
 }
 function renderConsultation() {
  const consultation=activeConsultation();
@@ -1201,12 +1204,12 @@ function renderConsultation() {
   <h2>${consultation.id} · ${escapeText(patientName(consultation.patientId))}</h2>
   <p>${appointment.date} · ${appointment.time} · ${escapeText(resourceName('physicians',appointment.physicianId))} · ${escapeText(resourceName('rooms',appointment.roomId))}</p>
   <p>Estado: <strong id="consultation-status">${consultation.status}</strong></p>
-  <p class="help">Documentación humana ficticia. Completar exige los cuatro campos y al menos una línea facturable con total positivo. Los estudios pendientes no bloquean el cierre.</p>
+  <p class="help">Documentación humana ficticia. Completar exige los cuatro campos y servicios seleccionados con total positivo. Laboratorio e Imagen son gratuitos; sus solicitudes y resultados no generan cobros ni bloquean el cierre.</p>
   ${closed?`<div class="form-section" style="margin-top:20px">${Object.entries(documentationFields).map(([key,label])=>`<div><h3>${label}</h3><p>${escapeText(consultation[key]) || 'Sin registrar'}</p></div>`).join('')}</div>
    <button type="button" id="consultation-order" data-order-id="${consultation.orderId}">Ver cobro · ${consultation.orderId}</button>`:
    `<form id="consultation-form" class="form-section" style="margin-top:20px" novalidate>
     ${Object.entries(documentationFields).map(([key,label])=>`<label>${label}<textarea id="consultation-${key}" maxlength="2000">${escapeText(consultation[key])}</textarea></label>`).join('')}
-    <fieldset><legend>Procedimientos / tarifas de demo</legend>${state.procedures.map(procedure=>`<label class="check"><input type="checkbox" name="procedure" value="${procedure.id}" ${consultation.procedureIds.includes(procedure.id)?'checked':''}>${escapeText(procedure.name)} · ${money(procedure.priceCents)}</label>`).join('')}</fieldset>
+    <fieldset><legend>Servicios / Aranceles a cobrar</legend>${state.procedures.map(procedure=>`<label class="check"><input type="checkbox" name="procedure" value="${procedure.id}" ${consultation.procedureIds.includes(procedure.id)?'checked':''}>${escapeText(procedure.name)} · ${money(procedure.priceCents)}</label>`).join('')}</fieldset>
     <p id="consultation-error" class="error" role="alert"></p>
     <div class="workflow-actions"><button type="submit" id="save-consultation">Guardar progreso</button><button type="button" class="primary" id="complete-consultation">Completar consulta demo</button></div>
    </form>`}
@@ -1235,7 +1238,7 @@ function saveConsultation(complete) {
  }
  const lines=consultationLines(candidate), totalCents=lines.reduce((sum,line)=>sum+line.amountCents,0);
  if(complete && (!lines.length || !Number.isSafeInteger(totalCents) || totalCents<=0)) {
-  $('#consultation-error').textContent='Selecciona al menos un procedimiento o estudio facturable con total positivo.';return;
+  $('#consultation-error').textContent='Selecciona al menos un servicio facturable con total positivo.';return;
  }
  Object.assign(consultation,values);
  if(complete) {
@@ -1323,7 +1326,7 @@ function openReceipt(id,trigger) {
 let qrOrderId=null, qrIntentId=null;
 function openQr(id,trigger) {
  const order=state.orders.find(item=>item.id===id);
- if(!order) return;
+ if(!order || balance(order)<=0) return;
  qrOrderId=id;
  qrIntentId=state.qrIntents.filter(item=>item.orderId===id).at(-1)?.id || null;
  $('#qr-amount').value=(balance(order)/100).toFixed(2);
@@ -1398,14 +1401,30 @@ function addRole(name) {
  const error=validateRoleName(name); if(error) return error;
  state.roles.push({id:newId('ROLE'),name:name.trim(),menuAccess:menuAccess(),overviewAccess:overviewAccess()}); return '';
 }
+function renderNavigationPermissions() {
+ const role=state.roles.find(item=>item.id===$('#navigation-role').value);
+ $('#navigation-permissions').innerHTML=`<fieldset><legend>Acceder por menú · simulación de interfaz</legend><p class="help">Permisos del rol seleccionado. Cada opción controla visibilidad y navegación de demo, no autorización real. Guarda para aplicar.</p>${Object.entries(pages).map(([page,labels])=>`<div class="menu-access-row"><span>${labels[0]}</span><label class="check"><input type="checkbox" name="menu-access" value="${page}" aria-label="Acceder ${labels[0]}" ${roleAllows(role,page)?'checked':''}>Acceder</label></div>`).join('')}</fieldset>
+  <fieldset class="form-section"><legend>Contenido de Resumen</legend><p class="help">Requiere también Acceder a Resumen. Personalizar Resumen solo oculta u ordena bloques permitidos; no concede permisos.</p>${Object.entries(overviewLabels).map(([key,label])=>`<label class="check"><input type="checkbox" name="overview-access" value="${key}" ${overviewAllows(role,key)?'checked':''}>Permitir ${label}</label>`).join('')}</fieldset>`;
+}
+function navigationPermissionCandidate() {
+ const role=state.roles.find(item=>item.id===$('#navigation-role').value);
+ if(!role) return {error:'Selecciona un rol válido para configurar.'};
+ const root=$('#navigation-permissions');
+ const menus=menuAccess($$('input[name=menu-access]:checked',root).map(input=>input.value));
+ const content=overviewAccess($$('input[name=overview-access]:checked',root).map(input=>input.value));
+ if(role.id==='ROLE-1' && menus.settings!==true) return {error:'El último Administrador debe conservar Acceder a Configuración.'};
+ return {role,menuAccess:menus,overviewAccess:content};
+}
 function renderSettings() {
  $('#view').innerHTML=`<section class="card"><div class="tabs" role="tablist" aria-label="Secciones de configuración">${[['clinic','Clínica'],['appearance','Apariencia'],['navigation','Navegación'],['roles','Roles']].map(([id,label],index)=>`<button type="button" role="tab" id="tab-${id}" aria-controls="panel-${id}" aria-selected="${index===0}" tabindex="${index===0?'0':'-1'}" data-tab="${id}">${label}</button>`).join('')}</div>
  <form id="settings-form" novalidate>
  <section id="panel-clinic" role="tabpanel" aria-labelledby="tab-clinic"><div class="form-grid"><label>Nombre de la clínica<input id="setting-clinic" maxlength="80" required value="${escapeText(state.clinic)}"></label><label>Contacto ficticio<input id="setting-contact" maxlength="100" value="${escapeText(state.contact)}"></label></div><p class="help" style="margin-top:16px">Identidad sintética: no introduzcas datos de una clínica real.</p></section>
  <section id="panel-appearance" role="tabpanel" aria-labelledby="tab-appearance" hidden><div class="form-grid"><label>Color de acción<select id="setting-brand"><option value="#0369a1" ${state.brand==='#0369a1'?'selected':''}>Azul clínico · #0369a1</option><option value="#0f766e" ${state.brand==='#0f766e'?'selected':''}>Verde azulado · #0f766e</option></select></label><label>Densidad<select id="setting-density"><option value="comfortable" ${state.density==='comfortable'?'selected':''}>Cómoda</option><option value="compact" ${state.density==='compact'?'selected':''}>Compacta</option></select></label></div><p class="help" style="margin-top:16px">Tema claro. Solo colores de acción validados del sistema.</p></section>
- <section id="panel-navigation" role="tabpanel" aria-labelledby="tab-navigation" hidden><p class="help">Muestra, oculta y ordena las secciones de demo. La visibilidad requiere también Acceder del rol simulado. La preferencia de Configuración se conserva, pero sin Acceder no se muestra.</p><div id="nav-settings">${state.menu.map(navSetting).join('')}</div></section>
- <section id="panel-roles" role="tabpanel" aria-labelledby="tab-roles" hidden><p class="help" style="margin-bottom:16px">Acceder controla los menús de cada perfil de demostración. Edita un rol y guarda su matriz; usa Simular rol para inspeccionarlo. No es autenticación ni autorización de backend. Los ejemplos iniciales son configurables, no una política de producto. Pacientes son registros de negocio, no roles.</p><div class="form-section" id="role-list">${state.roles.map(roleMarkup).join('')}</div><div class="card-heading"><label>Nuevo rol local<input id="new-role" maxlength="40" placeholder="Ej. Coordinación"></label><button type="button" id="add-role">Agregar rol local</button></div><p id="role-error" class="error" role="alert"></p></section>
+ <section id="panel-navigation" role="tabpanel" aria-labelledby="tab-navigation" hidden><h2>Permisos por rol</h2><label>Rol a configurar<select id="navigation-role" aria-describedby="navigation-role-help">${options(state.roles,state.activeRoleId)}</select></label><p id="navigation-role-help" class="help">Independiente de Simular rol: no cambia el perfil activo. Cambiar el rol a configurar descarta sus permisos sin guardar; no se aplican a ningún rol.</p><div id="navigation-permissions"></div><h2>Preferencias globales del menú</h2><p class="help">Mostrar, ocultar y ordenar para toda la demo. Estos ajustes solo reducen los menús permitidos: mostrar no concede Acceder. La preferencia de Configuración se conserva, pero sin Acceder no se muestra.</p><div id="nav-settings">${state.menu.map(navSetting).join('')}</div></section>
+ <section id="panel-roles" role="tabpanel" aria-labelledby="tab-roles" hidden><p class="help" style="margin-bottom:16px">Crea, consulta, renombra o elimina roles. Configura sus permisos en Navegación; usa Simular rol para inspeccionarlos. No es autenticación ni autorización de backend. Los ejemplos iniciales son configurables, no una política de producto. Pacientes son registros de negocio, no roles.</p><div class="form-section" id="role-list">${state.roles.map(roleMarkup).join('')}</div><div class="card-heading"><label>Nuevo rol local<input id="new-role" maxlength="40" placeholder="Ej. Coordinación"></label><button type="button" id="add-role">Agregar rol local</button></div><p id="role-error" class="error" role="alert"></p></section>
  <p id="settings-error" class="error" role="alert"></p><div class="settings-save"><button class="primary" type="submit">Guardar cambios de demo</button><p class="help">Solo en memoria; se pierde al recargar</p></div></form></section>`;
+ renderNavigationPermissions();
+ $('#navigation-role').onchange=()=>{renderNavigationPermissions();$('#settings-error').textContent='';};
  const selectTab=id=>{ $$('[role=tab]').forEach(tab=>{const active=tab.dataset.tab===id; tab.setAttribute('aria-selected',String(active)); tab.tabIndex=active?0:-1;}); $$('[role=tabpanel]').forEach(panel=>panel.hidden=panel.id!==`panel-${id}`); };
  $$('[role=tab]').forEach(tab=>{
   tab.onclick=()=>selectTab(tab.dataset.tab);
@@ -1415,17 +1434,22 @@ function renderSettings() {
  $('#nav-settings').onclick=event=>{const button=event.target.closest('[data-move]'); if(!button) return; const row=button.closest('.nav-setting'); const previous=row.previousElementSibling,next=row.nextElementSibling; if(button.dataset.move==='up'&&previous) row.parentNode.insertBefore(row,previous); else if(button.dataset.move==='down'&&next) row.parentNode.insertBefore(next,row); updateMoveButtons(); if(button.disabled) $('[data-move]:not(:disabled)',row)?.focus(); else button.focus();}; updateMoveButtons();
  $('#add-role').onclick=()=>{const error=addRole($('#new-role').value); $('#role-error').textContent=error; if(error) return; $('#role-list').insertAdjacentHTML('beforeend',roleMarkup(state.roles.at(-1))); $('#new-role').value=''; renderProfile(); announce('Rol local añadido. Simulación visual; sin autorización real.');};
  $('#settings-form').onsubmit=event=>{
-  event.preventDefault(); const name=$('#setting-clinic').value.trim();
+  event.preventDefault();
+  // Build and validate the entire candidate before ANY shared-state mutation.
+  const permissions=navigationPermissionCandidate();
+  if(permissions.error) {$('#settings-error').textContent=permissions.error;selectTab('navigation');return;}
+  const name=$('#setting-clinic').value.trim();
   if(name.length<2) { $('#settings-error').textContent='Introduce un nombre de clínica de al menos 2 caracteres.'; selectTab('clinic'); $('#setting-clinic').focus(); return; }
   const brand=$('#setting-brand').value, density=$('#setting-density').value;
   if(!['#0369a1','#0f766e'].includes(brand)||!['comfortable','compact'].includes(density)) return;
+  Object.assign(permissions.role,{menuAccess:permissions.menuAccess,overviewAccess:permissions.overviewAccess});
   state.clinic=name; state.contact=$('#setting-contact').value.trim(); state.brand=brand; state.density=density;
   state.menu=$$('.nav-setting').map(row=>({id:row.dataset.navId,visible:row.dataset.navId==='settings'||$('input',row).checked}));
   document.documentElement.style.setProperty('--action',state.brand);
   document.documentElement.style.setProperty('--cell-y',density==='compact'?'8px':'12px');
   document.documentElement.style.setProperty('--card-pad',density==='compact'?'16px':'24px');
   document.body.dataset.density=density;
-  $('#clinic-name').textContent=state.clinic; $('#settings-error').textContent=''; reconcileAccess();
+  $('#clinic-name').textContent=state.clinic; $('#settings-error').textContent=''; refreshMaster('roles');
   announce('Cambios de demo guardados. Solo en memoria; se pierde al recargar');
  };
 }
