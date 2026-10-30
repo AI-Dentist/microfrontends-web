@@ -153,8 +153,8 @@ dialog form { display:grid; gap:20px; }
 .login-form { padding:48px; display:grid; align-content:center; gap:24px; }
 .login-form .badge { justify-self:start; }
 .login-form h1 { margin-bottom:12px; }
-.login-entry { display:flex; align-items:center; gap:16px; }
-.login-entry strong { display:block; font-size:14px; }
+.login-entry { display:grid; gap:12px; min-width:0; }
+#login-enter { width:100%; min-height:48px; white-space:normal; }
 .login-note { padding:16px; border:1px solid #0284c7; border-radius:10px; color:#075985; background:#e0f2fe; font-size:13px; }
 @media(max-width:760px) {
  .login-screen { padding:16px; }
@@ -208,7 +208,7 @@ body.nav-collapsed .sidebar { display:none; }
    <div><h1 id="login-title" tabindex="-1">Bienvenido a Andina</h1><p class="muted">Explora el espacio de trabajo de Clínica Dental Andina.</p></div>
    <p class="login-note">Inicio de sesión simulado · No ingreses credenciales reales</p>
    <div><strong>Administrador de demostración</strong><p class="help">Acceso sin usuario ni contraseña. No es autenticación ni autorización real.</p></div>
-   <div class="login-entry"><button type="submit" class="primary" id="login-enter">Entrar a la demo</button><div><strong>Entrar a la demo</strong><p class="help">Comenzar con registros ficticios</p></div></div>
+   <div class="login-entry"><button type="submit" class="primary" id="login-enter">Entrar a la demo</button><p class="help">Comenzar con registros ficticios</p></div>
    <p class="help">Nada se guarda. Cerrar sesión o recargar descarta todos los cambios y vuelve a esta pantalla.</p>
   </form>
  </div>
@@ -1668,6 +1668,7 @@ function actionIcon(button,label) {
 iconPaths.menu='M4 6h16M4 12h16M4 18h16';
 // Explicit presentation exceptions; all other actions retain semantic icons/tooltips.
 function actionPresentation(button,label) {
+ if(button.id==='login-enter') return {label:'Entrar a la demo',text:'Entrar a la demo'};
  const moduleAdds={patients:'Paciente',agenda:'cita',inventory:'insumo',expenses:'egreso'};
  let addLabel=null;
  if(button.id==='catalog-add') addLabel=`Agregar ${catalogLabel(catalogKind)}`;

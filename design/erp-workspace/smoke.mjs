@@ -67,8 +67,8 @@ try {
   async function enterDemo(target) {
     await target.getByRole('button',{name:'Entrar a la demo',exact:true}).click();
   }
-  async function openPage(viewport,{signedIn=true}={}) {
-    const context = await browser.newContext({ viewport, reducedMotion:'reduce' });
+  async function openPage(viewport,{signedIn=true,hasTouch=false}={}) {
+    const context = await browser.newContext({ viewport, reducedMotion:'reduce', hasTouch });
     contexts.push(context);
     await context.exposeBinding('recordDemoOperation', (_source, label) => operations.push(label));
     await context.route('**/*', async route => {
@@ -106,6 +106,43 @@ try {
   await enterDemo(delivery);
   check(await delivery.locator('#workspace').isVisible() && await delivery.locator('#workspace').getAttribute('inert') === null && await delivery.locator('#page-title').innerText() === 'Resumen', 'S21 actual HTTP demo-entry click opens interactive Resumen');
   console.log('S21 focused HTTP login and server-boundary regression: PASS');
+  // S40: activate the literal visible caption, not the old aria-named arrow.
+  // Parent owns browser RED/GREEN; all interaction here uses public native input.
+  for(const mode of ['desktop mouse','mobile tap','keyboard Enter','keyboard Space']) {
+    const mobile=mode==='mobile tap';
+    const login=await openPage(mobile?{width:390,height:844}:{width:1440,height:1000},{signedIn:false,hasTouch:mobile});
+    const caption=()=>login.locator('#login-form').getByText('Entrar a la demo',{exact:true});
+    const initial=async()=>check(await login.locator('#login-screen').isVisible() && await login.locator('#workspace[hidden][inert]').count()===1 && !await login.locator('#workspace').isVisible(),`S40 ${mode}: login starts with hidden inert workspace`);
+    const activate=async()=>{
+      check(await caption().count()===1 && await caption().isVisible(),`S40 ${mode}: exactly one visible literal entry caption`);
+      check(await caption().evaluate(node=>{
+        const r=node.getBoundingClientRect(), parent=node.parentElement.getBoundingClientRect();
+        return r.width>=44 && r.height>=44 && Math.abs(r.width-parent.width)<2 && node.scrollWidth<=node.clientWidth && node.scrollHeight<=node.clientHeight && !node.classList.contains('icon-action') && !node.querySelector('svg');
+      }) && await login.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`S40 ${mode}: full-width readable text target, no icon square/clipping/page overflow`);
+      if(mobile) await caption().tap();
+      else if(mode.startsWith('keyboard')) { await caption().focus(); await login.keyboard.press(mode==='keyboard Enter'?'Enter':'Space'); }
+      else await caption().click();
+      check(await login.locator('#workspace').isVisible() && await login.locator('#workspace').getAttribute('hidden')===null && await login.locator('#workspace').getAttribute('inert')===null && !await login.locator('#login-screen').isVisible() && await login.locator('#page-title').innerText()==='Resumen',`S40 ${mode}: actual caption activation opens interactive Resumen`);
+      check(await caption().evaluate(node=>{
+        const button=node.closest('button');
+        return !!button && button.textContent.trim()==='Entrar a la demo' && !button.disabled;
+      }) && await login.getByRole('button',{name:'Entrar a la demo',exact:true,includeHidden:true}).count()===1,`S40 ${mode}: literal caption belongs to one genuine button, not an inert duplicate or aria-only arrow`);
+      if(mobile) await login.locator('#menu-toggle').click();
+      for(const name of ['Resumen','Pacientes','Agenda','Cobros','Pagos','Atención clínica','Configuración']) {
+        check(await login.getByRole('navigation').getByRole('button',{name,exact:true}).isVisible(),`S40 ${mode}: meaningful ${name} menu available`);
+      }
+      if(mobile) await login.keyboard.press('Escape');
+      check(errors.length===0 && network.length===0 && operations.length===0 && (await login.evaluate(()=>window.demoViolations)).length===0,`S40 ${mode}: no page errors, external/API traffic or storage operations`);
+    };
+    await initial(); await activate();
+    await login.getByRole('combobox',{name:'Simular rol',exact:true}).selectOption('ROLE-2');
+    await login.getByRole('button',{name:'Cerrar sesión',exact:true}).click();
+    await login.locator('#login-screen').waitFor(); await initial();
+    check(await login.locator('dialog[open]').count()===0 && await login.locator('#view').innerHTML()==='',`S40 ${mode}: logout clears workspace/dialogs`);
+    await activate();
+    check(await login.getByRole('combobox',{name:'Simular rol',exact:true}).inputValue()==='ROLE-1' && (await login.locator('[data-kpi]').allTextContents()).join('|')==='Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00',`S40 ${mode}: re-entry resets profile and financial fixtures`);
+  }
+  console.log(`S40 visible-caption mouse/touch/Enter/Space HTTP contract: PASS (${checks} checks so far)`);
   // T7 aggregate RED: only public, already-rendered UI; report every gap together
   // before longer connected business journeys exercise individual rules.
   const t7Early=await openPage({width:1440,height:1000});
@@ -578,7 +615,7 @@ try {
   if(navGeometry.length!==17 || new Set(navGeometry).size!==17) presentationFailures.push('17 distinct semantic navigation geometries');
   async function iconButtons(target) {
     const invalid=await target.locator('button:visible').evaluateAll(nodes=>nodes.filter(button=>{
-      const textException=button.closest('dialog,.settings-save') || button.hasAttribute('data-tab') || button.matches('#catalog-add,#add-role,#add-slot,#request-study,#add-diagnosis,#add-prescription,#save-consultation,#complete-consultation,[data-context-add]') || (button.closest('#page-actions') && button.textContent==='Agregar +');
+      const textException=button.closest('dialog,.settings-save') || button.hasAttribute('data-tab') || button.matches('#login-enter,#catalog-add,#add-role,#add-slot,#request-study,#add-diagnosis,#add-prescription,#save-consultation,#complete-consultation,[data-context-add]') || (button.closest('#page-actions') && button.textContent==='Agregar +');
       if(textException) return !button.textContent.trim() || button.querySelector('svg') || button.classList.contains('icon-action') || !button.getAttribute('aria-label');
       return !button.querySelector('svg path') || (!button.closest('#navigation') && (button.textContent.trim() || !button.getAttribute('aria-label')));
     }).map(button=>button.id || button.outerHTML));
