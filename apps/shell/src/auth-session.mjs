@@ -9,7 +9,7 @@ const base64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-
 
 /** One tab, one principal. Only the short-lived PKCE transaction is persisted. */
 export function createAuthSession({ oidc: input, pageUrl = globalThis.location?.href,
-  storage = globalThis.sessionStorage, history = globalThis.history,
+  storage, history = globalThis.history,
   crypto = globalThis.crypto, fetch = globalThis.fetch,
   now = Date.now, navigate = href => globalThis.location.assign(href),
   setTimer = setTimeout, clearTimer = clearTimeout, timeoutMs = 10000 } = {}) {
@@ -20,7 +20,9 @@ export function createAuthSession({ oidc: input, pageUrl = globalThis.location?.
   const listeners = new Set(), controllers = new Set();
   const state = () => Object.freeze({ status: current ? 'authenticated' : oidc ? 'unauthenticated' : 'unconfigured', subject: current?.subject ?? null, roles: Object.freeze([...(current?.roles ?? [])]) });
   const notify = () => { const next = state(); for (const listener of listeners) listener(next); };
-  const removeTransaction = () => { if (oidc) storage.removeItem(transactionKey); };
+  // Acquire browser storage only inside protected transaction operations.
+  const transactionStorage = () => storage === undefined ? globalThis.sessionStorage : storage;
+  const removeTransaction = () => { if (oidc) transactionStorage().removeItem(transactionKey); };
   function clear() {
     generation++;
     current = null; nonce = undefined; pendingRefresh = undefined;
@@ -90,7 +92,7 @@ export function createAuthSession({ oidc: input, pageUrl = globalThis.location?.
       const endpoints = await bounded(signal => discover(signal)); guard(expected);
       const tx = { state: random(), nonce: random(), verifier: random(), expiresAt: now() + transactionLifetime, returnPath: target };
       const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(tx.verifier))));
-      guard(expected); storage.setItem(transactionKey, JSON.stringify(tx));
+      guard(expected); transactionStorage().setItem(transactionKey, JSON.stringify(tx));
       const href = new URL(endpoints.authorization_endpoint);
       for (const [key, value] of Object.entries({ client_id: oidc.clientId, redirect_uri: oidc.redirectUri, response_type: 'code', scope: oidc.scopes.join(' '), state: tx.state, nonce: tx.nonce, code_challenge: challenge, code_challenge_method: 'S256' })) href.searchParams.set(key, value);
       navigate(href.href);
@@ -104,7 +106,7 @@ export function createAuthSession({ oidc: input, pageUrl = globalThis.location?.
     // Always remove credentials, even malformed/foreign callback parameters.
     history.replaceState(null, '', new URL(oidc.redirectUri).pathname);
     let raw;
-    try { raw = storage.getItem(transactionKey); } finally { removeTransaction(); }
+    try { raw = transactionStorage().getItem(transactionKey); } finally { removeTransaction(); }
     try {
       const tx = JSON.parse(raw);
       const url = new URL(href), configured = new URL(oidc.redirectUri);

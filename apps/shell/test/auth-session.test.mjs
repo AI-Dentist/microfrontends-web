@@ -54,6 +54,51 @@ function closed(f) {
   assert.equal(f.session.snapshot().subject, null);
   assert.equal(f.stored.size, 0);
 }
+for (const configured of [false, true]) test(`denied global storage getter allows ${configured ? 'configured' : 'unconfigured'} startup`, async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+  const requests = [], navigations = [], history = [];
+  let reads = 0;
+  try {
+    Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, get() {
+      reads++;
+      throw new DOMException('Storage denied', 'SecurityError');
+    } });
+    const session = createAuthSession({ oidc: configured ? oidc : undefined,
+      pageUrl: 'https://shell.example/', crypto,
+      fetch: async href => {
+        requests.push(href);
+        assert.equal(href, oidc.issuer + '/.well-known/openid-configuration');
+        return { ok: true, json: async () => metadata };
+      },
+      navigate: href => navigations.push(href),
+      history: { replaceState: (_, __, href) => history.push(href) },
+    });
+    const expected = { status: configured ? 'unauthenticated' : 'unconfigured', subject: null, roles: [] };
+    assert.deepEqual(session.snapshot(), expected);
+    assert.equal(session.getAccessToken(), null);
+    assert.deepEqual(requests, []);
+    assert.deepEqual(navigations, []);
+    assert.equal(reads, 0, 'startup does not need storage');
+    await assert.rejects(session.login('/erp'), { message: 'Authentication failed. Please sign in again.' });
+    assert.deepEqual(session.snapshot(), expected);
+    assert.equal(session.getAccessToken(), null);
+    assert.deepEqual(requests, configured ? [oidc.issuer + '/.well-known/openid-configuration'] : []);
+    assert.deepEqual(navigations, []);
+    if (configured) {
+      assert.ok(reads > 0, 'PKCE persistence encounters the denied getter');
+      await assert.rejects(session.callback(oidc.redirectUri + '?code=synthetic&state=missing'));
+      assert.deepEqual(history, ['/auth/callback']);
+      assert.deepEqual(session.snapshot(), expected);
+      assert.equal(session.getAccessToken(), null);
+      assert.equal(requests.length, 1, 'no token exchange without persisted PKCE');
+      assert.deepEqual(navigations, []);
+    } else assert.equal(reads, 0);
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'sessionStorage', descriptor);
+    else delete globalThis.sessionStorage;
+    assert.deepEqual(Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage'), descriptor);
+  }
+});
 test('missing OIDC is unconfigured and never reads legacy storage or fetches', async () => {
   const f = fixture({ unconfigured: true });
   f.storage.getItem = () => { throw Error('No legacy reads'); };
