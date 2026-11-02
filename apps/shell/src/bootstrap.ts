@@ -5,7 +5,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { loadRemoteModule } from '@angular-architects/native-federation';
 import type { PlatformConfigV1 } from '../../../packages/mfe-contract/index.js';
 import { bounded } from './remote-runtime.mjs';
-import { NavigationStatus, PLATFORM_CONFIG } from './platform';
+import { AUTH_SESSION, initializeAuthentication, NavigationStatus, PLATFORM_CONFIG } from './platform';
+import { AuthService } from './auth.service';
 import { ModulePage } from './module-page';
 
 @Component({ standalone: true, imports: [RouterLink], template: `
@@ -16,6 +17,34 @@ import { ModulePage } from './module-page';
 class Home {}
 @Component({ standalone: true, imports: [RouterLink], template: '<h1>Page not found</h1><p>This address is not available.</p><a routerLink="/">Return home</a>' })
 class Missing {}
+
+@Component({ standalone: true, template: `
+  <h1>Sign in</h1>
+  @if (auth.state().status === 'unconfigured') {
+    <p role="status">Authentication is not configured. Applications are unavailable.</p>
+  } @else {
+    <p>Use your organization account to open applications.</p>
+    <button type="button" (click)="auth.login()" [disabled]="auth.busy()">Sign in</button>
+  }
+  @if (auth.error()) { <p role="alert">{{auth.error()}}</p> }
+` })
+class Login { readonly auth = inject(AuthService); }
+
+@Component({ standalone: true, template: '<h1>Completing sign in</h1><p role="status">Checking your session…</p>' })
+class Callback {
+  constructor() { void inject(AuthService).callback(location.href); }
+}
+
+// Retiring the outlet also destroys native-federation route components on expiry/logout.
+@Component({ standalone: true, imports: [RouterOutlet], template: `
+  @if (auth.authenticated()) { <router-outlet /> }
+  @else { <p role="status">Your session has ended. Sign in to continue.</p> }
+` })
+class AuthenticatedWorkspace { readonly auth = inject(AuthService); }
+const authenticated = () => {
+  const auth = inject(AuthService);
+  return auth.session.getAccessToken() !== null || inject(Router).createUrlTree(['/login']);
+};
 @Component({
   selector: 'platform-shell', standalone: true,
   imports: [RouterLink, RouterLinkActive, RouterOutlet],
@@ -27,6 +56,10 @@ class Missing {}
           <a [routerLink]="remote.basePath" routerLinkActive="active" ariaCurrentWhenActive="page">{{remote.label}}</a>
         }
       </nav>
+      @if (auth.authenticated()) {
+        <p>Signed in · {{auth.state().roles.join(', ')}}</p>
+        <button type="button" (click)="auth.logout()">Sign out</button>
+      } @else { <a routerLink="/login">Sign in</a> }
     </header>
     <main id="main" tabindex="-1">
       @if (status.loading()) { <p role="status">Loading application…</p> }
@@ -38,6 +71,7 @@ class Missing {}
     </main>`,
 })
 class Shell {
+  readonly auth = inject(AuthService);
   readonly config = inject(PLATFORM_CONFIG);
   readonly status = inject(NavigationStatus);
   private readonly router = inject(Router);
@@ -50,6 +84,7 @@ class Shell {
 }
 
 export function bootstrap(config: PlatformConfigV1) {
+  const authSession = initializeAuthentication(config);
   const erp = config.remotes.find(r => r.id === 'erp')!;
   let styleReady: Promise<void> | undefined;
   function erpStyles(): Promise<void> {
@@ -72,7 +107,9 @@ export function bootstrap(config: PlatformConfigV1) {
   }
   const routes: Routes = [
     { path: '', pathMatch: 'full', component: Home },
-    { path: 'erp', loadChildren: () => {
+    { path: 'login', component: Login },
+    { path: 'auth/callback', component: Callback },
+    { path: 'erp', component: AuthenticatedWorkspace, canMatch: [authenticated], canActivateChild: [authenticated], children: [{ path: '', loadChildren: () => {
       const status = inject(NavigationStatus); status.loading.set(true); status.failedUrl.set(null);
       return bounded((async () => {
         // Public remoteEntry API initializes ERP only when this route is requested.
@@ -83,12 +120,13 @@ export function bootstrap(config: PlatformConfigV1) {
         if (!Array.isArray(children)) throw Error('Invalid ERP routes');
         return [...children, { path: '**', component: Missing }];
       })()).finally(() => status.loading.set(false));
-    } },
-    ...['operations', 'clinical'].map(id => ({ path: id, children: [{ path: '**', component: ModulePage, data: { remoteId: id } }] })),
+    } }] },
+    ...['operations', 'clinical'].map(id => ({ path: id, component: AuthenticatedWorkspace, canMatch: [authenticated], canActivateChild: [authenticated], children: [{ path: '**', component: ModulePage, data: { remoteId: id } }] })),
     { path: '**', component: Missing },
   ];
   return bootstrapApplication(Shell, { providers: [
     { provide: PLATFORM_CONFIG, useValue: config },
+    { provide: AUTH_SESSION, useValue: authSession },
     provideRouter(routes, withNavigationErrorHandler(error => {
       const status = inject(NavigationStatus); status.loading.set(false); status.failedUrl.set(error.url);
     })),

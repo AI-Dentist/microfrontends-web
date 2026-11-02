@@ -34,7 +34,18 @@ export type RemoteDeploymentV1 = RemoteDeploymentBaseV1 & (
   | { id: 'clinical'; basePath: '/clinical'; kind: 'module'; styles: string }
 );
 
+export interface OidcConfigV1 {
+  issuer: string;
+  clientId: string;
+  redirectUri: string;
+  postLogoutRedirectUri: string;
+  scopes: string[];
+  apiAudiences: string[];
+}
+
 export interface PlatformConfigV1 {
   schemaVersion: 1;
   remotes: RemoteDeploymentV1[];
+  /** Public client configuration; absence explicitly disables real authentication. */
+  oidc?: OidcConfigV1;
 }

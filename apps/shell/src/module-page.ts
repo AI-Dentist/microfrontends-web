@@ -2,7 +2,7 @@ import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild, inject, sig
 import { ActivatedRoute, NavigationEnd, Router } from '@angular/router';
 import { filter } from 'rxjs';
 import type { RemoteContextV1, RemoteModuleV1 } from '../../../packages/mfe-contract/index.js';
-import { PLATFORM_CONFIG, getAccessToken } from './platform';
+import { AUTH_SESSION, PLATFORM_CONFIG, getAccessToken } from './platform';
 import { confinedPath, createRemoteSession, loadStyles } from './remote-runtime.mjs';
 
 @Component({
@@ -19,6 +19,10 @@ import { confinedPath, createRemoteSession, loadStyles } from './remote-runtime.
   `,
 })
 export class ModulePage implements AfterViewInit, OnDestroy {
+  private readonly auth = inject(AUTH_SESSION);
+  private readonly principal = this.auth.snapshot().subject;
+  private unsubscribeAuth?: () => void;
+  private allowed() { return getAccessToken() !== null && this.auth.snapshot().subject === this.principal; }
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   readonly remote = inject(PLATFORM_CONFIG).remotes.find(r => r.id === this.route.snapshot.data['remoteId'])!;
@@ -26,23 +30,30 @@ export class ModulePage implements AfterViewInit, OnDestroy {
   @ViewChild('surface', { static: true }) surface!: ElementRef<HTMLElement>;
   private session?: ReturnType<typeof createRemoteSession>;
   private readonly navigation = this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => {
-    void this.session?.update(this.context());
+    if (this.allowed()) void this.session?.update(this.context());
   });
   private readonly onNavigate = (path: string) => {
+    if (!this.allowed()) return;
     const target = confinedPath(path, this.remote.basePath, location.origin);
     if (target) void this.router.navigateByUrl(target).catch(() => this.state.set('error'));
   };
   private context(): RemoteContextV1 {
-    return { contractVersion: 1, basePath: this.remote.basePath, path: this.router.url.split('#')[0], apiBaseUrl: this.remote.apiBaseUrl, getAccessToken, onNavigate: this.onNavigate };
+    return { contractVersion: 1, basePath: this.remote.basePath, path: this.router.url.split('#')[0], apiBaseUrl: this.remote.apiBaseUrl, getAccessToken: () => this.allowed() ? getAccessToken() : null, onNavigate: this.onNavigate };
   }
   private root?: ShadowRoot;
   private container?: HTMLElement;
   ngAfterViewInit() {
     this.root = this.surface.nativeElement.attachShadow({ mode: 'open' });
+    this.unsubscribeAuth = this.auth.subscribe(next => {
+      if (next.status !== 'authenticated' || next.subject !== this.principal) {
+        void this.session?.destroy();
+        this.container?.remove(); this.state.set('error');
+      }
+    });
     this.retry();
   }
   retry() {
-    if (!this.root) return;
+    if (!this.root || !this.allowed()) return;
     void this.session?.destroy();
     this.container?.remove();
     const root = this.root;
@@ -52,9 +63,9 @@ export class ModulePage implements AfterViewInit, OnDestroy {
       container,
       loadModule: () => import(/* @vite-ignore */ this.remote.entry) as Promise<RemoteModuleV1>,
       loadStyle: () => loadStyles(root, this.remote.styles!),
-      onState: state => this.state.set(state),
+      onState: state => { if (this.allowed()) this.state.set(state); },
     });
     void this.session.start(this.context());
   }
-  ngOnDestroy() { this.navigation.unsubscribe(); void this.session?.destroy(); }
+  ngOnDestroy() { this.unsubscribeAuth?.(); this.navigation.unsubscribe(); void this.session?.destroy(); }
 }

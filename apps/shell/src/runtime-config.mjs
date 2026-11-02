@@ -41,6 +41,32 @@ function url(value, at, page, api = false) {
   return parsed;
 }
 
+function stringList(value, at) {
+  if (!Array.isArray(value) || !value.length || value.some(v => typeof v !== 'string' || !v.trim() || /\s/u.test(v)) || new Set(value).size !== value.length) {
+    fail(`${at} must contain unique non-empty strings without whitespace`);
+  }
+  return [...value];
+}
+
+/** Public configuration only; also used by the session constructor. */
+export function validateOidc(input, pageUrl) {
+  const page = new URL(pageUrl);
+  object(input, ['issuer', 'clientId', 'redirectUri', 'postLogoutRedirectUri', 'scopes', 'apiAudiences'], 'oidc');
+  const issuer = url(input.issuer, 'oidc.issuer', page);
+  if (issuer.search || input.issuer.includes('?') || issuer.href !== input.issuer) fail('oidc.issuer must be an exact URL without query');
+  const result = { issuer: input.issuer, clientId: text(input.clientId, 'oidc.clientId') };
+  if (/\s/u.test(result.clientId)) fail('oidc.clientId must not contain whitespace');
+  for (const field of ['redirectUri', 'postLogoutRedirectUri']) {
+    const parsed = url(input[field], `oidc.${field}`, page);
+    if (parsed.origin !== page.origin || parsed.search || input[field].includes('?')) fail(`oidc.${field} must match shell origin without query`);
+    result[field] = parsed.href;
+  }
+  result.scopes = stringList(input.scopes, 'oidc.scopes');
+  if (!result.scopes.includes('openid')) fail('oidc.scopes must include openid');
+  result.apiAudiences = stringList(input.apiAudiences, 'oidc.apiAudiences');
+  return result;
+}
+
 /** Validate operator-controlled JSON and return a fresh normalized manifest. */
 export function validateConfig(input, pageUrl = globalThis.location?.href ?? 'https://localhost/') {
   let page;
@@ -52,7 +78,7 @@ export function validateConfig(input, pageUrl = globalThis.location?.href ?? 'ht
   if (!['http:', 'https:'].includes(page.protocol) || page.username || page.password) {
     fail('pageUrl must be an HTTP(S) URL without credentials');
   }
-  object(input, ['schemaVersion', 'remotes'], 'config');
+  object(input, ['schemaVersion', 'remotes', 'oidc'], 'config');
   if (input.schemaVersion !== 1) fail('schemaVersion must be 1');
   if (!Array.isArray(input.remotes) || input.remotes.length !== 3) {
     fail('remotes must contain exactly erp, operations and clinical');
@@ -84,5 +110,5 @@ export function validateConfig(input, pageUrl = globalThis.location?.href ?? 'ht
     result.apiBaseUrl = url(remote.apiBaseUrl, `${at}.apiBaseUrl`, page, true).href;
     return result;
   });
-  return { schemaVersion: 1, remotes };
+  return { schemaVersion: 1, remotes, ...(Object.hasOwn(input, 'oidc') ? { oidc: validateOidc(input.oidc, page.href) } : {}) };
 }

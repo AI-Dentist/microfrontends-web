@@ -102,7 +102,42 @@ test('HTTP remote forbidden even on loopback page when remote is not loopback', 
   assert.throws(() => validateConfig(input, 'http://localhost:4300/'), /HTTPS/);
 });
 
+const oidc = () => ({ issuer: 'https://login.example/realms/dental-platform', clientId: 'mf-erp', redirectUri: 'https://shell.example/auth/callback', postLogoutRedirectUri: 'https://shell.example/', scopes: ['openid', 'profile'], apiAudiences: ['ms-erp', 'ms2-clinico-ia', 'ms3-agenda-stock'] });
+test('optional public OIDC is copied without changing legacy parser output', () => {
+  const input = manifest();
+  assert.equal(Object.hasOwn(validateConfig(input, page), 'oidc'), false);
+  input.oidc = oidc();
+  const before = structuredClone(input);
+  assert.deepEqual(validateConfig(input, page).oidc, input.oidc);
+  assert.deepEqual(input, before);
+  assert.notEqual(validateConfig(input, page).oidc.scopes, input.oidc.scopes);
+});
+for (const [name, change] of [
+  ['unknown field', o => { o.clientSecret = 'forbidden'; }],
+  ['missing field', o => { delete o.apiAudiences; }],
+  ['empty client', o => { o.clientId = ' '; }],
+  ['missing openid', o => { o.scopes = ['profile']; }],
+  ['duplicate scopes', o => { o.scopes = ['openid', 'openid']; }],
+  ['empty audiences', o => { o.apiAudiences = []; }],
+  ['duplicate audiences', o => { o.apiAudiences = ['ms-erp', 'ms-erp']; }],
+  ['HTTP issuer', o => { o.issuer = 'http://login.example/realm'; }],
+  ['issuer credentials', o => { o.issuer = 'https://user:pass@login.example/realm'; }],
+  ['issuer query', o => { o.issuer += '?realm=other'; }],
+  ['callback origin', o => { o.redirectUri = 'https://other.example/auth/callback'; }],
+  ['logout origin', o => { o.postLogoutRedirectUri = 'https://other.example/'; }],
+  ['callback query', o => { o.redirectUri += '?code=other'; }],
+]) test(`OIDC rejects ${name} without mutating config`, () => {
+  const input = manifest(); input.oidc = oidc(); change(input.oidc);
+  const before = structuredClone(input);
+  assert.throws(() => validateConfig(input, page), /Invalid platform config/);
+  assert.deepEqual(input, before);
+});
+
 test('example platform config validates with independent local origins', () => {
   const input = JSON.parse(readFileSync(new URL('../public/platform-config.json', import.meta.url), 'utf8'));
-  assert.equal(validateConfig(input, 'http://localhost:4300/').remotes.length, 3);
+  const parsed = validateConfig(input, 'http://localhost:4200/');
+  assert.equal(parsed.remotes.length, 3);
+  assert.equal(parsed.oidc.issuer, 'http://localhost:8180/realms/dental-platform');
+  assert.equal(parsed.oidc.redirectUri, 'http://localhost:4200/auth/callback');
+  assert.throws(() => validateConfig(input, 'http://localhost:4300/'), /shell origin/);
 });

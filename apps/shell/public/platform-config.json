@@ -1,5 +1,13 @@
 {
   "schemaVersion": 1,
+  "oidc": {
+    "issuer": "http://localhost:8180/realms/dental-platform",
+    "clientId": "mf-erp",
+    "redirectUri": "http://localhost:4200/auth/callback",
+    "postLogoutRedirectUri": "http://localhost:4200/",
+    "scopes": ["openid", "profile"],
+    "apiAudiences": ["ms-erp", "ms2-clinico-ia", "ms3-agenda-stock"]
+  },
   "remotes": [
     {
       "id": "erp",
