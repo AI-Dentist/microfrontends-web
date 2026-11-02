@@ -27,7 +27,7 @@ const remoteRuntime = asModule(`
     return globalThis.${bridge}.runtime.createRemoteSession(options);
   };
 `);
-let source = await readFile(new URL('../src/module-page.ts', import.meta.url), 'utf8');
+let source = (await readFile(new URL('../src/module-page.ts', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 source = source.replace(/@Component\(\{[\s\S]*?\n\}\)\n/, '')
   .replace(/@ViewChild\('surface', \{ static: true \}\) /, '')
   .replace(/import \{[^\n]+\} from '@angular\/core';/, `import { inject, signal } from '${angular}';`)
