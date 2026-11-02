@@ -19,7 +19,8 @@ const colors = [...new Set(source.match(/#[0-9a-f]{6}\b/gi))].sort();
 for (const color of colors) check(system.includes(color), `Sourced palette: ${color}`);
 const families = [...new Set([...source.matchAll(/font(?:-family)?\s*:[^;{}\n]*?(system-ui[^;{}\n]*)/g)].map(match => match[1].trim()))];
 check(families.length === 1 && families[0] === "system-ui,'Segoe UI',Roboto,sans-serif", 'Only the sourced system font stack');
-check(!/(?:https?:\/\/|\bsrc\s*=|@import|url\s*\()/i.test(source), 'No external resource references');
+// Match CSS url() as a token, not the metadata-only JS createObjectURL() API.
+check(!/(?:https?:\/\/|\bsrc\s*=|@import|\burl\s*\()/i.test(source), 'No external resource references');
 check(source.includes('rgba(15,23,42,.6)') && source.includes('rgb(0 0 0 / .05)'), 'Overlay and shadow match source');
 console.log(`Palette self-check: ${colors.join(', ')}; font: ${families.join('; ')}; sourced overlay/shadow alpha only.`);
 
@@ -30,6 +31,9 @@ const errors = [];
 const network = [];
 const documents = [];
 const operations = [];
+// Blob downloads are local browser events, not permitted HTTP/API exceptions.
+const localDownloads = [];
+const staleBlobRejections = [];
 try {
   preview = await startPreview();
   const htmlURL = new URL(preview.url);
@@ -83,6 +87,20 @@ try {
       const record = label => { window.demoViolations.push(label); window.recordDemoOperation(label); throw new Error(`Forbidden demo operation: ${label}`); };
       for (const method of ['setItem','removeItem','clear']) Storage.prototype[method] = () => record(`storage.${method}`);
       Object.defineProperty(document, 'cookie', { get:() => '', set:() => record('cookie') });
+      // Observe only URL lifetime and metadata, never inspect document contents.
+      window.documentURLAudit = [];
+      // Live-document API audit for selection/validation/commit. After unload,
+      // test actual stale-URL unusability, not delivery of teardown callbacks.
+      const audit = event => { window.documentURLAudit.push(event); };
+      const createURL = URL.createObjectURL.bind(URL), revokeURL = URL.revokeObjectURL.bind(URL);
+      URL.createObjectURL = file => {
+        const url = createURL(file);
+        audit({kind:'create',url,name:file.name,size:file.size,type:file.type,isFile:file instanceof File});
+        return url;
+      };
+      URL.revokeObjectURL = url => { const result=revokeURL(url); audit({kind:'revoke',url}); return result; };
+      for(const method of ['arrayBuffer','text','stream']) File.prototype[method] = () => record(`File.${method}`);
+      for(const method of ['readAsArrayBuffer','readAsBinaryString','readAsDataURL','readAsText']) FileReader.prototype[method] = () => record(`FileReader.${method}`);
       window.fetch = () => record('fetch');
       XMLHttpRequest.prototype.open = () => record('XHR');
       navigator.sendBeacon = () => record('beacon');
@@ -92,6 +110,7 @@ try {
     });
     const page = await context.newPage();
     page.on('pageerror', error => errors.push(error.message));
+    page.on('download', download => localDownloads.push({url:download.url(),name:download.suggestedFilename()}));
     await page.goto(htmlURL.href);
     if(signedIn) await enterDemo(page);
     return page;
@@ -100,12 +119,402 @@ try {
     check(!/proveedor|provider/i.test(await target.locator('body').innerText()), 'No visible provider concepts in current page/dialog');
     await iconButtons(target);
   }
+  // Legacy CRUD journeys explicitly choose Catálogo; new queue journeys do not.
+  async function chooseStudyCatalogue(target,route) {
+    if(['laboratory','imaging'].includes(route)) await target.getByRole('tab',{name:'Catálogo',exact:true}).click();
+  }
+  async function openStudyDocumentEntry(target,studyId,mode) {
+    if(await target.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await target.locator('#menu-toggle').click();
+    await target.locator(`#navigation [data-page="${mode==='IMAGEN'?'imaging':'laboratory'}"]`).click();
+    await target.locator(`[data-study-queue-row="${studyId}"] [data-result]`).click();
+  }
+  async function syntheticDownload(target,link,file) {
+    const [download]=await Promise.all([target.waitForEvent('download'),link.click()]);
+    // Chromium can sanitize OS-reserved filename characters, not file bytes.
+    const suggested=download.suggestedFilename();
+    check(download.url().startsWith('blob:') && (/[<>]/.test(file.name)?suggested.length>0 && suggested.endsWith('.pdf'):suggested===file.name),`Download ${file.name}: local Blob URL and browser-safe filename`);
+    const stream=await download.createReadStream(),chunks=[];
+    for await(const chunk of stream) chunks.push(chunk);
+    check(Buffer.concat(chunks).equals(file.buffer) && await download.failure()===null,`Download ${file.name}: byte-identical synthetic payload, no content interpretation`);
+  }
+  async function assertStaleBlobURLs(target,urls,reset) {
+    check(urls.length>0 && new Set(urls).size===urls.length && urls.every(url=>url.startsWith(`blob:${htmlURL.origin}/`)),`${reset}: probe only captured, unique committed Blob URLs`);
+    for(const url of urls) {
+      // Fresh page, SAME browser context; no fetch/content reads or app state.
+      // Current Chromium does not route Blob navigation: keep HTTP filtering
+      // unchanged. A route abort, timeout or download start is never a pass.
+      const probe=await target.context().newPage();
+      const failed=[],blockedBefore=network.length;
+      let nativeFailure='',downloads=0;
+      probe.on('requestfailed',request=>{if(request.url()===url) failed.push(request.failure()?.errorText);});
+      probe.on('download',()=>downloads++);
+      probe.on('pageerror',error=>errors.push(error.message));
+      try {
+        try {await probe.goto(url,{waitUntil:'load',timeout:5000});}catch(error){nativeFailure=error.message;}
+        check(/net::ERR_FILE_NOT_FOUND\b/.test(nativeFailure) && failed.includes('net::ERR_FILE_NOT_FOUND') && downloads===0 && network.length===blockedBefore,`${reset}: old committed URL natively unavailable, no download/route abort: ${url}; ${nativeFailure}`);
+        staleBlobRejections.push({reset,url});
+      } finally {await probe.close();}
+    }
+  }
   // S21 focused regression: native visible click, never dispatch a synthetic submit.
   const delivery = await openPage({width:1440,height:1000},{signedIn:false});
   check(await delivery.locator('#login-screen').isVisible() && !await delivery.locator('#workspace').isVisible(), 'S21 HTTP entry begins at visible login');
   await enterDemo(delivery);
   check(await delivery.locator('#workspace').isVisible() && await delivery.locator('#workspace').getAttribute('inert') === null && await delivery.locator('#page-title').innerText() === 'Resumen', 'S21 actual HTTP demo-entry click opens interactive Resumen');
   console.log('S21 focused HTTP login and server-boundary regression: PASS');
+
+  // T10 / S41–S42 tests-first boundary. Collect every missing feature without
+  // waiting on future selectors. No requests/patients/consultations are seeded.
+  const attachmentEarly=await openPage({width:1440,height:1000});
+  const attachmentGaps=[];
+  for(const route of ['laboratory','imaging']) {
+    await attachmentEarly.locator(`#navigation [data-page="${route}"]`).click();
+    for(const label of ['Solicitudes y resultados','Catálogo']) {
+      if(await attachmentEarly.getByRole('tab',{name:label,exact:true}).count()!==1) attachmentGaps.push(`${route}: missing readable ${label} tab`);
+    }
+    if(!await attachmentEarly.locator('#study-worklist').count()) attachmentGaps.push(`${route}: missing operational worklist`);
+    if(await attachmentEarly.locator('#catalog-add:visible').count()) attachmentGaps.push(`${route}: catalogue still default workspace`);
+  }
+  if(!await attachmentEarly.locator('#result-files[type="file"][multiple]').count()) attachmentGaps.push('missing multiple-document file input');
+  if(await attachmentEarly.locator('#result-text,#result-reference').count()) attachmentGaps.push('obsolete free-text/reference result entry remains');
+  check(attachmentGaps.length===0,`T10 S41–S42 missing: ${attachmentGaps.join('; ')}`);
+  console.log(`T10 aggregate public HTTP document-workspace contract: PASS (${checks} checks so far)`);
+
+  // Public selector contract for the implementation writer (no internal arrays):
+  // [data-study-tab=requests|catalog] are accessible tabs, #study-worklist holds
+  // [data-study-queue-row=studyId] with data-patient-id/consultation-id/type-id/
+  // mode/status. Filters: #study-patient (all|patientId), #study-status
+  // (all|PENDIENTE|COMPLETADO). Pending row: [data-result=studyId].
+  // Reuse #result-dialog/#result-form/#result-context/#result-error; new
+  // #result-files and #result-save commit ONE immutable batch, no text fields.
+  // Both queue and Clinical [data-study-row] render saved documents as
+  // [data-study-document=documentId] with data-document-type/data-document-size,
+  // [data-document-name] literal filename and a[data-document-download=documentId]
+  // with download attribute. Saved docs have NO edit/delete/preview/upload.
+  // Unknown/unrepresentable stored IDs and incoherent stored reference graphs
+  // remain source-only obligations: never fabricate closure state to test them.
+  const attachments=await openPage({width:1440,height:1000});
+  const dg=async route=>{
+    if(await attachments.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await attachments.locator('#menu-toggle').click();
+    await attachments.locator(`#navigation [data-page="${route}"]`).click();
+  };
+  const dt=selector=>attachments.locator(selector).innerText();
+  const queueRow=id=>attachments.locator(`[data-study-queue-row="${id}"]`);
+  const clinicalStudy=id=>attachments.locator(`#consultation-studies [data-study-row="${id}"]`);
+  const documentRows=scope=>scope.locator('[data-study-document]');
+  const committedDocuments=new Map(); // URL/name captured only from saved public links.
+  const urlAudit=()=>attachments.evaluate(()=>window.documentURLAudit);
+  const documentForm=()=>attachments.locator('#result-form');
+  const saveDocument=()=>attachments.locator('#result-save').click();
+  const selectDocuments=async files=>{
+    const input=attachments.locator('#result-files');
+    // Keep the ordinary Playwright upload path for every synthetic Buffer. Its
+    // server infers a MIME for mimeType:'', so use the PUBLIC File/input API to
+    // restore only those fixtures' intentional empty type. Blob parts stay
+    // opaque: no FileReader, text(), arrayBuffer() or real local file reads.
+    await input.setInputFiles(files);
+    const emptyTypes=files.map(file=>file.mimeType==='');
+    if(!emptyTypes.some(Boolean)) return;
+    const actual=await input.evaluate((node,emptyTypes)=>{
+      const transfer=new DataTransfer();
+      [...node.files].forEach((file,index)=>transfer.items.add(emptyTypes[index]
+        ? new File([file],file.name,{type:'',lastModified:file.lastModified})
+        : file));
+      node.files=transfer.files;
+      node.dispatchEvent(new Event('input',{bubbles:true}));
+      node.dispatchEvent(new Event('change',{bubbles:true}));
+      return [...node.files].map(file=>({name:file.name,type:file.type,size:file.size}));
+    },emptyTypes);
+    for(const [index,empty] of emptyTypes.entries()) if(empty) {
+      const expected=files[index],file=actual[index];
+      check(file?.type==='' && file.name===expected.name && file.size===expected.buffer.length,`Public file input has genuine empty MIME before commit: ${JSON.stringify(file)}`);
+    }
+  };
+  const resumeDocumentClinical=async(appointment='AP-1')=>{await dg('agenda');await attachments.locator(`[data-attend="${appointment}"]`).click();};
+  const documentCatalog=async route=>{await dg(route);await attachments.getByRole('tab',{name:'Catálogo',exact:true}).click();};
+  // Payloads are synthetic Buffer literals, never paths, real documents or fetch.
+  const synthetic=(name,mimeType,bytes=Buffer.from('SYNTHETIC fixture only; no clinical contents'))=>({name,mimeType,buffer:bytes});
+  const smallPDF=synthetic('informe-demo.pdf','application/pdf',Buffer.from('%PDF-SYNTHETIC\nnot a real report\n'));
+  const smallJPG=synthetic('imagen-demo.jpg','image/jpeg',Buffer.from([0xff,0xd8,0x01,0x02,0xff,0xd9]));
+  const smallPNG=synthetic('imagen-demo.png','image/png',Buffer.from([0x89,0x50,0x4e,0x47,0x01]));
+  const literalPDF=synthetic('literal <img onerror=throw(1)>.pdf','');
+  const noAttachmentMutation=async()=>{
+    await dg('overview'); const money=await attachments.locator('[data-kpi]').allTextContents();
+    await dg('payments'); const orders=await dt('#order-results');
+    await dg('agenda'); const agenda=await dt('#agenda-results');
+    return JSON.stringify({money,orders,agenda});
+  };
+  const publicCounter=async name=>{
+    await dg('specialties');await attachments.locator('#catalog-add').click();
+    await attachments.locator('#cat-name').fill(name);await attachments.locator('#catalog-form button[type=submit]').click();
+    return Number((await attachments.locator('#catalog-results tr').filter({hasText:name}).locator('[data-catalog-edit]').getAttribute('data-catalog-edit')).split('-').at(-1));
+  };
+  const assertReadOnlyDocuments=async(scope,fixtures,label)=>{
+    const docs=documentRows(scope);
+    check(await docs.count()===fixtures.length,`${label}: exact saved document count`);
+    const ids=await docs.evaluateAll(nodes=>nodes.map(node=>node.dataset.studyDocument));
+    check(ids.every(Boolean) && new Set(ids).size===ids.length,`${label}: nonempty unique public document IDs`);
+    for(const [i,file] of fixtures.entries()) {
+      const doc=docs.nth(i), link=doc.locator('a[data-document-download]');
+      const metadata={name:await doc.locator('[data-document-name]').innerText(),type:await doc.getAttribute('data-document-type'),size:Number(await doc.getAttribute('data-document-size'))};
+      check(metadata.name===file.name && metadata.type===file.mimeType && metadata.size===file.buffer.length,`${label}: literal filename, original MIME and exact byte size (file ${i+1}: ${JSON.stringify(metadata)})`);
+      check(await link.count()===1 && await link.getAttribute('data-document-download')===ids[i] && (await link.getAttribute('href')).startsWith('blob:') && await link.getAttribute('download')===file.name && await link.getAttribute('target')===null,`${label}: local download only, never inline/new-tab preview`);
+      check(await link.getAttribute('aria-label')===`Descargar ${file.name}` && await link.locator('svg path').count()===1 && await link.evaluate(node=>{const r=node.getBoundingClientRect();return r.width>=44 && r.height>=44 && !node.textContent.trim();}),`${label}: named semantic download icon with a 44px target`);
+      committedDocuments.set(await link.getAttribute('href'),file.name);
+    }
+    check(await scope.locator('iframe,embed,object,img,script,button,[data-result],[data-document-edit],[data-document-delete],[data-document-preview],input[type=file]').count()===0,`${label}: immutable documents and no inline HTML/PDF/image execution`);
+    return ids;
+  };
+  const downloadDocument=async(scope,file)=>{
+    const link=scope.locator('[data-study-document]').filter({has:attachments.getByText(file.name,{exact:true})}).locator('a[data-document-download]');
+    await syntheticDownload(attachments,link,file);
+  };
+  for(const [route,mode] of [['laboratory','LABORATORIO'],['imaging','IMAGEN']]) {
+    await dg(route);
+    check(await attachments.locator('[data-study-tab="requests"]').getAttribute('aria-selected')==='true' && await attachments.locator('[data-study-tab="catalog"]').getAttribute('aria-selected')==='false',`${mode}: requests/results is the default selected tab`);
+    check(await attachments.locator('#study-worklist [data-study-queue-row]').count()===0 && /solicitud|solicita/i.test(await dt('#study-worklist')) && /Atención clínica/.test(await dt('#study-worklist')),`${mode}: meaningful empty help, no fabricated requests`);
+    check(await attachments.locator('#study-worklist [data-page="clinical"]').count()===1 && await attachments.locator('#catalog-add:visible').count()===0,`${mode}: permitted Clinical route, catalogue creation absent from queue`);
+    await attachments.locator('#study-worklist [data-page="clinical"]').click();
+    check(await dt('#page-title')==='Atención clínica' && await attachments.locator('#consultation-record').count()===0,`${mode}: empty-state action routes without creating a consultation`);
+    await documentCatalog(route);
+    const headers=await attachments.locator('#catalog-results th').allTextContents();
+    check(headers.length===3 && headers.slice(0,2).join('|')==='Nombre|Descripción' && /^Acci[oó]n(?:es)?$/.test(headers[2]) && await attachments.locator('#catalog-add').isVisible(),`${mode}: separate descriptive full-CRUD catalogue retained`);
+    check(!/proveedor|provider|precio|\bBs\b/i.test(await dt('#view')),`${mode}: neither providers nor prices introduced`);
+  }
+  await dg('patients');check(await attachments.locator('#patient-results tbody tr').count()===3,'S41 queues add no fake initial patients');
+  await dg('agenda');check(await attachments.locator('#agenda-results [data-attend]').count()===3,'S41 queues add no fake appointments');
+  const documentRequests={};
+  for(const [appointment,patientId,modes] of [['AP-1','DEMO-001',['LABORATORIO','IMAGEN']],['AP-2','DEMO-002',['LABORATORIO']]]) {
+    await resumeDocumentClinical(appointment);
+    const consultation=await attachments.locator('#consultation-record').getAttribute('data-consultation-id');
+    for(const mode of modes) {
+      await attachments.locator('#request-study').click();
+      const typeId=mode==='IMAGEN'?'FIX-IMG':'FIX-LAB';
+      await attachments.locator('#study-type').selectOption(typeId);await attachments.locator('#study-form button[type=submit]').click();
+      const id=await attachments.locator('#consultation-studies [data-study-row]').last().getAttribute('data-study-row');
+      documentRequests[`${patientId}/${mode}`]={id,patientId,consultation,typeId,mode};
+      check((await clinicalStudy(id).innerText()).includes('PENDIENTE') && await clinicalStudy(id).locator('[data-result],input[type=file]').count()===0,'Clinical originates pending requests but never exposes a result uploader');
+    }
+  }
+  const lab=documentRequests['DEMO-001/LABORATORIO'], image=documentRequests['DEMO-001/IMAGEN'], otherLab=documentRequests['DEMO-002/LABORATORIO'];
+  const openDocumentEntry=async(request=lab)=>{
+    await dg(request.mode==='IMAGEN'?'imaging':'laboratory');
+    await attachments.locator('#study-patient').selectOption(request.patientId);
+    await queueRow(request.id).locator('[data-result]').click();
+    check(await attachments.locator('#result-dialog').isVisible() && (await dt('#result-context')).includes(request.consultation) && (await dt('#result-context')).includes(request.patientId==='DEMO-001'?'Alba Ejemplo':'Bruno Muestra'),'Attachment dialog identifies the exact patient/consultation request');
+  };
+  for(const [route,expected] of [['laboratory',[lab,otherLab]],['imaging',[image]]]) {
+    await dg(route);
+    check(await attachments.locator('[data-study-queue-row]').count()===expected.length,`${route}: only actual Clinical requests of matching modality`);
+    for(const request of expected) for(const [key,value] of Object.entries({'data-patient-id':request.patientId,'data-consultation-id':request.consultation,'data-type-id':request.typeId,'data-mode':request.mode,'data-status':'PENDIENTE'})) {
+      check(await queueRow(request.id).getAttribute(key)===value,`${route}: public queue row links ${key} coherently`);
+    }
+    await attachments.locator('#study-patient').selectOption('DEMO-001');
+    check(await queueRow(otherLab.id).count()===0 && await attachments.locator('[data-study-queue-row]').count()===1,`${route}: patient filter excludes another patient's metadata/actions`);
+    await attachments.locator('#study-status').selectOption('COMPLETADO');
+    check(await attachments.locator('[data-study-queue-row]').count()===0,`${route}: status filter cannot fabricate completed results`);
+  }
+  // No selection, picker cancellation and modal Cancel/Escape must all be inert.
+  const counterBeforeReject=await publicCounter('Documentos contador A');
+  const unaffectedBefore=await noAttachmentMutation();
+  for(const forgedTarget of [otherLab.id,'UNKNOWN-STUDY','<unrepresentable>']) {
+    await dg('laboratory');const before=await dt('#study-worklist'),urls=JSON.stringify(await urlAudit());
+    await queueRow(lab.id).locator('[data-result]').evaluate((button,id)=>button.dataset.result=id,forgedTarget);
+    await queueRow(lab.id).locator('[data-result]').click();
+    check(!await attachments.locator('#result-dialog').isVisible() && await dt('#study-worklist')===before && JSON.stringify(await urlAudit())===urls,'Wrong-patient/unknown/unrepresentable public upload targets cannot reveal a dialog or mutate requests/URLs');
+    check(await noAttachmentMutation()===unaffectedBefore,'Rejected public upload target changes no appointments/orders/receipts/money');
+  }
+  const invalidBatches=[
+    ['no selection',[]],['unsupported extension',[smallPDF,synthetic('ejecutable.pdf.exe','application/pdf')]],
+    ['PDF MIME mismatch',[smallPDF,synthetic('informe.pdf','image/png')]],
+    ['JPG MIME mismatch',[synthetic('imagen.jpg','image/png')]],
+    ['PNG MIME mismatch',[synthetic('imagen.png','image/jpeg')]],
+    ['JPEG MIME mismatch',[synthetic('imagen.jpeg','application/pdf')]],
+    ['unknown MIME',[synthetic('informe.pdf','application/octet-stream')]],
+    ['empty file',[smallPDF,synthetic('vacio.png','image/png',Buffer.alloc(0))]],
+    ['over 10 MiB',[smallPDF,synthetic('grande.pdf','application/pdf',Buffer.alloc(10*1024*1024+1,0x53))]],
+    ['six files',Array.from({length:6},(_,i)=>synthetic(`exceso-${i}.pdf`,'application/pdf'))],
+    ['duplicate fingerprint',[smallPDF,smallPDF]]
+  ];
+  for(const [label,files] of invalidBatches) {
+    await openDocumentEntry(); const before=await dt('#study-worklist'), urls=JSON.stringify(await urlAudit());
+    await selectDocuments(files);await saveDocument();
+    check(await attachments.locator('#result-dialog').isVisible() && (await dt('#result-error')).trim().length>0,`${label}: explicit document-batch rejection`);
+    check(await dt('#study-worklist')===before && JSON.stringify(await urlAudit())===urls && await documentRows(queueRow(lab.id)).count()===0 && await queueRow(lab.id).getAttribute('data-status')==='PENDIENTE',`${label}: atomic rejection, no rows/status/Blob URLs changed`);
+    await attachments.keyboard.press('Escape');
+    check(await noAttachmentMutation()===unaffectedBefore,`${label}: no appointment/order/receipt/money side effects`);
+  }
+  for(const dismissal of ['cancel','escape','picker-clear','picker-cancel']) {
+    await openDocumentEntry();const before=await dt('#study-worklist'), urls=JSON.stringify(await urlAudit());
+    await selectDocuments([smallPDF]);
+    if(dismissal.startsWith('picker-')) {
+      if(dismissal==='picker-clear') {
+        const [picker]=await Promise.all([attachments.waitForEvent('filechooser'),attachments.locator('#result-files').click()]);
+        await picker.setFiles([]);
+      } else {
+        // Playwright cannot drive OS Escape. Deliver the browser's public file
+        // input cancel event with an existing selection, not closure injection.
+        const contextBeforePickerCancel=await dt('#result-context');
+        await attachments.locator('#result-files').dispatchEvent('cancel',{bubbles:true});
+        check(await attachments.locator('#result-dialog').isVisible() && await dt('#result-context')===contextBeforePickerCancel,'Bubbling picker cancel preserves the open modal and its patient/study target');
+      }
+      check(await attachments.locator('#result-files').evaluate(node=>node.files.length)===0,`${dismissal}: file input clears the previous draft selection`);
+      await attachments.keyboard.press('Escape');
+    } else if(dismissal==='cancel') await attachments.locator('#result-dialog [data-close]').click();
+    else await attachments.keyboard.press('Escape');
+    check(await dt('#study-worklist')===before && JSON.stringify(await urlAudit())===urls,`${dismissal}: no stored attachment/status/URL effects`);
+    await openDocumentEntry();
+    check(await attachments.locator('#result-files').evaluate(node=>node.files.length)===0 && await dt('#result-error')==='',`${dismissal}: reopening starts with a clear file/error draft`);
+    await attachments.keyboard.press('Escape');
+  }
+  await openDocumentEntry();await selectDocuments([smallPNG]);await documentForm().evaluate(form=>form.reset());
+  check(await attachments.locator('#result-files').evaluate(node=>node.files.length)===0,'Native result-form reset clears selected files');
+  await saveDocument();check(await attachments.locator('#result-dialog').isVisible() && await queueRow(lab.id).getAttribute('data-status')==='PENDIENTE','Reset form cannot commit a stale saved draft');await attachments.keyboard.press('Escape');
+  check(await noAttachmentMutation()===unaffectedBefore,'Invalid/picker-canceled/modal-dismissed/reset document drafts preserve appointments/orders/receipts/money');
+  check(await publicCounter('Documentos contador B')===counterBeforeReject+1,'Invalid/canceled/reset document drafts consume no shared IDs');
+  // Exact upper bounds once: five documents, JPEG alias and one synthetic 10 MiB.
+  const boundaryJPEG=synthetic('LIMITE.JPEG','image/jpeg',Buffer.alloc(10*1024*1024,0x4a));
+  const labFiles=[smallPDF,smallJPG,smallPNG,literalPDF,boundaryJPEG];
+  await openDocumentEntry();
+  check(await attachments.locator('#result-files').getAttribute('multiple')!==null && (await attachments.locator('#result-files').getAttribute('accept')).toLowerCase().includes('.pdf') && (await dt('#result-dialog')).includes('10') && (await dt('#result-dialog')).includes('5'),'File chooser visibly describes format/count/size limits');
+  const urlsBeforeCommit=await urlAudit();await selectDocuments(labFiles);
+  check(JSON.stringify(await urlAudit())===JSON.stringify(urlsBeforeCommit),'Selecting valid files does not allocate Blob URLs before commit');
+  await attachments.locator('#result-save').dblclick();
+  check(!await attachments.locator('#result-dialog').isVisible() && await queueRow(lab.id).getAttribute('data-status')==='COMPLETADO','One valid atomic five-file batch completes once');
+  const labDocumentIds=await assertReadOnlyDocuments(queueRow(lab.id),labFiles,'Lab committed batch');
+  check(!(await dt('#view')).includes('not a real report'),'Saved document body is never rendered as a textual result');
+  check(await queueRow(lab.id).locator('[data-result]').count()===0,'Completed request offers no append/replace/reopen attachment action');
+  const committedURLs=(await urlAudit()).filter(event=>event.kind==='create');
+  check(committedURLs.length===5 && committedURLs.every(event=>event.isFile) && new Set(committedURLs.map(event=>event.url)).size===5,'Exactly five opaque Files acquire unique URLs at successful commit only');
+  const repeatCounter=await publicCounter('Documentos contador C');
+  await documentForm().evaluate(form=>form.requestSubmit());
+  await documentForm().evaluate(form=>form.querySelector('[type=submit]').click());
+  check(await publicCounter('Documentos contador D')===repeatCounter+1,'Repeated stale click/submit allocates no extra document/shared IDs');
+  await dg('laboratory');await attachments.locator('#study-patient').selectOption('DEMO-001');
+  check(JSON.stringify(await assertReadOnlyDocuments(queueRow(lab.id),labFiles,'Lab re-entry'))===JSON.stringify(labDocumentIds) && (await urlAudit()).filter(event=>event.kind==='create').length===5,'Re-entry retains immutable IDs/bytes, no duplicate URLs/documents');
+  await tooltip(attachments,queueRow(lab.id).locator('[data-document-download]').first(),`Descargar ${smallPDF.name}`);
+  for(const file of labFiles) await downloadDocument(queueRow(lab.id),file);
+  await attachments.locator('#study-status').selectOption('PENDIENTE');check(await queueRow(lab.id).count()===0,'Completed batch disappears from pending filter');
+  await dg('laboratory');await attachments.locator('#study-patient').selectOption('DEMO-002');
+  check(await queueRow(lab.id).count()===0 && !(await dt('#study-worklist')).includes(smallPDF.name) && await queueRow(otherLab.id).getAttribute('data-status')==='PENDIENTE','Another patient has no document names/actions from the committed study');
+  await dg('imaging');check(await queueRow(lab.id).count()===0 && !(await dt('#study-worklist')).includes(smallPDF.name),'Imaging queue cannot expose Lab files');
+  // Malicious public DOM target on a real Lab action must not fulfill Imaging.
+  await dg('laboratory');await queueRow(otherLab.id).locator('[data-result]').evaluate((button,id)=>button.dataset.result=id,image.id);
+  const crossModeURLs=JSON.stringify(await urlAudit());
+  await queueRow(otherLab.id).locator('[data-result]').click();
+  check(!await attachments.locator('#result-dialog').isVisible() && await queueRow(image.id).count()===0 && JSON.stringify(await urlAudit())===crossModeURLs,'Matching menu route rejects cross-modality upload target without rendering its row/dialog or creating URLs');
+  // A saved closed clinical record remains unchanged by later fulfillment.
+  await resumeDocumentClinical();
+  for(const [field,value] of Object.entries({reason:'Motivo humano S41',anamnesis:'Anamnesis humana S41',exploration:'Exploración humana S41',diagnosis:'Notas S41 inmutables',recommendations:'Recomendación humana S41'})) await attachments.locator(`#consultation-${field}`).fill(value);
+  await addDiagnosis(attachments);await addPrescription(attachments);
+  await attachments.locator('input[name=procedure]').first().check();await attachments.locator('#complete-consultation').click();
+  check(await dt('#consultation-status')==='CERRADA' && (await clinicalStudy(image.id).innerText()).includes('PENDIENTE'),'Clinical completion permits pending imaging without invented results');
+  const medicalSnapshot=()=>attachments.locator('#consultation-record').evaluate(node=>{
+    const copy=node.cloneNode(true);copy.querySelector('#consultation-studies')?.remove();
+    copy.querySelectorAll('[aria-describedby="action-tooltip"]').forEach(control=>control.removeAttribute('aria-describedby'));
+    return copy.innerHTML;
+  });
+  const closedMedical=await medicalSnapshot();
+  const orderId=await attachments.locator('#consultation-order').getAttribute('data-order-id');
+  await attachments.locator('#consultation-order').click();
+  const documentOrder=()=>attachments.locator('#order-results tr').filter({hasText:orderId});
+  await documentOrder().locator('[data-pay]').click();await attachments.locator('#payment-form button[type=submit]').click();
+  await documentOrder().locator('[data-order-detail]').click();const immutableDocumentOrder=await dt('#order-detail-lines');await attachments.keyboard.press('Escape');
+  await documentOrder().locator('[data-receipt]').click();const immutableDocumentReceipt=await dt('#receipt-content');await attachments.keyboard.press('Escape');
+  const lateBusiness=await noAttachmentMutation();
+  await openDocumentEntry(image);await selectDocuments([smallPNG]);await attachments.locator('#result-save').focus();await attachments.keyboard.press('Enter');
+  check(await queueRow(image.id).getAttribute('data-status')==='COMPLETADO','Pending study can be fulfilled after its clinical consultation closes');
+  await attachments.keyboard.press('Enter');
+  const imageDocumentIds=await assertReadOnlyDocuments(queueRow(image.id),[smallPNG],'Late imaging batch');
+  check((await urlAudit()).filter(event=>event.kind==='create').length===6,'Repeated Enter after completion cannot duplicate an attachment or Blob URL');
+  check(!imageDocumentIds.some(id=>labDocumentIds.includes(id)),'Different study/mode batches cannot share document IDs');
+  await downloadDocument(queueRow(image.id),smallPNG);
+  check(await noAttachmentMutation()===lateBusiness,'Late fulfillment leaves appointments/orders/receipts/money byte-for-byte unchanged');
+  await dg('payments');await documentOrder().locator('[data-order-detail]').click();check(await dt('#order-detail-lines')===immutableDocumentOrder,'Late attachment cannot rewrite issued service-only order');await attachments.keyboard.press('Escape');
+  await documentOrder().locator('[data-receipt]').click();check(await dt('#receipt-content')===immutableDocumentReceipt,'Late attachment cannot rewrite paid receipt snapshot');await attachments.keyboard.press('Escape');
+  await resumeDocumentClinical();check(await medicalSnapshot()===closedMedical,'Late result changes no closed notes/diagnoses/Rx/recommendations/order link');
+  await attachments.getByRole('combobox',{name:'Simular rol',exact:true}).selectOption('ROLE-3');
+  check(await attachments.locator('#navigation [data-page="laboratory"],#navigation [data-page="imaging"]').count()===0,'Clinical reader has neither modality menu grant');
+  await assertReadOnlyDocuments(clinicalStudy(lab.id),labFiles,'Authorized Clinical Lab read');
+  await assertReadOnlyDocuments(clinicalStudy(image.id),[smallPNG],'Authorized Clinical Imaging read');
+  check(await attachments.locator('#consultation-studies [data-result],#view input[type=file]').count()===0,'Clinical reader can download but never upload without modality menu grant');
+  await downloadDocument(clinicalStudy(lab.id),smallPDF);
+  await attachments.locator('#clinical-patient').selectOption('DEMO-002');
+  check(!(await dt('#clinical-results')).includes(smallPDF.name) && await attachments.locator('[data-study-document],[data-document-download]').count()===0,'Clinical wrong-patient selection contains no filenames/download actions');
+  await attachments.getByRole('combobox',{name:'Simular rol',exact:true}).selectOption('ROLE-2');
+  check(await attachments.locator('[data-study-document],[data-result],#view input[type=file]').count()===0 && !(await dt('#view')).includes(smallPDF.name),'Restricted role has no stale file metadata or upload/download actions');
+  // Grant only Lab, not Clinical/Imaging, via the existing public permission writer.
+  await attachments.getByRole('combobox',{name:'Simular rol',exact:true}).selectOption('ROLE-1');await dg('settings');
+  await attachments.getByRole('tab',{name:'Navegación',exact:true}).click();await attachments.locator('#navigation-role').selectOption('ROLE-2');
+  await attachments.locator('[name="menu-access"][value="laboratory"]').check();await attachments.locator('#settings-form button[type=submit]').click();
+  await attachments.getByRole('combobox',{name:'Simular rol',exact:true}).selectOption('ROLE-2');
+  check(await attachments.locator('#navigation [data-page="clinical"],#navigation [data-page="imaging"]').count()===0,'Lab-only operator receives neither Clinical nor Imaging route');
+  await openDocumentEntry(otherLab);await selectDocuments([smallJPG]);await attachments.keyboard.press('Escape');
+  await attachments.getByRole('combobox',{name:'Simular rol',exact:true}).selectOption('ROLE-3');
+  const urlsBeforeDenied=(await urlAudit()).length;await documentForm().evaluate(form=>form.requestSubmit());
+  check(!await attachments.locator('#result-dialog').isVisible() && (await urlAudit()).length===urlsBeforeDenied && await attachments.locator('[data-result],#view input[type=file]').count()===0,'Stale submission after profile change cannot attach or leak saved context');
+  await attachments.getByRole('combobox',{name:'Simular rol',exact:true}).selectOption('ROLE-2');await dg('laboratory');
+  check(await queueRow(otherLab.id).getAttribute('data-status')==='PENDIENTE' && await documentRows(queueRow(otherLab.id)).count()===0,'Denied profile submission preserves other patient pending request');
+  await attachments.locator('#study-patient').selectOption('DEMO-003');
+  check(await attachments.locator('#study-worklist [data-page="clinical"]').count()===0,'Empty worklist cannot offer a forbidden Clinical route to Lab-only operator');
+  await openDocumentEntry(otherLab);await selectDocuments([smallJPG]);
+  const pickerCancelState={rows:await dt('#study-worklist'),urls:JSON.stringify(await urlAudit()),context:await dt('#result-context')};
+  await attachments.locator('#result-files').dispatchEvent('cancel',{bubbles:true});
+  check(await attachments.locator('#result-dialog').isVisible() && await attachments.locator('#result-files').evaluate(node=>node.files.length)===0 && await dt('#result-context')===pickerCancelState.context,'Picker Cancel clears files but preserves the SAME open result modal/target for reselection');
+  check(await dt('#study-worklist')===pickerCancelState.rows && JSON.stringify(await urlAudit())===pickerCancelState.urls,'Picker Cancel changes no saved documents/status/Blob URLs');
+  await selectDocuments([smallJPG]);await saveDocument();
+  check(!await attachments.locator('#result-dialog').isVisible() && await queueRow(otherLab.id).getAttribute('data-status')==='COMPLETADO','Reselect and Save after picker Cancel fulfills the same pending study once');
+  await assertReadOnlyDocuments(queueRow(otherLab.id),[smallJPG],'Menu-granted Lab operator commit');
+  // Accessible tabs and entry dialog fit mobile, preserving explicit text controls.
+  await attachments.getByRole('combobox',{name:'Simular rol',exact:true}).selectOption('ROLE-1');
+  await resumeDocumentClinical('AP-3');await attachments.locator('#request-study').click();await attachments.locator('#study-type').selectOption('FIX-LAB');await attachments.locator('#study-form button[type=submit]').click();
+  const mobileRequest={id:await attachments.locator('[data-study-row]').getAttribute('data-study-row'),patientId:'DEMO-003',mode:'LABORATORIO'};
+  await attachments.setViewportSize({width:390,height:844});
+  await attachments.waitForFunction(()=>document.querySelector('#menu-toggle').getAttribute('aria-expanded')==='false');
+  await dg('laboratory');await attachments.locator('#study-patient').selectOption(mobileRequest.patientId);await queueRow(mobileRequest.id).locator('[data-result]').click();
+  await selectDocuments([literalPDF]);
+  check(await attachments.locator('#result-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth) && await attachments.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Mobile document entry and literal filename fit without page/dialog overflow');
+  check(await attachments.locator('#result-dialog button').evaluateAll(nodes=>nodes.every(node=>node.textContent.trim() && !node.querySelector('svg') && node.scrollWidth<=node.clientWidth)),'Mobile document entry retains readable text actions');
+  await attachments.locator('#result-save').focus();await attachments.keyboard.press('Tab');
+  check(await attachments.locator('#result-files').evaluate(node=>node===document.activeElement),'Document entry Tab wraps to file input');await attachments.keyboard.press('Shift+Tab');
+  check(await attachments.locator('#result-save').evaluate(node=>node===document.activeElement),'Document entry reverse Tab wraps to save');await attachments.keyboard.press('Escape');
+  check(await queueRow(mobileRequest.id).getAttribute('data-status')==='PENDIENTE' && await queueRow(mobileRequest.id).locator('[data-result]').evaluate(node=>node===document.activeElement),'Mobile Escape leaves request pending and restores its attachment trigger');
+  for(const tab of ['Solicitudes y resultados','Catálogo']) {
+    const control=attachments.getByRole('tab',{name:tab,exact:true});await control.click();
+    check(await control.getAttribute('aria-selected')==='true' && await control.evaluate(node=>node.textContent.trim() && node.scrollWidth<=node.clientWidth && node.getAttribute('aria-controls') && document.getElementById(node.getAttribute('aria-controls'))),'Mobile tabs are readable and associated with real panels');
+  }
+  await attachments.getByRole('tab',{name:'Solicitudes y resultados',exact:true}).focus();await attachments.keyboard.press('ArrowRight');
+  check(await attachments.getByRole('tab',{name:'Catálogo',exact:true}).getAttribute('aria-selected')==='true','Study workspace supports keyboard tab navigation');
+  check(await attachments.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Mobile study workspace has no page overflow');
+  // Acceptance is the public effect: every captured URL becomes unusable on
+  // actual reload/logout, whether by explicit revoke or browser document unload.
+  // Best-effort pagehide callback dispatch is not itself an acceptance gate.
+  for(const reset of ['reload','logout']) {
+    const creates=(await urlAudit()).filter(event=>event.kind==='create').map(event=>event.url);
+    const oldDocuments=[...committedDocuments.entries()];
+    check(creates.length>0 && creates.length===oldDocuments.length && creates.every(url=>committedDocuments.has(url)),`${reset}: every created URL belongs to a captured committed download`);
+    if(reset==='reload') await attachments.reload();else await attachments.locator('#logout').click();
+    await attachments.locator('#login-screen').waitFor();
+    check(await attachments.locator('#workspace[hidden][inert]').count()===1 && await attachments.locator('#view').innerHTML()==='' && await attachments.locator('#result-files').evaluate(node=>node.files.length)===0 && (await urlAudit()).length===0,`${reset}: fresh login clears workspace/file draft/live URL audit`);
+    await assertStaleBlobURLs(attachments,oldDocuments.map(([url])=>url),reset);
+    committedDocuments.clear();
+    await enterDemo(attachments);
+    for(const route of ['laboratory','imaging']) {
+      await dg(route);
+      const visible=await attachments.locator('body').innerText();
+      check(await attachments.locator('[data-study-queue-row],[data-study-document],[data-document-download]').count()===0 && oldDocuments.every(([,name])=>!visible.includes(name)),`${reset}: ${route} has no old requests/documents/filenames/actions`);
+    }
+    if(reset==='reload') {
+      await resumeDocumentClinical();await attachments.locator('#request-study').click();await attachments.locator('#study-type').selectOption('FIX-LAB');await attachments.locator('#study-form button[type=submit]').click();
+      const request={...lab,id:await attachments.locator('[data-study-row]').getAttribute('data-study-row'),consultation:await attachments.locator('#consultation-record').getAttribute('data-consultation-id')};
+      await openDocumentEntry(request);await selectDocuments([smallPDF]);await saveDocument();
+      await assertReadOnlyDocuments(queueRow(request.id),[smallPDF],'Post-reload batch for explicit logout cleanup');
+    }
+  }
+  check(localDownloads.length>=7 && localDownloads.every(item=>item.url.startsWith('blob:')),'Document downloads recorded separately as local Blob events, not HTTP/API traffic');
+  check(network.length===0 && operations.length===0 && errors.length===0,'Document workflow performs no external/API/storage/content-reading operations or page errors');
+  console.log(`T10 public HTTP document batches/downloads/guards/closed-snapshots/reset contract: PASS (${checks} checks so far; local Blob downloads: ${localDownloads.length}; stale committed URL native rejections: ${staleBlobRejections.length})`);
+
   // S40: activate the literal visible caption, not the old aria-named arrow.
   // Parent owns browser RED/GREEN; all interaction here uses public native input.
   for(const mode of ['desktop mouse','mobile tap','keyboard Enter','keyboard Space']) {
@@ -147,7 +556,7 @@ try {
   // before longer connected business journeys exercise individual rules.
   const t7Early=await openPage({width:1440,height:1000});
   const t7Gaps=[];
-  const t7EarlyGo=route=>t7Early.locator(`#navigation [data-page="${route}"]`).click();
+  const t7EarlyGo=async route=>{await t7Early.locator(`#navigation [data-page="${route}"]`).click();await chooseStudyCatalogue(t7Early,route);};
   if(await t7Early.locator('#navigation [data-page="triage"]').count()) t7Gaps.push('Triage still in menu');
   if(!await t7Early.getByRole('button',{name:'Medicamentos',exact:true}).count()) t7Gaps.push('missing Medicamentos menu');
   for(const route of ['laboratory','imaging']) {
@@ -227,6 +636,7 @@ try {
   const ng=async route=>{
     if(await navigationContract.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await navigationContract.locator('#menu-toggle').click();
     await navigationContract.locator(`#navigation [data-page="${route}"]`).click();
+    await chooseStudyCatalogue(navigationContract,route);
   };
   // Measure actual button border boxes, not CSS gap or intervening whitespace.
   async function actionGeometry(target,selector) {
@@ -370,7 +780,7 @@ try {
       await ng(route);
       if(route==='settings') await nr();
       const group=route==='settings'?'#role-list .role:first-child button':route==='patients'?'#patient-results tbody tr:first-child button':route==='inventory'?'#inventory-results tbody tr:first-child button':'#catalog-results tbody tr:first-child button';
-      const region=navigationContract.locator(route==='settings'?'#role-list':'.table-wrap').first();
+      const region=navigationContract.locator(route==='settings'?'#role-list':route==='patients'?'#patient-results .table-wrap':route==='inventory'?'#inventory-results .table-wrap':'#catalog-results .table-wrap');
       if(route!=='settings') await region.evaluate(node=>node.scrollLeft=node.scrollWidth);
       check(separated(await actionGeometry(navigationContract,group)),`S30 ${viewport.width}px ${route}: every adjacent icon action has >=8px rendered separation and >=44px targets`);
       check(await navigationContract.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`S30 ${viewport.width}px ${route}: no page overflow`);
@@ -547,6 +957,7 @@ try {
   const text = selector => page.locator(selector).innerText();
   const go = async id => {
     await page.locator(`#navigation [data-page="${id}"]`).click();
+    await chooseStudyCatalogue(page,id);
     check(await page.locator(`#navigation [data-page="${id}"]`).getAttribute('aria-current') === 'page', `Active navigation ${id}`);
     await noProviderUI(page);
   };
@@ -568,6 +979,7 @@ try {
   }
   for(const route of ['patients','agenda','inventory','expenses','laboratory','imaging','diseases','allergyCatalog','medications','physicians','specialties','rooms','catalogs']) {
     await page.locator(`#navigation [data-page="${route}"]`).click();
+    await chooseStudyCatalogue(page,route);
     const add=page.locator('#page-actions button,#catalog-add');
     if(await add.innerText()!=='Agregar +') gaps.push(`${route}: visible Agregar +`);
     if(await page.locator('#view tbody td').filter({hasText:/^Sin registrar$/}).count()) gaps.push(`${route}: populated default list`);
@@ -615,12 +1027,12 @@ try {
   if(navGeometry.length!==17 || new Set(navGeometry).size!==17) presentationFailures.push('17 distinct semantic navigation geometries');
   async function iconButtons(target) {
     const invalid=await target.locator('button:visible').evaluateAll(nodes=>nodes.filter(button=>{
-      const textException=button.closest('dialog,.settings-save') || button.hasAttribute('data-tab') || button.matches('#login-enter,#catalog-add,#add-role,#add-slot,#request-study,#add-diagnosis,#add-prescription,#save-consultation,#complete-consultation,[data-context-add]') || (button.closest('#page-actions') && button.textContent==='Agregar +');
+      const textException=button.closest('dialog,.settings-save') || button.hasAttribute('data-tab') || button.hasAttribute('data-study-tab') || button.matches('#login-enter,#catalog-add,#add-role,#add-slot,#request-study,#add-diagnosis,#add-prescription,#save-consultation,#complete-consultation,[data-context-add]') || (button.closest('#page-actions') && button.textContent==='Agregar +');
       if(textException) return !button.textContent.trim() || button.querySelector('svg') || button.classList.contains('icon-action') || !button.getAttribute('aria-label');
       return !button.querySelector('svg path') || (!button.closest('#navigation') && (button.textContent.trim() || !button.getAttribute('aria-label')));
     }).map(button=>button.id || button.outerHTML));
     check(invalid.length===0, `Contextual text exceptions; other named SVG-only actions: ${invalid.join(', ')}`);
-    const unreadable=await target.locator('dialog[open] button,[data-tab],.settings-save button').evaluateAll(nodes=>nodes.filter(button=>button.textContent.trim().replace(/ \+$/,'')!==button.getAttribute('aria-label')).map(button=>button.outerHTML));
+    const unreadable=await target.locator('dialog[open] button,[data-tab],[data-study-tab],.settings-save button').evaluateAll(nodes=>nodes.filter(button=>button.textContent.trim().replace(/ \+$/,'')!==button.getAttribute('aria-label')).map(button=>button.outerHTML));
     check(unreadable.length===0, `Modal/configuration visible text matches accessible labels: ${unreadable.join(', ')}`);
   }
   async function tooltip(target,control,label) {
@@ -658,10 +1070,10 @@ try {
   check(await initialAction.evaluate(node=>node===document.activeElement), 'Dialog tooltip Escape closes dialog and restores focus');
   await go('overview');
 
-  // S12 RED boundary: direct modality catalogs have no intermediate resource tabs.
+  // S41 supersedes the no-subtabs presentation, not S12 descriptive full CRUD.
   for(const route of ['laboratory','imaging']) {
     await go(route);
-    check(await page.locator('#catalog-add').count()===1 && await page.locator('#view [role="tab"]').count()===0 && !/proveedor|provider/i.test(await text('#view')), `S12 ${route} is direct study CRUD without providers`);
+    check(await page.locator('#catalog-add').count()===1 && await page.locator('#view [role="tab"]').count()===2 && await page.getByRole('tab',{name:'Catálogo',exact:true}).getAttribute('aria-selected')==='true' && !/proveedor|provider/i.test(await text('#view')), `S12/S41 ${route} retains separate descriptive study CRUD without providers`);
     await page.locator('#catalog-add').click();
     check(await page.locator('#catalog-fields input').count()===2 && await page.locator('#cat-description').count()===1 && await page.locator('#catalog-fields select,#cat-price').count()===0, 'Study form has only name/description with implicit menu modality');
     await page.keyboard.press('Escape');
@@ -670,7 +1082,7 @@ try {
   // T7 focused behavior contracts. Parent runs RED/GREEN; never inspect closure
   // state or synthesize prescriptions/diagnoses (their authoring belongs to T8).
   const t7=await openPage({width:1440,height:1000});
-  const t7Go=route=>t7.locator(`#navigation [data-page="${route}"]`).click();
+  const t7Go=async route=>{await t7.locator(`#navigation [data-page="${route}"]`).click();await chooseStudyCatalogue(t7,route);};
   const t7Text=selector=>t7.locator(selector).innerText();
   const t7Save=()=>t7.locator('#catalog-form button[type=submit]').click();
   const t7Baseline='Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00';
@@ -1241,7 +1653,7 @@ try {
     const route=catalogRoutes[kind] || (mode==='IMAGEN'?'imaging':'laboratory');
     if(await target.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await target.locator('#menu-toggle').click();
     await target.locator(`#navigation [data-page="${route}"]`).click();
-    // Each study modality now opens its CRUD directly.
+    await chooseStudyCatalogue(target,route);
     await noProviderUI(target);
   }
   async function catalogTab(kind,mode) { await selectCatalog(page,kind,mode); }
@@ -1426,6 +1838,7 @@ try {
   const fg = async id => {
     if(await flow.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await flow.locator('#menu-toggle').click();
     await flow.locator(`#navigation [data-page="${id}"]`).click();
+    await chooseStudyCatalogue(flow,id);
     await noProviderUI(flow);
   };
   await fg('agenda');
@@ -1580,6 +1993,7 @@ try {
   await flow.locator('#study-type').selectOption('UNKNOWN-TYPE'); await flow.locator('#study-form button[type=submit]').click();
   check(await ft('#study-error')==='Selecciona un Laboratorio o Imagen válido en una consulta activa.' && await ft('#consultation-studies')===noStudies, 'Unknown type rejected without request mutation or unrelated dependency');
   await flow.keyboard.press('Escape');
+  const flowResultFiles=new Map();
   for(const study of ['Estudio lab flujo','Estudio imagen flujo']) {
     await flow.locator('#request-study').click();
     await flow.locator('#study-type').selectOption({label:study});
@@ -1589,13 +2003,19 @@ try {
     check((await ft('#consultation-studies')).includes(study) && (await ft('#consultation-studies')).includes('PENDIENTE'), `Request ${study}`);
     check((await ft('#consultation-studies')).includes(study.includes('lab')?'LABORATORIO':'IMAGEN') && !/proveedor|provider|Sin registrar/.test(await ft('#consultation-studies')), 'Requested study shows type/modality/status without missing-resource placeholder');
     const studyRow=flow.locator('[data-study-row]').filter({hasText:study});
-    await studyRow.getByRole('button',{name:'Registrar resultado',exact:true}).click();
-    await flow.locator('#result-form button[type=submit]').click();
-    check((await ft('#result-error')).includes('resultado') && (await studyRow.innerText()).includes('PENDIENTE'), 'Empty result rejected without study mutation');
-    await flow.locator('#result-text').fill(`Resultado humano: ${study}`);
-    await flow.locator('#result-reference').fill('REF-DEMO');
-    await flow.locator('#result-form button[type=submit]').click();
-    check((await studyRow.innerText()).includes('COMPLETADO') && (await studyRow.innerText()).includes(`Resultado humano: ${study}`), `Record ${study} result`);
+    const studyId=await studyRow.getAttribute('data-study-row'),mode=study.includes('lab')?'LABORATORIO':'IMAGEN';
+    check(await studyRow.locator('[data-result]').count()===0,'Clinical has no result uploader');
+    await openStudyDocumentEntry(flow,studyId,mode);
+    await flow.locator('#result-save').click();
+    const queue=flow.locator(`[data-study-queue-row="${studyId}"]`);
+    check((await ft('#result-error')).length>0 && (await queue.innerText()).includes('PENDIENTE'), 'Empty document batch rejected without study mutation');
+    const file={name:mode==='IMAGEN'?'resultado-imagen-flujo.png':'resultado-lab-flujo.pdf',mimeType:mode==='IMAGEN'?'image/png':'application/pdf',buffer:Buffer.from(`SYNTHETIC document fixture: ${study}`)};
+    flowResultFiles.set(study,file);
+    await flow.locator('#result-files').setInputFiles([file]);await flow.locator('#result-save').click();
+    check((await queue.innerText()).includes('COMPLETADO') && (await queue.innerText()).includes(file.name), `Record ${study} document result`);
+    await syntheticDownload(flow,queue.locator('[data-document-download]'),file);
+    await fg('agenda');await flow.locator(`[data-attend="${appointmentId}"]`).click();
+    check((await studyRow.innerText()).includes(file.name) && await studyRow.locator('[data-document-download]').count()===1, 'Clinical reads linked completed filename/download after queue fulfillment');
     const completedStudies=await ft('#consultation-studies');
     await flow.locator('#request-study').click(); await flow.locator('#study-type').selectOption({label:study});
     await flow.locator('#study-form button[type=submit]').click();
@@ -1604,9 +2024,9 @@ try {
   }
   await fg('clinical');
   await flow.locator('#clinical-patient').selectOption('DEMO-001');
-  check(!await flow.locator('#consultation-record').count() && !(await ft('#clinical-results')).includes('Resultado humano'), 'Consultation/results remain patient-specific');
+  check(!await flow.locator('#consultation-record').count() && !(await ft('#clinical-results')).includes('resultado-lab-flujo.pdf') && !(await ft('#clinical-results')).includes('resultado-imagen-flujo.png'), 'Consultation/results remain patient-specific');
   await fg('agenda'); await flow.locator(`[data-attend="${appointmentId}"]`).click();
-  check((await ft('#consultation-studies')).includes('REF-DEMO'), 'Study findings persist on return');
+  check((await flow.locator('#consultation-studies [data-document-name]').allTextContents()).join('|')===[...flowResultFiles.values()].map(file=>file.name).join('|'), 'Linked study documents persist on return');
   // Free studies alone may never become billable lines or create an order.
   for(const control of await flow.locator('input[name=procedure]').all()) await control.uncheck();
   const beforeFreeStudyReject=await ft('#consultation-studies');
@@ -1744,13 +2164,15 @@ try {
   await flow.locator('#study-type').selectOption({label:'Estudio lab renombrado'});
   await flow.locator('#study-form button[type=submit]').click();
   const pendingStudy=await ft('#consultation-studies');
+  const pendingStudyId=await flow.locator('[data-study-row]').getAttribute('data-study-row');
   for(const dismiss of ['cancel','escape']) {
-    await flow.locator('[data-result]').click(); await noOverflow(flow);
+    await openStudyDocumentEntry(flow,pendingStudyId,'LABORATORIO');await noOverflow(flow);
     check(await flow.locator('#result-dialog').evaluate(node=>node.scrollWidth<=node.clientWidth), 'Mobile result dialog internal width');
-    await flow.locator('#result-text').fill('Descartar resultado');
-    await flow.locator('#result-form button[type=submit]').focus(); await flow.keyboard.press('Tab');
-    check(await flow.locator('#result-text').evaluate(node=>node===document.activeElement), 'Result textarea participates in focus wrap');
-    if(dismiss==='cancel') await flow.locator('#result-dialog [data-close]').click(); else await flow.keyboard.press('Escape');
+    await flow.locator('#result-files').setInputFiles([{name:'descartar.pdf',mimeType:'application/pdf',buffer:Buffer.from('SYNTHETIC discarded document')}]);
+    await flow.locator('#result-save').focus();await flow.keyboard.press('Tab');
+    check(await flow.locator('#result-files').evaluate(node=>node===document.activeElement), 'Result file chooser participates in focus wrap');
+    if(dismiss==='cancel') await flow.locator('#result-dialog [data-close]').click();else await flow.keyboard.press('Escape');
+    await fg('agenda');await flow.locator('[data-attend="AP-1"]').click();
     check(await ft('#consultation-studies')===pendingStudy, `Result ${dismiss} preserves pending state`);
     check(await flow.locator('#clinical-results .appointment:has([data-attend="AP-1"]) .badge').innerText()==='En atención', `Result ${dismiss} does not change linked appointment lifecycle`);
   }
@@ -1809,6 +2231,7 @@ try {
   const eg=async id=>{
     if(await expanded.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await expanded.locator('#menu-toggle').click();
     await expanded.locator(`#navigation [data-page="${id}"]`).click();
+    await chooseStudyCatalogue(expanded,id);
     await noProviderUI(expanded);
   };
   for(const [id,label] of Object.entries(resourceMenus)) {
@@ -1820,7 +2243,7 @@ try {
     await eg(route);
     // Free fictional fixtures are removed via the public confirmation to retain empty/CRUD coverage.
     await expanded.locator('[data-master-delete]').click(); await expanded.locator('#master-delete-confirm').click();
-    check(await expanded.locator('#view [role="tab"]').count()===0, `No resource subtabs in ${mode}`);
+    check(await expanded.locator('#view [role="tab"]').count()===2 && await expanded.getByRole('tab',{name:'Catálogo',exact:true}).getAttribute('aria-selected')==='true', `S41 separate operational/catalogue tabs in ${mode}`);
     await expanded.locator('#catalog-add').click();
     await expanded.locator('#cat-name').fill(`Estudio ${mode}`); await expanded.locator('#cat-description').fill(`Descripción ${mode}`);
     check(await expanded.locator('#catalog-fields select,#cat-price').count()===0 && await expanded.locator('#cat-description').count()===1,`Study fields only name/description; menu fixes modality: ${mode}`);
@@ -2019,7 +2442,7 @@ try {
   // Full S13 CRUD on free records; public DOM only, independent fixtures.
   const masters=await openPage({width:1440,height:1000});
   const mt=selector=>masters.locator(selector).innerText();
-  async function mg(route) { await masters.locator(`#navigation [data-page="${route}"]`).click(); await noProviderUI(masters); }
+  async function mg(route) { await masters.locator(`#navigation [data-page="${route}"]`).click(); await chooseStudyCatalogue(masters,route); await noProviderUI(masters); }
   async function mc(kind,mode) { await selectCatalog(masters,kind,mode); }
   async function submitMaster() { await masters.locator('#catalog-form button[type=submit]').click(); }
   async function detailMaster(row,name,detail) {
@@ -2176,6 +2599,7 @@ try {
   const sg=async route=>{
     if(await session.locator('#menu-toggle').getAttribute('aria-expanded')==='false') await session.locator('#menu-toggle').click();
     await session.locator(`#navigation [data-page="${route}"]`).click();
+    await chooseStudyCatalogue(session,route);
     await noProviderUI(session);
   };
   const baseline='Bs 700,00|Bs 250,00|Bs 450,00|Bs 1.400,00';
@@ -2461,7 +2885,7 @@ try {
   check(documents.length > 0, 'Full business suite loaded documents through owned HTTP preview');
   check(network.length === 0 && operations.length === 0, `No external/API requests or storage writes: ${network.join(', ')} ${operations.join(', ')}`);
   check(errors.length === 0, `No page errors: ${errors.join(', ')}`);
-  console.log(`PASS ${checks} checks · 1440×1000 + 390×844 · screenshots: desktop.png, mobile.png, login-desktop.png, login-mobile.png · allowed local HTML document loads: ${documents.length} · external/API/storage writes: 0 · page errors: 0`);
+  console.log(`PASS ${checks} checks · 1440×1000 + 390×844 · screenshots: desktop.png, mobile.png, login-desktop.png, login-mobile.png · allowed local HTML document loads: ${documents.length} · local Blob downloads: ${localDownloads.length} · stale Blob URL native rejections: ${staleBlobRejections.length} · external/API/storage writes: 0 · page errors: 0`);
 } finally {
   try {
     for (const context of contexts) await context.close();
