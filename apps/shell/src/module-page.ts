@@ -22,7 +22,19 @@ export class ModulePage implements AfterViewInit, OnDestroy {
   private readonly auth = inject(AUTH_SESSION);
   private readonly principal = this.auth.snapshot().subject;
   private unsubscribeAuth?: () => void;
-  private allowed() { return getAccessToken() !== null && this.auth.snapshot().subject === this.principal; }
+  private retired = false;
+  private lease?: { revoked: boolean };
+  private allowed(lease = this.lease) {
+    const token = getAccessToken();
+    return !this.retired && !!lease && !lease.revoked && lease === this.lease && token !== null && this.auth.snapshot().subject === this.principal;
+  }
+  private retireMount() {
+    // Revoke synchronously, before asynchronous teardown or a replacement mount.
+    if (this.lease) this.lease.revoked = true;
+    this.lease = undefined;
+    void this.session?.destroy();
+    this.container?.remove();
+  }
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   readonly remote = inject(PLATFORM_CONFIG).remotes.find(r => r.id === this.route.snapshot.data['remoteId'])!;
@@ -30,15 +42,20 @@ export class ModulePage implements AfterViewInit, OnDestroy {
   @ViewChild('surface', { static: true }) surface!: ElementRef<HTMLElement>;
   private session?: ReturnType<typeof createRemoteSession>;
   private readonly navigation = this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => {
-    if (this.allowed()) void this.session?.update(this.context());
+    if (this.allowed()) void this.session?.update(this.context(this.lease!));
   });
-  private readonly onNavigate = (path: string) => {
-    if (!this.allowed()) return;
-    const target = confinedPath(path, this.remote.basePath, location.origin);
-    if (target) void this.router.navigateByUrl(target).catch(() => this.state.set('error'));
-  };
-  private context(): RemoteContextV1 {
-    return { contractVersion: 1, basePath: this.remote.basePath, path: this.router.url.split('#')[0], apiBaseUrl: this.remote.apiBaseUrl, getAccessToken: () => this.allowed() ? getAccessToken() : null, onNavigate: this.onNavigate };
+  private context(lease: { revoked: boolean }): RemoteContextV1 {
+    return {
+      contractVersion: 1, basePath: this.remote.basePath, path: this.router.url.split('#')[0], apiBaseUrl: this.remote.apiBaseUrl,
+      getAccessToken: () => this.allowed(lease) ? getAccessToken() : null,
+      onNavigate: (path: string) => {
+        if (!this.allowed(lease)) return;
+        const target = confinedPath(path, this.remote.basePath, location.origin);
+        if (target) void this.router.navigateByUrl(target).catch(() => {
+          if (this.allowed(lease)) this.state.set('error');
+        });
+      },
+    };
   }
   private root?: ShadowRoot;
   private container?: HTMLElement;
@@ -46,16 +63,18 @@ export class ModulePage implements AfterViewInit, OnDestroy {
     this.root = this.surface.nativeElement.attachShadow({ mode: 'open' });
     this.unsubscribeAuth = this.auth.subscribe(next => {
       if (next.status !== 'authenticated' || next.subject !== this.principal) {
-        void this.session?.destroy();
-        this.container?.remove(); this.state.set('error');
+        this.retired = true;
+        this.retireMount();
+        this.state.set('error');
       }
     });
     this.retry();
   }
   retry() {
-    if (!this.root || !this.allowed()) return;
-    void this.session?.destroy();
-    this.container?.remove();
+    if (!this.root || this.retired || getAccessToken() === null || this.auth.snapshot().subject !== this.principal) return;
+    this.retireMount();
+    const lease = { revoked: false };
+    this.lease = lease;
     const root = this.root;
     const container = document.createElement('div'); root.append(container);
     this.container = container;
@@ -63,9 +82,14 @@ export class ModulePage implements AfterViewInit, OnDestroy {
       container,
       loadModule: () => import(/* @vite-ignore */ this.remote.entry) as Promise<RemoteModuleV1>,
       loadStyle: () => loadStyles(root, this.remote.styles!),
-      onState: state => { if (this.allowed()) this.state.set(state); },
+      onState: state => { if (this.allowed(lease)) this.state.set(state); },
     });
-    void this.session.start(this.context());
+    void this.session.start(this.context(lease));
   }
-  ngOnDestroy() { this.unsubscribeAuth?.(); this.navigation.unsubscribe(); void this.session?.destroy(); }
+  ngOnDestroy() {
+    this.retired = true;
+    this.retireMount();
+    this.unsubscribeAuth?.();
+    this.navigation.unsubscribe();
+  }
 }

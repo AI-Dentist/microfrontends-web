@@ -51,7 +51,7 @@ T8 owns real deployment alignment, not this example.
 | Refresh | One in-flight Promise, ten-second total protocol/verification deadline, generation/principal bound; refresh token rotation stays in RAM. Auto-refresh before access expiry; expiry still clears grants even if refresh hangs. Late or rejected responses cannot restore/replace an old user or clear a new login. |
 | Renewed ID | When returned, validate its signature/expiry/issuer/client and unchanged subject, audience set, azp and auth_time. Nonce may be omitted; if present it must match the original transaction. Core permits no refreshed ID: only an existing verified session may retain its original ID claims/token, while newly verifying the access token and its subject. This is never an initial-login bypass or a new assertion that the retained ID is unexpired. |
 | Roles | Only verified access `realm_access.roles`: ADMIN, CAJERO, ODONTOLOGO, RECEPCIONISTA; unknowns removed and duplicates collapsed. No role-driven financial identity inference or obligatory finance query for ODONTOLOGO/RECEPCIONISTA. |
-| Remote ownership | Authenticated workspace outlets retire on session loss. Module mounts also subscribe for immediate disposal, ignore stale navigation/state callbacks and expose a principal-bound synchronous token getter. |
+| Remote ownership | Each mount owns a permanently revocable lease. Logout, expiry, refresh rejection, principal loss or component destruction retire the page and its mount; retry retires only the previous mount. Retained getters return null and navigation/state callbacks become inert, even after same-subject login. Only the current mount can update state or synchronously read refreshed tokens. |
 
 No browser-only mechanism protects against same-origin malicious JavaScript; deploy
 with appropriate CSP and protect script supply chains. Server guards still decide
@@ -75,6 +75,7 @@ API access. Domain user/doctor/cashier IDs must never be guessed from JWT subjec
 Run finite synthetic protocol tests with Node 22:
 
 ```sh
+node --test apps/shell/test/remote-auth-revocation.test.mjs
 node --test apps/shell/test/runtime-config.test.mjs apps/shell/test/oidc-token.test.mjs apps/shell/test/auth-session.test.mjs
 node --test apps/shell/test/*.test.mjs
 node --test scripts/test/*.test.mjs
@@ -104,10 +105,38 @@ These are protocol/unit checks, **not** real Keycloak/browser PKCE acceptance.
   security/concurrency escalation requires independent verification. No native
   START, receipt or approval is claimed.
 
+### C1 retirement correction
+
+The parent-owned independent verifier found one retirement blocker on source
+`cee530f`: a held remote context regained token/navigation access after logout,
+destruction and same-subject login. It also reproduced on baseline; this is not
+claimed as a newly introduced defect.
+
+`remote-auth-revocation.test.mjs` imports the actual production `ModulePage` using
+Node's experimental `stripTypeScriptTypes`. Only framework metadata/import wiring
+is adapted: Angular injection/signals and DOM are inert, while remote lifecycle
+and signed synthetic authentication use the real runtime/session/token modules.
+The harness retains callbacks and holds mount promises without sleeps. No
+permission method is replaced or imitated; key pairs remain in RAM and failure
+diagnostics expose only token-presence booleans and navigation counts.
+
+Observed focused RED: exit 1, 0/7 passed; the exact logout/destroy/relogin case
+reported `{staleGetterReturnedNewToken:true,staleNavigation:1}`. After the lease
+fix, focused GREEN: exit 0, 7/7 passed, no skipped/cancelled tests. Both runs
+emitted Node's experimental type-stripping warning. Cases assert retired getters,
+navigation, stale state, late unmount/container disposal, and preservation of
+active replacement navigation, updates and synchronous refreshed tokens.
+Owner final regression command `node --test apps/shell/test/*.test.mjs scripts/test/*.test.mjs`
+passed 157/157, exit 0, 4.303 seconds, with no failures/skips/cancellations.
+The experimental type-stripping warning was emitted; stderr is not claimed empty.
+The cached Angular shell build passed, exit 0 in 26 seconds, without dependency
+installation. The same parent-owned verifier's blocker-targeted recheck remains
+pending; these author/owner checks do not constitute independent acceptance.
+
 ## Remaining stages
 
-Independent risk-2/risk-4 verification remains pending on the actual work-unit
-commit/diff. T4 still owns all remotes' service-level token/client
+Corrected risk-2/risk-4 acceptance remains pending on the actual work-unit
+commit/diff and the same parent-owned verifier's targeted C1 recheck. T4 still owns all remotes' service-level token/client
 propagation (including native-federation ERP); gating a route does not make its
 legacy service clients integrated. T5 owns the lazy authorized financial identity
 lookup. T10 owns bounded real-Keycloak browser login/refresh/logout and classic ERP
