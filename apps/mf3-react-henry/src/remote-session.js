@@ -23,7 +23,7 @@ function createSession(context) {
   // client at all (fail closed) when the host configures none.
   const agendaBaseUrl = context.serviceBaseUrls?.agenda;
   const agendaClient = typeof agendaBaseUrl === 'string' && agendaBaseUrl.trim()
-    ? createHttpClient({ apiBaseUrl: agendaBaseUrl, getAccessToken: context.getAccessToken, hosted: true })
+    ? createHttpClient({ apiBaseUrl: agendaBaseUrl, getAccessToken: context.getAccessToken, hosted: true, envelopeErrors: true })
     : null;
   let current = context;
   const sessionKey = ++nextSessionKey;

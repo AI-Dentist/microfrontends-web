@@ -35,7 +35,7 @@ export function retiredRequest() {
 
 // Supplying a capability selects hosted mode. Standalone remains an explicit,
 // separate default API; hosted callers cannot override the host's target/auth.
-export function createHttpClient({ apiBaseUrl, getAccessToken, hosted = getAccessToken !== undefined } = {}) {
+export function createHttpClient({ apiBaseUrl, getAccessToken, hosted = getAccessToken !== undefined, envelopeErrors = false } = {}) {
   const resolvedBase = hosted ? apiBaseUrl : apiBaseUrl || getBaseUrl();
   let retired = false;
   const retire = () => { retired = true; };
@@ -55,7 +55,7 @@ export function createHttpClient({ apiBaseUrl, getAccessToken, hosted = getAcces
   const isActive = () => !retired && (!hosted || currentToken() !== null);
   const client = async (endpoint, options = {}) => {
     if (!hosted) return httpClient(endpoint, {
-      ...options, apiBaseUrl: options.apiBaseUrl || options.baseUrl || resolvedBase,
+      ...options, envelopeErrors, apiBaseUrl: options.apiBaseUrl || options.baseUrl || resolvedBase,
     });
     const token = currentToken();
     if (!token) throw retiredRequest();
@@ -63,7 +63,7 @@ export function createHttpClient({ apiBaseUrl, getAccessToken, hosted = getAcces
     delete headers.authorization;
     try {
       const result = await httpClient(endpoint, {
-        ...options, headers, token, baseUrl: undefined, apiBaseUrl: resolvedBase,
+        ...options, headers, token, envelopeErrors, baseUrl: undefined, apiBaseUrl: resolvedBase,
       });
       if (!isActive()) throw retiredRequest();
       return result;
@@ -87,6 +87,7 @@ export function createHttpClient({ apiBaseUrl, getAccessToken, hosted = getAcces
  * @param {AbortSignal} [options.signal]
  * @param {string} [options.baseUrl] - URL base personalizada opcional
  * @param {string} [options.apiBaseUrl] - URL base remota/federada opcional
+ * @param {boolean} [options.envelopeErrors=false] - Map MS3 `{ success:false, error }` bodies onto the error detail
  * @returns {Promise<any>}
  */
 export async function httpClient(endpoint, {
@@ -97,6 +98,7 @@ export async function httpClient(endpoint, {
   signal,
   baseUrl,
   apiBaseUrl,
+  envelopeErrors = false,
 } = {}) {
   const effectiveBase = apiBaseUrl || baseUrl || getBaseUrl();
   const baseQueryIndex = effectiveBase.indexOf('?');
@@ -145,8 +147,9 @@ export async function httpClient(endpoint, {
   }
 
   if (!response.ok) {
-    // MS3 answers { success:false, error, code } rather than problem details.
-    const raw = typeof response.clone === 'function'
+    // MS3 answers { success:false, error, code } rather than problem details;
+    // only clients created for MS3 opt in, so MS2 error text is unchanged.
+    const raw = envelopeErrors && typeof response.clone === 'function'
       ? await response.clone().json().catch(() => null)
       : null;
     const problem = await parseProblemDetails(response);
