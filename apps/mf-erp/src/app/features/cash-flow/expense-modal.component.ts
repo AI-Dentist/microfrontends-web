@@ -8,6 +8,7 @@ import { SelectModule } from 'primeng/select';
 import { TextareaModule } from 'primeng/textarea';
 import { LocalAiService } from '../../core/ai-local/local-ai.service';
 import { AuthContextService } from '../../core/auth/auth-context.service';
+import { FinancialIdentityService } from '../../core/auth/financial-identity.service';
 import { canCollectPayments } from '../billing/finance-permissions';
 import { CategoriaEgreso, MetodoPago } from '../../core/graphql/models';
 import { CriticalMutationService } from '../../core/offline/critical-mutation.service';
@@ -28,6 +29,8 @@ const CATEGORY_OPTIONS: { label: string; value: CategoriaEgreso }[] = [
   selector: 'erp-expense-modal',
   imports: [FormsModule, DialogModule, ButtonModule, SelectModule, InputNumberModule, TextareaModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // Resolved against the route's Apollo/runtime; the id itself is cached per hosted lease.
+  providers: [FinancialIdentityService],
   template: `
     <p-dialog
       header="Registrar egreso"
@@ -100,6 +103,7 @@ export class ExpenseModal {
   readonly closed = output<void>();
 
   private readonly auth = inject(AuthContextService);
+  private readonly identity = inject(FinancialIdentityService);
   private readonly ai = inject(LocalAiService);
   private readonly mutations = inject(CriticalMutationService);
   private readonly messages = inject(MessageService);
@@ -193,9 +197,12 @@ export class ExpenseModal {
     this.suggestionRequest++; this.hint.set(null);
     if (this.debounceTimer !== null) clearTimeout(this.debounceTimer);
     try {
+      const cashierId = await this.identity.resolve();
+      this.auth.refresh();
+      if (this.disposed || owner !== this.auth.principalKey() || !canCollectPayments(this.auth.roles())) return;
       const result = await this.mutations.run(
         'RegistrarEgresoCaja',
-        { input: { usuarioCajeroId: this.auth.requireFinancialUserId(), descripcion: this.concepto().trim(), categoria, metodoPago: this.method(), montoBs: this.monto() ?? 0 } },
+        { input: { usuarioCajeroId: cashierId, descripcion: this.concepto().trim(), categoria, metodoPago: this.method(), montoBs: this.monto() ?? 0 } },
         this.action,
       );
       this.auth.refresh();

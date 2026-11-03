@@ -8,6 +8,8 @@ import { HttpLink } from 'apollo-angular/http';
 import { CriticalMutationService } from './offline/critical-mutation.service';
 import { OfflineSyncService } from './offline/offline-sync.service';
 import { ReceiptPdfService } from '../shared/components/receipt-preview-modal/receipt-pdf.service';
+import { FinancialIdentityService } from './auth/financial-identity.service';
+import { ReportExportService } from '../features/generative-reports/report-export.service';
 
 /**
  * Everything the ERP needs, provided on the federated route so the Application Shell
@@ -22,6 +24,8 @@ export function provideErp(config: ErpGraphqlConfig = {}): (Provider | Environme
     OfflineSyncService,
     CriticalMutationService,
     ReceiptPdfService,
+    FinancialIdentityService,
+    ReportExportService,
     providePrimeNG({
       ripple: true,
       theme: {

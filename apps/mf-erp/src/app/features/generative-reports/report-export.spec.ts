@@ -6,6 +6,8 @@ import { MessageService } from 'primeng/api';
 import { AuthContextService } from '../../core/auth/auth-context.service';
 import { DynamicReportViewer } from './dynamic-report-viewer.component';
 import * as reportData from './report-data';
+import { ERP_RUNTIME, ErpRuntimeContext } from '../../core/runtime/erp-runtime-context';
+import { ReportExportService } from './report-export.service';
 
 const id = '00000000-0000-4000-8000-000000000010';
 const path = `/api/v1/reports/export/${id}/xlsx`;
@@ -93,5 +95,57 @@ describe('report export through the public viewer', () => {
     fetcher.mockResolvedValue({ ok: false, status: 403 });
     await download();
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe('hosted export transport', () => {
+  const jwt = (claims: object) => `e30.${btoa(JSON.stringify(claims))}.signature`;
+  const hostToken = (sub = 'keycloak-subject') => jwt({ iss: 'https://issuer', sub, realm_access: { roles: ['ADMIN'] } });
+  const endpoint = 'https://api.example/erp/graphql?tenant=a';
+  const report = { reporteId: id, urlDescargaExcel: path, urlDescargaPdf: path.replace('xlsx', 'pdf') } as any;
+  let current: string | null;
+  let fetcher: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    current = hostToken();
+    fetcher = vi.fn(async () => ({ ok: true, blob: async () => new Blob(['bytes']) }));
+    vi.stubGlobal('fetch', fetcher);
+    // A stale browser credential must never be consulted by a hosted scope.
+    vi.stubGlobal('localStorage', { getItem: (key: string) => key === 'kc_token' ? jwt({ iss: 'https://legacy', sub: 'legacy', realm_access: { roles: ['ADMIN'] } }) : null });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    TestBed.configureTestingModule({ providers: [
+      { provide: ERP_RUNTIME, useValue: new ErpRuntimeContext({ mode: 'hosted', graphqlUrl: endpoint, getAccessToken: () => current }) },
+    ] });
+  });
+  afterEach(() => { TestBed.resetTestingModule(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('downloads from the hosted endpoint origin with the current host token on every request', async () => {
+    const service = TestBed.inject(ReportExportService);
+    await service.download(report, 'xlsx');
+    current = hostToken();
+    await service.download(report, 'pdf');
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual(['https://api.example' + path, 'https://api.example' + path.replace('xlsx', 'pdf')]);
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ headers: { Authorization: `Bearer ${hostToken()}` }, redirect: 'error', credentials: 'omit' });
+    expect(fetcher.mock.calls[0][1].headers['X-Dev-User']).toBeUndefined();
+  });
+  it('rejects a URL outside the hosted endpoint origin before any HTTP', async () => {
+    await expect(TestBed.inject(ReportExportService).download({ ...report, urlDescargaExcel: 'http://localhost:8080' + path }, 'xlsx'))
+      .rejects.toThrow('URL de exportación no autorizada.');
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('rejects with zero HTTP when the host capability is null, and never revives after a later token', async () => {
+    const service = TestBed.inject(ReportExportService);
+    current = null;
+    await expect(service.download(report, 'xlsx')).rejects.toThrow();
+    current = hostToken();
+    await expect(service.download(report, 'xlsx')).rejects.toThrow();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('rejects with zero HTTP when the principal switched', async () => {
+    const service = TestBed.inject(ReportExportService);
+    await service.download(report, 'xlsx');
+    fetcher.mockClear();
+    current = hostToken('another-subject');
+    await expect(service.download(report, 'xlsx')).rejects.toThrow();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });

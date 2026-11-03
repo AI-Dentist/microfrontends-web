@@ -162,6 +162,40 @@ Native shell tests: `node --test apps/shell/test/erp-host-capabilities.test.mjs`
 executed from the production bootstrap source). Angular specs cover the transport, outbox
 and catalog boundaries; real-service and browser acceptance remain T10.
 
+## Classic finance identity and export (T5)
+
+**Cashier identity.** A JWT subject identifies the login, never an ERP `Usuario`. In a hosted
+scope the cash payment, expense and QR modals resolve the canonical financial `Usuario.id`
+with `obtenerMiUsuarioId` (no arguments, ADMIN/CAJERO) through the route's Apollo client, so
+the request uses the same per-request host token and endpoint as every other operation.
+`FinancialIdentityService` asks once per lease: concurrent callers share one request and the
+answer is cached for that lease only (keyed by the route's runtime, so it dies with the route
+injector and is never shared with another lease or principal). Retirement, a principal switch
+or a late answer after either clears it. A failure (forbidden, not found, network, malformed
+UUID) is not cached; the modal shows the error and sends **no** financial mutation. There is no
+fallback to the dev default id, the JWT subject or a doctor id. Standalone keeps
+`requireFinancialUserId` and the configured dev-mock mapping unchanged.
+
+**Admin linking.** A cashier exists for the backend only after an ADMIN links the ERP user to the
+Keycloak subject. In *Seguridad* the ADMIN-only **Vincular identidad** card calls
+`vincularIdentidadUsuario(input: { usuarioId, keycloakSubject })`. The subject is opaque: it is
+trimmed only to reject an empty value and is sent exactly as typed. Backend errors (conflict,
+inactive target, reassignment) are shown as plain text, unchanged. Onboard doctors with the
+existing paired doctor provisioner, not this user-only link.
+
+**QR simulation.** `simularConfirmacionQrDev` is a development simulator. In a hosted scope the
+button is not rendered and the handler refuses to run, so no fake provider confirmation can be
+produced. Generating and polling use the real API; real provider activation is out of scope.
+Standalone development is unchanged.
+
+**Export transport.** `ReportExportService` validates the download URL against the hosted
+endpoint origin and sends the host's current token per request (never `kc_token`). A null,
+revoked or switched-principal capability rejects the promise with zero HTTP requests and never
+revives. Standalone keeps `environment.graphqlUrl` and the stored token.
+`provideErp()` registers `FinancialIdentityService` and `ReportExportService` per route so
+consumers resolve the hosted instances instead of root-scoped ones.
+No AI or agent activation is part of this path.
+
 ## Remaining stages
 
 Corrected risk-2/risk-4 acceptance remains pending on the actual work-unit

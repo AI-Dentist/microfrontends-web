@@ -2,17 +2,21 @@ import { Injectable, inject } from '@angular/core';
 import { AuthContextService } from '../../core/auth/auth-context.service';
 import { ReporteGenerativoPayload } from '../../core/graphql/models';
 import { buildRequestHeaders } from '../../core/graphql/request-headers';
+import { ERP_RUNTIME } from '../../core/runtime/erp-runtime-context';
 import { environment } from '../../../environments/environment';
 import { trustedReportExportUrl } from './report-data';
 
 @Injectable({ providedIn: 'root' })
 export class ReportExportService {
   private readonly auth = inject(AuthContextService);
+  private readonly runtime = inject(ERP_RUNTIME);
 
   async download(report: ReporteGenerativoPayload, format: 'xlsx' | 'pdf'): Promise<void> {
     // Validate destination before reading credentials. Never follow a redirect with auth.
+    // A hosted scope trusts only its own endpoint and host token (read per request); standalone keeps the prototype URL.
+    const backend = this.runtime.hosted ? this.runtime.endpoint ?? '' : environment.graphqlUrl;
     const raw = format === 'xlsx' ? report.urlDescargaExcel : report.urlDescargaPdf;
-    const url = trustedReportExportUrl(raw, environment.graphqlUrl, location.origin, report.reporteId, format);
+    const url = trustedReportExportUrl(raw, backend, location.origin, report.reporteId, format);
     const token = this.auth.refresh();
     const owner = this.auth.principalKey();
     if (!owner || !this.auth.roles().includes('ADMIN')) throw new Error('Solo ADMIN puede exportar reportes propios.');

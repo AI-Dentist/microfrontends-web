@@ -11,7 +11,8 @@ import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { LogAuditoria, UsuarioSistema } from '../../core/graphql/models';
-import { ACTUALIZAR_CONFIGURACION_EMPRESA } from '../../core/graphql/mutations.graphql';
+import { OWNER_CONTEXT_KEY } from '../../core/graphql/graphql.provider';
+import { ACTUALIZAR_CONFIGURACION_EMPRESA, VINCULAR_IDENTIDAD_USUARIO } from '../../core/graphql/mutations.graphql';
 import {
   LISTAR_AUDIT_LOGS,
   LISTAR_USUARIOS,
@@ -103,6 +104,28 @@ const AUDIT_LOG_LIMIT = 50;
       </div>
 
       <div class="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 class="text-xl font-semibold text-slate-800">Vincular identidad</h2>
+        <p class="mb-3 text-sm text-slate-500">
+          Asocia un usuario ERP activo con su identidad de Keycloak (subject). Es necesario para que un cajero pueda registrar cobros y egresos. El subject se envía tal como se escribe.
+        </p>
+        <form class="grid max-w-3xl grid-cols-2 gap-3" (ngSubmit)="linkIdentity()">
+          <label class="flex flex-col gap-1 text-sm">
+            Usuario ERP
+            <p-select data-testid="link-user" name="linkUser" size="small" [options]="users()" optionLabel="username" optionValue="id"
+              [ngModel]="linkUserId()" (ngModelChange)="linkUserId.set($event)" [disabled]="linking()" appendTo="body" aria-label="Usuario ERP a vincular" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            Subject de Keycloak
+            <input pInputText data-testid="link-subject" name="linkSubject" autocomplete="off" spellcheck="false"
+              [ngModel]="linkSubject()" (ngModelChange)="linkSubject.set($event)" [disabled]="linking()" />
+          </label>
+          <div class="col-span-2 flex justify-end">
+            <p-button label="Vincular identidad" type="submit" size="small" [loading]="linking()" [disabled]="!canLink()" />
+          </div>
+        </form>
+      </div>
+
+      <div class="rounded-lg border border-slate-200 bg-white p-4">
         <h2 class="mb-3 text-xl font-semibold text-slate-800">Logs de auditoría</h2>
         <p-table [value]="logs()" [loading]="loading()" size="small" stripedRows>
           <ng-template #header>
@@ -144,6 +167,12 @@ export class CompanySecurity implements OnInit {
   readonly loading = signal(false);
   readonly fromCache = signal(false);
   readonly saving = signal(false);
+  readonly linkUserId = signal<string | null>(null);
+  readonly linkSubject = signal('');
+  readonly linking = signal(false);
+  /** The subject is opaque: trimming is only used to reject an empty value, never to alter what is sent. */
+  readonly canLink = computed(() =>
+    this.isAdmin() && this.online() && !this.linking() && !!this.linkUserId() && this.linkSubject().trim().length > 0);
 
   readonly form = this.fb.group({
     nombreComercial: ['', Validators.required],
@@ -227,6 +256,35 @@ export class CompanySecurity implements OnInit {
       });
     } finally {
       this.updatingUserId.set(null);
+    }
+  }
+
+  async linkIdentity(): Promise<void> {
+    if (this.linking()) return;
+    try {
+      this.auth.refresh();
+      if (!this.canLink()) return;
+      const input = { usuarioId: this.linkUserId()!, keycloakSubject: this.linkSubject() };
+      const owner = this.auth.principalKey();
+      this.linking.set(true);
+      const result = await firstValueFrom(this.apollo.mutate({
+        mutation: VINCULAR_IDENTIDAD_USUARIO, variables: { input }, context: { [OWNER_CONTEXT_KEY]: owner },
+      }));
+      this.auth.refresh();
+      if (!result.data?.vincularIdentidadUsuario) throw new Error('El backend no confirmó la vinculación de la identidad');
+      if (this.auth.principalKey() !== owner || !this.isAdmin()) return;
+      this.linkUserId.set(null);
+      this.linkSubject.set('');
+      this.messages.add({ severity: 'success', summary: 'Identidad vinculada' });
+    } catch (error) {
+      // The backend message (for example a conflict) is shown as plain text, unchanged.
+      this.messages.add({
+        severity: 'error',
+        summary: 'No se pudo vincular la identidad',
+        detail: error instanceof Error ? error.message : 'Error desconocido',
+      });
+    } finally {
+      this.linking.set(false);
     }
   }
 

@@ -6,6 +6,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { AuthContextService } from '../../core/auth/auth-context.service';
+import { FinancialIdentityService } from '../../core/auth/financial-identity.service';
 import { canCollectPayments } from './finance-permissions';
 import { Cuota, OrdenCobro, Recibo } from '../../core/graphql/models';
 import { CriticalMutationService } from '../../core/offline/critical-mutation.service';
@@ -19,6 +20,8 @@ import { buildCashInput, computeChange, isCashPaymentValid } from './cash-paymen
   selector: 'erp-cash-payment-modal',
   imports: [FormsModule, DialogModule, ButtonModule, InputTextModule, InputNumberModule, BolivianosPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // Resolved against the route's Apollo/runtime; the id itself is cached per hosted lease.
+  providers: [FinancialIdentityService],
   template: `
     <p-dialog
       header="Cobrar en Efectivo"
@@ -80,6 +83,7 @@ export class CashPaymentModal implements OnInit {
   readonly closed = output<void>();
 
   private readonly auth = inject(AuthContextService);
+  private readonly identity = inject(FinancialIdentityService);
   private readonly mutations = inject(CriticalMutationService);
   private readonly messages = inject(MessageService);
   /** One key per user action: a retry after an error reuses it. */
@@ -114,12 +118,15 @@ export class CashPaymentModal implements OnInit {
       const owner = this.auth.principalKey();
       if (!owner) throw new Error('Se requiere una sesión vigente.');
       this.pending.set(true);
+      const cashierId = await this.identity.resolve();
+      this.auth.refresh();
+      if (this.disposed || owner !== this.auth.principalKey() || !canCollectPayments(this.auth.roles())) return;
       const result = await this.mutations.run(
         'CobrarCuotaEnEfectivo',
         {
           input: buildCashInput({
             cuotaId: this.cuota().id,
-            usuarioCajeroId: this.auth.requireFinancialUserId(),
+            usuarioCajeroId: cashierId,
             ciNit: this.ciNit(),
             razonSocial: this.razonSocial(),
           }),

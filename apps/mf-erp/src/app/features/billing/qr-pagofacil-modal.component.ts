@@ -8,6 +8,8 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { environment } from '../../../environments/environment';
 import { AuthContextService } from '../../core/auth/auth-context.service';
+import { FinancialIdentityService } from '../../core/auth/financial-identity.service';
+import { ERP_RUNTIME } from '../../core/runtime/erp-runtime-context';
 import { IDEMPOTENCY_CONTEXT_KEY, OWNER_CONTEXT_KEY } from '../../core/graphql/graphql.provider';
 import { Cuota, OrdenCobro, Recibo, TransaccionQr } from '../../core/graphql/models';
 import { GENERAR_QR_PAGOFACIL, SIMULAR_CONFIRMACION_QR_DEV } from '../../core/graphql/mutations.graphql';
@@ -23,6 +25,8 @@ import { canCollectPayments } from './finance-permissions';
   selector: 'erp-qr-pagofacil-modal',
   imports: [FormsModule, DialogModule, ButtonModule, InputTextModule, BolivianosPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // Resolved against the route's Apollo/runtime; the id itself is cached per hosted lease.
+  providers: [FinancialIdentityService],
   template: `
     <p-dialog header="Cobrar con QR PagoFácil" [modal]="true" [visible]="true"
       (visibleChange)="!$event && close()" [style]="{ width: '28rem' }">
@@ -69,11 +73,14 @@ export class QrPagofacilModal implements OnInit {
   readonly closed = output<void>();
   protected readonly network = inject(NetworkStatusService);
   private readonly auth = inject(AuthContextService);
+  private readonly identity = inject(FinancialIdentityService);
+  private readonly runtime = inject(ERP_RUNTIME);
   private readonly apollo = inject(Apollo);
   private readonly messages = inject(MessageService);
   private readonly generateAction = new IdempotentAction();
   private readonly simulateAction = new IdempotentAction();
-  protected readonly devMode = !environment.production;
+  /** The dev simulator fakes a provider confirmation: standalone development only, never hosted. */
+  protected readonly devMode = !environment.production && !this.runtime.hosted;
   protected readonly qr = signal<TransaccionQr | null>(null);
   protected readonly ciNit = signal('');
   protected readonly razonSocial = signal('');
@@ -123,7 +130,10 @@ export class QrPagofacilModal implements OnInit {
     this.closed.emit();
   }
   private requireOwner(): void {
-    this.auth.requireFinancialUserId();
+    this.auth.refresh();
+    if (this.disposed || !this.canCollect()) throw new Error('Se requiere una sesión financiera vigente.');
+    // Standalone keeps the synchronous dev-mock gate; a hosted cashier is resolved by the caller.
+    if (!this.runtime.hosted) this.auth.requireFinancialUserId();
     const owner = this.auth.principalKey();
     if (!owner) throw new Error('Se requiere una sesión vigente.');
     if (this.owner && this.owner !== owner) throw new Error('La sesión cambió; cierre el cobro y vuelva a iniciarlo.');
@@ -135,6 +145,8 @@ export class QrPagofacilModal implements OnInit {
       this.auth.refresh();
       if (!this.canGenerate()) return;
       this.busy.set(true);
+      await this.identity.resolve();
+      if (this.disposed) return;
       this.requireOwner();
       const variables = { cuotaId: this.cuota().id, ciNitCliente: this.ciNit().trim(), razonSocialCliente: this.razonSocial().trim() };
       const result = await firstValueFrom(this.apollo.mutate({ mutation: GENERAR_QR_PAGOFACIL, variables,
