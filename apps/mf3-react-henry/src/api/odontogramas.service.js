@@ -1,4 +1,4 @@
-import { httpClient, getOdontogramaBaseUrl } from './client.js';
+import { httpClient as standaloneHttpClient, getOdontogramaBaseUrl as standaloneOdontogramaBaseUrl } from './client.js';
 import {
   TIPO_REVISION_ODONTOGRAMA,
   esNumeroFDIValido,
@@ -8,7 +8,11 @@ import {
  * Servicio API para interactuar con los endpoints del Odontograma Longitudinal en MS2.
  * Ruta base resuelta a través de Nginx: /api/expediente/odontogramas
  */
-export const odontogramasService = {
+export function createOdontogramasService(httpClient = standaloneHttpClient) {
+  // Prototype overrides belong only to the explicitly standalone singleton.
+  const getOdontogramaBaseUrl = () => httpClient === standaloneHttpClient
+    ? standaloneOdontogramaBaseUrl() : undefined;
+  return {
   /**
    * 1. Inicializa el agregado longitudinal del odontograma para una historia clínica activa
    * con sus 52 posiciones FDI en estado basal (DESCONOCIDO / NO_EVALUADO).
@@ -233,4 +237,7 @@ export const odontogramasService = {
       baseUrl: getOdontogramaBaseUrl(),
     });
   },
-};
+  };
+}
+
+export const odontogramasService = createOdontogramasService();

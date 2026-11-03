@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef } from 'react';
-import { odontogramasService } from '../api/odontogramas.service.js';
+import { useCallback, useRef } from 'react';
+import { useClinicalServices, useClinicalState as useState } from '../context/ClinicalServices.jsx';
 import { useDevAuth } from './useDevAuth.js';
 
 /**
@@ -14,6 +14,7 @@ import { useDevAuth } from './useDevAuth.js';
  */
 export function useOdontograma() {
   const { token } = useDevAuth();
+  const odontogramasService = useClinicalServices('odontogramasService');
 
   // Estados de solicitud
   const [loading, setLoading] = useState(false);
@@ -118,7 +119,7 @@ export function useOdontograma() {
         setLoading(false);
       }
     },
-    [token],
+    [token, odontogramasService],
   );
 
   /**
@@ -156,7 +157,7 @@ export function useOdontograma() {
         setLoading(false);
       }
     },
-    [token],
+    [token, odontogramasService],
   );
 
   /**
@@ -283,7 +284,7 @@ export function useOdontograma() {
         setLoading(false);
       }
     },
-    [isSubmitting, token, odontogramaActual],
+    [isSubmitting, token, odontogramaActual, odontogramasService],
   );
 
   /**
@@ -323,7 +324,7 @@ export function useOdontograma() {
         setLoadingHistorial(false);
       }
     },
-    [token],
+    [token, odontogramasService],
   );
 
   /**
@@ -363,7 +364,7 @@ export function useOdontograma() {
         setLoadingSnapshot(false);
       }
     },
-    [token],
+    [token, odontogramasService],
   );
 
   /**
@@ -390,7 +391,7 @@ export function useOdontograma() {
         setLoading(false);
       }
     },
-    [token],
+    [token, odontogramasService],
   );
 
   return {

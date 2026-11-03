@@ -1,5 +1,5 @@
 /* oxlint-disable react/set-state-in-effect, react-hooks/exhaustive-deps */
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { Card } from '../components/common/Card.jsx';
 import { Button } from '../components/common/Button.jsx';
 import { Input } from '../components/common/Input.jsx';
@@ -7,7 +7,7 @@ import { Badge } from '../components/common/Badge.jsx';
 import { Alert } from '../components/common/Alert.jsx';
 import { Spinner } from '../components/common/Spinner.jsx';
 import { useDevAuth } from '../hooks/useDevAuth.js';
-import { estudiosService } from '../api/estudios.service.js';
+import { useClinicalServices, useClinicalState as useState } from '../context/ClinicalServices.jsx';
 import { TipoEstudioModal } from '../components/estudios/TipoEstudioModal.jsx';
 import { LaboratorioModal } from '../components/estudios/LaboratorioModal.jsx';
 import { SolicitarEstudioModal } from '../components/estudios/SolicitarEstudioModal.jsx';
@@ -23,6 +23,7 @@ export function EstudiosPage({
   onVerConsulta,
 }) {
   const { token } = useDevAuth();
+  const estudiosService = useClinicalServices('estudiosService');
   const [subtab, setSubtab] = useState(initialSubtab); // 'tipos' | 'laboratorios' | 'historial' | 'solicitar'
 
   // Estados Catálogo Tipos de Estudio
@@ -73,7 +74,7 @@ export function EstudiosPage({
     } finally {
       setLoadingTipos(false);
     }
-  }, [filtroCategoria, soloActivosTipos, token]);
+  }, [filtroCategoria, soloActivosTipos, token, estudiosService]);
 
   const cargarLaboratorios = useCallback(async () => {
     setLoadingLabs(true);
@@ -88,7 +89,7 @@ export function EstudiosPage({
     } finally {
       setLoadingLabs(false);
     }
-  }, [soloActivosLabs, token]);
+  }, [soloActivosLabs, token, estudiosService]);
 
   const cargarHistorial = useCallback(async (hId) => {
     const id = (hId !== undefined ? hId : historiaSearchId)?.trim();
@@ -104,7 +105,7 @@ export function EstudiosPage({
     } finally {
       setLoadingSolicitudes(false);
     }
-  }, [historiaSearchId, token]);
+  }, [historiaSearchId, token, estudiosService]);
 
   useEffect(() => {
     if (subtab === 'tipos') {

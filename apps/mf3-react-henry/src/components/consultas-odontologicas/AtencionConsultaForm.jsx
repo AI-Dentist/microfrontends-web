@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { Card } from '../common/Card.jsx';
 import { Button } from '../common/Button.jsx';
 import { Input } from '../common/Input.jsx';
@@ -10,7 +10,7 @@ import {
   obtenerDescripcionPiezaFDI,
   LISTADO_PIEZAS_FDI,
 } from '../../utils/fdi-validator.js';
-import { consultasOdontologicasService } from '../../api/consultas-odontologicas.service.js';
+import { useClinicalServices, useClinicalActivity, useClinicalState as useState } from '../../context/ClinicalServices.jsx';
 import { useDevAuth } from '../../hooks/useDevAuth.js';
 
 /**
@@ -41,6 +41,8 @@ export function AtencionConsultaForm({
   onResetError,
 }) {
   const { token } = useDevAuth();
+  const consultasOdontologicasService = useClinicalServices('consultasOdontologicasService');
+  const isActive = useClinicalActivity();
 
   // Consulta activa en formulario y detección de cambio de id
   const [consultaActual, setConsultaActual] = useState(consulta);
@@ -217,6 +219,7 @@ export function AtencionConsultaForm({
         serverData = await consultasOdontologicasService.getById(idConsulta, token);
       }
 
+      if (!isActive()) return;
       if (!serverData) {
         setErrorCargaServidor('No fue posible obtener la versión actual del servidor.');
         return;
@@ -241,7 +244,7 @@ export function AtencionConsultaForm({
     } finally {
       setCargandoServidor(false);
     }
-  }, [consulta?.id, consultaActual?.id, onConsultarServidor, onActualizarConsulta, token]);
+  }, [consulta?.id, consultaActual?.id, onConsultarServidor, onActualizarConsulta, token, consultasOdontologicasService, isActive]);
 
   // Reaccionar a errores 409 emitidos externamente consultando el servidor de forma asíncrona
   useEffect(() => {
@@ -257,7 +260,7 @@ export function AtencionConsultaForm({
           } else {
             serverData = await consultasOdontologicasService.getById(idConsulta, token);
           }
-          if (cancelado) return;
+          if (cancelado || !isActive()) return;
           if (serverData) {
             setConflictoServidorData(serverData);
             if (serverData.estado === 'COMPLETADA' || serverData.estado === 'CANCELADA') {
@@ -288,6 +291,8 @@ export function AtencionConsultaForm({
     onConsultarServidor,
     onActualizarConsulta,
     token,
+    consultasOdontologicasService,
+    isActive,
   ]);
 
   // Diferencias campo a campo entre el borrador local y el servidor
@@ -634,6 +639,7 @@ export function AtencionConsultaForm({
     setIsSubmitting(true);
     try {
       const resultado = await onGuardar(payload);
+      if (!isActive()) return;
       if (resultado) {
         setSuccessMessage(
           `¡Atención clínica guardada exitosamente! Consulta actualizada a versión v${resultado.version}.`,
@@ -652,7 +658,7 @@ export function AtencionConsultaForm({
         }
       }
     } catch (err) {
-      if (err?.status === 409) {
+      if (isActive() && err?.status === 409) {
         setConflictoCerrado(false);
         void verificarEstadoServidor();
       }

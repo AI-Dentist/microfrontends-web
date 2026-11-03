@@ -1,4 +1,4 @@
-import { test, describe, before } from 'node:test';
+import { test, describe, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { historiasClinicasService } from '../src/api/historias-clinicas.service.js';
 import { DEV_IDENTITIES } from '../src/hooks/dev-identities.js';
@@ -10,8 +10,49 @@ describe('Iteración 5C — Gestión Clínica (Alergias, Medicamentos, Estado y 
   let historiaId;
   let pacienteSinteticoId;
 
+  // Scripted synthetic transport responses ONLY. This file used to mutate the
+  // default backend; real backend acceptance now belongs to the isolated T10.
+  // Keep the existing assertions, but never infer backend business proof from
+  // these opaque fixtures. Unexpected calls fail rather than reaching a network.
+  let fixtureIndex = 0;
+  const audit = ['ADICION_ALERGIA', 'ADICION_ALERGIA', 'ELIMINACION_ALERGIA',
+    'ACTUALIZACION_MEDICAMENTOS', 'ACTUALIZACION_MEDICAMENTOS', 'CAMBIO_ESTADO', 'CAMBIO_ESTADO'];
+  const penicilina = { sustancia: 'Penicilina', severidad: 'GRAVE' };
+  const latex = { sustancia: 'Látex', severidad: 'MODERADA' };
+  const medicamentos = [{ nombre: 'Losartán 50mg' }, { nombre: 'Amoxicilina 500mg' }];
+  const finales = [{ nombre: 'Losartán 50mg' }, { nombre: 'Omeprazol 20mg' }];
+  const snapshot = (version, estado = 'ACTIVA', alergias = [latex], meds = finales) => ({
+    id: 'hc_synthetic_transport', pacienteId: pacienteSinteticoId, version, estado,
+    alergias, medicamentosActuales: meds, historialCambios: audit.map(accion => ({ accion })),
+  });
+  const steps = [
+    ['GET', '/health', undefined, () => ({ status: 'ok', database: 'connected' })],
+    ['POST', '/historias-clinicas', undefined, () => snapshot(1, 'ACTIVA', [], []), 201],
+    ['POST', '/alergias', 1, () => snapshot(2, 'ACTIVA', [penicilina], [])],
+    ['POST', '/alergias', 2, () => ({ detail: 'Penicilina duplicada' }), 422],
+    ['POST', '/alergias', 2, () => snapshot(3, 'ACTIVA', [penicilina, latex], [])],
+    ['DELETE', '/alergias/Penicilina', 3, () => snapshot(4, 'ACTIVA', [latex], [])],
+    ['PUT', '/medicamentos', 4, () => snapshot(5, 'ACTIVA', [latex], medicamentos)],
+    ['PUT', '/medicamentos', 5, () => snapshot(6)],
+    ['PATCH', '/estado', 6, () => snapshot(7, 'CERRADA')],
+    ['PATCH', '/estado', 7, () => ({ detail: 'Transición inválida' }), 422],
+    ['POST', '/alergias', 7, () => ({ detail: 'CERRADA no editable' }), 422],
+    ['PATCH', '/estado', 7, () => snapshot(8)],
+    ['POST', '/alergias', 1, () => ({ detail: 'Conflicto de versión' }), 409],
+    ['GET', '/historias-clinicas/hc_synthetic_transport', undefined, () => snapshot(8)],
+  ];
+
   before(async () => {
-    // Verificar conectividad al backend
+    mock.method(globalThis, 'fetch', async (url, options) => {
+      const step = steps[fixtureIndex++];
+      assert.ok(step, 'No unexpected transport call');
+      const [method, suffix, version, response, status = 200] = step;
+      assert.equal(options.method, method);
+      assert.equal(url.endsWith(suffix), true);
+      if (version !== undefined) assert.equal(JSON.parse(options.body).versionEsperada, version);
+      return new Response(JSON.stringify(response()), { status });
+    });
+    // Verificar el contrato del transporte mediante respuestas sintéticas
     const health = await historiasClinicasService.getHealth();
     assert.equal(health.status, 'ok', 'Microservicio MS2 debe reportar status ok');
     assert.equal(health.database, 'connected', 'MongoDB debe estar conectado');
@@ -31,6 +72,11 @@ describe('Iteración 5C — Gestión Clínica (Alergias, Medicamentos, Estado y 
     assert.equal(nuevaHistoria.version, 1, 'La versión inicial debe ser 1');
     assert.equal(nuevaHistoria.estado, 'ACTIVA', 'El estado inicial debe ser ACTIVA');
     historiaId = nuevaHistoria.id;
+  });
+
+  after(() => {
+    mock.restoreAll();
+    assert.equal(fixtureIndex, steps.length, 'Every scripted request consumed exactly once');
   });
 
   // 1. Agregar alergia exitosamente

@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { historiasClinicasService } from '../../api/historias-clinicas.service.js';
+import { useClinicalServices, useClinicalActivity, useClinicalState as useState } from '../../context/ClinicalServices.jsx';
 import { useDevAuth } from '../../hooks/useDevAuth.js';
 import { Card } from '../common/Card.jsx';
 import { Button } from '../common/Button.jsx';
@@ -47,6 +46,8 @@ const TRANSICIONES_VALIDAS = {
 
 export function EstadoManager({ historia, onEstadoCambiado, onRecargarExpediente }) {
   const { token } = useDevAuth();
+  const historiasClinicasService = useClinicalServices();
+  const isActive = useClinicalActivity();
 
   const [transicionObjetivo, setTransicionObjetivo] = useState(null);
   const [motivoCambio, setMotivoCambio] = useState('');
@@ -85,6 +86,7 @@ export function EstadoManager({ historia, onEstadoCambiado, onRecargarExpediente
         payload,
         token,
       );
+      if (!isActive()) return;
       setMensajeExito(
         `Estado del expediente cambiado exitosamente a '${historiaActualizada.estado}' (Versión: v${historiaActualizada.version}).`,
       );

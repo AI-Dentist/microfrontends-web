@@ -1,9 +1,9 @@
 /* oxlint-disable react/set-state-in-effect */
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Modal } from '../common/Modal.jsx';
 import { Button } from '../common/Button.jsx';
 import { Alert } from '../common/Alert.jsx';
-import { estudiosService } from '../../api/estudios.service.js';
+import { useClinicalServices, useClinicalActivity, useClinicalState as useState } from '../../context/ClinicalServices.jsx';
 import { useDevAuth } from '../../hooks/useDevAuth.js';
 
 export function CambiarEstadoSolicitudModal({
@@ -13,6 +13,8 @@ export function CambiarEstadoSolicitudModal({
   onEstadoCambiado,
 }) {
   const { token } = useDevAuth();
+  const estudiosService = useClinicalServices('estudiosService');
+  const isActive = useClinicalActivity();
   const [nuevoEstado, setNuevoEstado] = useState('EN_PROCESO');
   const [observaciones, setObservaciones] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -40,6 +42,7 @@ export function CambiarEstadoSolicitudModal({
         observaciones: observaciones.trim() || undefined,
       };
       const result = await estudiosService.cambiarEstadoSolicitud(solicitud.id, payload, token);
+      if (!isActive()) return;
       if (onEstadoCambiado) {
         onEstadoCambiado(result);
       }

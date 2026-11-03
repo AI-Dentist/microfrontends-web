@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { historiasClinicasService } from '../api/historias-clinicas.service.js';
+import { useEffect, useCallback } from 'react';
+import { useClinicalServices, useClinicalState as useState } from '../context/ClinicalServices.jsx';
 import { useDevAuth } from '../hooks/useDevAuth.js';
 import { Card } from '../components/common/Card.jsx';
 import { Input } from '../components/common/Input.jsx';
@@ -18,6 +18,7 @@ const SUGGESTED_CHIPS = [
 
 export function GestionClinicaPage({ initialHistoriaId, initialSubtab = 'alergias' }) {
   const { token } = useDevAuth();
+  const historiasClinicasService = useClinicalServices();
 
   const [searchId, setSearchId] = useState(initialHistoriaId || '');
   const [activeSubtab, setActiveSubtab] = useState(initialSubtab); // 'alergias' | 'medicamentos' | 'estado'
@@ -50,7 +51,7 @@ export function GestionClinicaPage({ initialHistoriaId, initialSubtab = 'alergia
         setLoading(false);
       }
     },
-    [searchId, token],
+    [searchId, token, historiasClinicasService],
   );
 
   useEffect(() => {
@@ -82,7 +83,7 @@ export function GestionClinicaPage({ initialHistoriaId, initialSubtab = 'alergia
     return () => {
       isMounted = false;
     };
-  }, [initialHistoriaId, token]);
+  }, [initialHistoriaId, token, historiasClinicasService]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();

@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useClinicalServices } from '../context/ClinicalServices.jsx';
+import { useEffect, useCallback } from 'react';
+import { useClinicalServices, useClinicalState as useState } from '../context/ClinicalServices.jsx';
 
 export function useHealthCheck(autoCheck = true) {
   const historiasClinicasService = useClinicalServices();

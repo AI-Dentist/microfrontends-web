@@ -1,4 +1,4 @@
-import { httpClient } from './client.js';
+import { httpClient as standaloneHttpClient } from './client.js';
 
 /**
  * Servicio API para interactuar con los endpoints del módulo de Estudios Clínicos e Imagenología en MS2.
@@ -7,7 +7,8 @@ import { httpClient } from './client.js';
  * - /api/expediente/tipos-estudios
  * - /api/expediente/estudios/solicitudes
  */
-export const estudiosService = {
+export function createEstudiosService(httpClient = standaloneHttpClient) {
+  return {
   // ==========================================
   // A. Catálogo de Laboratorios
   // ==========================================
@@ -256,4 +257,7 @@ export const estudiosService = {
       signal,
     });
   },
-};
+  };
+}
+
+export const estudiosService = createEstudiosService();

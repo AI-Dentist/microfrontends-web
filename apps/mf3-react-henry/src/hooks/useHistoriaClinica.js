@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { useClinicalServices } from '../context/ClinicalServices.jsx';
+import { useCallback, useRef, useEffect } from 'react';
+import { useClinicalServices, useClinicalState as useState } from '../context/ClinicalServices.jsx';
 import { useDevAuth } from './useDevAuth.js';
 
 export function useHistoriaClinica() {

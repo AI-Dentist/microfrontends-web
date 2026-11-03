@@ -1,10 +1,11 @@
-import { httpClient } from './client.js';
+import { httpClient as standaloneHttpClient } from './client.js';
 
 /**
  * Servicio API para interactuar con los endpoints de Consultas Odontológicas en MS2.
  * Ruta base resuelta a través de Nginx: /api/expediente/consultas-odontologicas
  */
-export const consultasOdontologicasService = {
+export function createConsultasOdontologicasService(httpClient = standaloneHttpClient) {
+  return {
   /**
    * Registra la apertura de una nueva consulta odontológica.
    *
@@ -162,4 +163,7 @@ export const consultasOdontologicasService = {
       signal,
     });
   },
-};
+  };
+}
+
+export const consultasOdontologicasService = createConsultasOdontologicasService();

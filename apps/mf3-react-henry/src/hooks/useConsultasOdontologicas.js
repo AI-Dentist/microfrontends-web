@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef } from 'react';
-import { consultasOdontologicasService } from '../api/consultas-odontologicas.service.js';
+import { useCallback, useRef } from 'react';
+import { useClinicalServices, useClinicalState as useState } from '../context/ClinicalServices.jsx';
 import { useDevAuth } from './useDevAuth.js';
 
 /**
@@ -7,6 +7,7 @@ import { useDevAuth } from './useDevAuth.js';
  */
 export function useConsultasOdontologicas() {
   const { token } = useDevAuth();
+  const consultasOdontologicasService = useClinicalServices('consultasOdontologicasService');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -68,7 +69,7 @@ export function useConsultasOdontologicas() {
         setLoading(false);
       }
     },
-    [token],
+    [token, consultasOdontologicasService],
   );
 
   /**
@@ -111,7 +112,7 @@ export function useConsultasOdontologicas() {
         setLoading(false);
       }
     },
-    [token],
+    [token, consultasOdontologicasService],
   );
 
   /**
@@ -136,7 +137,7 @@ export function useConsultasOdontologicas() {
         setLoading(false);
       }
     },
-    [token],
+    [token, consultasOdontologicasService],
   );
 
   /**
@@ -171,7 +172,7 @@ export function useConsultasOdontologicas() {
         setLoading(false);
       }
     },
-    [token],
+    [token, consultasOdontologicasService],
   );
 
   /**
@@ -187,7 +188,7 @@ export function useConsultasOdontologicas() {
         return null;
       }
     },
-    [token],
+    [token, consultasOdontologicasService],
   );
 
   /**
@@ -223,7 +224,7 @@ export function useConsultasOdontologicas() {
         setLoading(false);
       }
     },
-    [token],
+    [token, consultasOdontologicasService],
   );
 
   /**
@@ -259,7 +260,7 @@ export function useConsultasOdontologicas() {
         setLoading(false);
       }
     },
-    [token],
+    [token, consultasOdontologicasService],
   );
 
   const limpiar = useCallback(() => {

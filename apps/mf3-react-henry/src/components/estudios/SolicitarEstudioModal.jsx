@@ -1,11 +1,11 @@
 /* oxlint-disable react/set-state-in-effect, react-hooks/exhaustive-deps */
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Modal } from '../common/Modal.jsx';
 import { Button } from '../common/Button.jsx';
 import { Input } from '../common/Input.jsx';
 import { Alert } from '../common/Alert.jsx';
 import { Spinner } from '../common/Spinner.jsx';
-import { estudiosService } from '../../api/estudios.service.js';
+import { useClinicalServices, useClinicalActivity, useClinicalState as useState } from '../../context/ClinicalServices.jsx';
 import { useDevAuth } from '../../hooks/useDevAuth.js';
 
 export function SolicitarEstudioModal({
@@ -15,6 +15,8 @@ export function SolicitarEstudioModal({
   onSolicitudCreada,
 }) {
   const { token } = useDevAuth();
+  const estudiosService = useClinicalServices('estudiosService');
+  const isActive = useClinicalActivity();
   const [consultaId, setConsultaId] = useState(initialConsultaId || '');
   const [tipoEstudioId, setTipoEstudioId] = useState('');
   const [motivo, setMotivo] = useState('');
@@ -63,7 +65,7 @@ export function SolicitarEstudioModal({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, token]);
+  }, [isOpen, token, estudiosService]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -92,6 +94,7 @@ export function SolicitarEstudioModal({
       };
 
       const result = await estudiosService.crearSolicitud(payload, token);
+      if (!isActive()) return;
       if (onSolicitudCreada) {
         onSolicitudCreada(result);
       }

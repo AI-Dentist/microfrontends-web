@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { historiasClinicasService } from '../../api/historias-clinicas.service.js';
+import { useClinicalServices, useClinicalActivity, useClinicalState as useState } from '../../context/ClinicalServices.jsx';
 import { useDevAuth } from '../../hooks/useDevAuth.js';
 import { Card } from '../common/Card.jsx';
 import { Input } from '../common/Input.jsx';
@@ -16,6 +15,8 @@ const SEVERIDADES = [
 
 export function AlergiasManager({ historia, onAlergiasActualizadas, onRecargarExpediente }) {
   const { token } = useDevAuth();
+  const historiasClinicasService = useClinicalServices();
+  const isActive = useClinicalActivity();
 
   // Estado del formulario de agregar alergia
   const [nuevaSustancia, setNuevaSustancia] = useState('');
@@ -90,6 +91,7 @@ export function AlergiasManager({ historia, onAlergiasActualizadas, onRecargarEx
         payload,
         token,
       );
+      if (!isActive()) return;
       // Limpiar formulario tras éxito
       setNuevaSustancia('');
       setNuevoTipoReaccion('');
@@ -132,6 +134,7 @@ export function AlergiasManager({ historia, onAlergiasActualizadas, onRecargarEx
         payload,
         token,
       );
+      if (!isActive()) return;
       setAlergiaAEliminar(null);
       if (onAlergiasActualizadas) {
         onAlergiasActualizadas(historiaActualizada);

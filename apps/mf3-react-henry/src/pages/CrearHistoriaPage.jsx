@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { useClinicalServices } from '../context/ClinicalServices.jsx';
+import { useClinicalServices, useClinicalState as useState } from '../context/ClinicalServices.jsx';
 import { useDevAuth } from '../hooks/useDevAuth.js';
 import { Card } from '../components/common/Card.jsx';
 import { Input } from '../components/common/Input.jsx';

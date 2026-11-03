@@ -15,12 +15,11 @@ test('instance requests read current tokens, isolate bases and preserve service 
   token = 'second';
   await service.create({ pacienteId: 'p' });
   token = null;
-  await service.updateAntecedentes('hc', { versionEsperada: 1 });
+  await assert.rejects(service.updateAntecedentes('hc', { versionEsperada: 1 }), { name: 'AbortError' });
   await createHttpClient({ apiBaseUrl: '/api/other', getAccessToken: () => 'other' })('/health');
   assert.deepEqual(calls.map(([url, opts]) => [url, opts.method, opts.headers.Authorization, opts.body]), [
     ['https://api.example/a/historias-clinicas/a%2Fb', 'GET', 'Bearer first', undefined],
     ['https://api.example/a/historias-clinicas', 'POST', 'Bearer second', '{"pacienteId":"p"}'],
-    ['https://api.example/a/historias-clinicas/hc/antecedentes', 'PATCH', undefined, '{"versionEsperada":1}'],
     ['/api/other/health', 'GET', 'Bearer other', undefined],
   ]);
   assert.equal(JSON.stringify(calls).includes('getAccessToken'), false);
@@ -72,8 +71,10 @@ test('lifecycle renders only supplied container, updates context, cleans once an
   });
   const next = context({ path: '/clinical/crear' });
   instance.update(next);
-  assert.deepEqual(renders, [initial, next]);
-  assert.equal(renders[1], next);
+  assert.deepEqual(renders.map(value => value.path), [initial.path, next.path]);
+  assert.equal(renders[1].apiBaseUrl, next.apiBaseUrl);
+  assert.notEqual(renders[0].sessionKey, renders[1].sessionKey);
+  assert.equal(renders[0].getAccessToken(), null);
   assert.throws(() => instance.update(context({ basePath: '/other', path: '/other' })), /basePath/);
   assert.throws(() => instance.update(context({ contractVersion: 2 })), /version/);
   assert.equal(renders.length, 2);

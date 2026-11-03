@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { historiasClinicasService } from '../../api/historias-clinicas.service.js';
+import { useClinicalServices, useClinicalActivity, useClinicalState as useState } from '../../context/ClinicalServices.jsx';
 import { useDevAuth } from '../../hooks/useDevAuth.js';
 import { Card } from '../common/Card.jsx';
 import { Input } from '../common/Input.jsx';
@@ -12,6 +11,8 @@ export function MedicamentosManager({
   onRecargarExpediente,
 }) {
   const { token } = useDevAuth();
+  const historiasClinicasService = useClinicalServices();
+  const isActive = useClinicalActivity();
 
   // Lista local editable de medicamentos inicializada desde la historia clínica
   const [listaMedicamentos, setListaMedicamentos] = useState(() => {
@@ -141,6 +142,7 @@ export function MedicamentosManager({
         payload,
         token,
       );
+      if (!isActive()) return;
       setMensajeExito(
         `Listado de medicamentos actualizado exitosamente (Versión del expediente incrementada a v${historiaActualizada.version}).`,
       );

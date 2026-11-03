@@ -29,14 +29,50 @@ export function getOdontogramaBaseUrl() {
   return getBaseUrl();
 }
 
-// A capability, not a captured token: each request reads the current session.
-export function createHttpClient({ apiBaseUrl, getAccessToken } = {}) {
-  const resolvedBase = apiBaseUrl || getBaseUrl();
-  return (endpoint, options = {}) => httpClient(endpoint, {
-    ...options,
-    apiBaseUrl: options.apiBaseUrl || options.baseUrl || resolvedBase,
-    token: getAccessToken ? getAccessToken() : options.token,
-  });
+export function retiredRequest() {
+  return Object.assign(new Error('Clinical session is no longer active'), { name: 'AbortError' });
+}
+
+// Supplying a capability selects hosted mode. Standalone remains an explicit,
+// separate default API; hosted callers cannot override the host's target/auth.
+export function createHttpClient({ apiBaseUrl, getAccessToken, hosted = getAccessToken !== undefined } = {}) {
+  const resolvedBase = hosted ? apiBaseUrl : apiBaseUrl || getBaseUrl();
+  let retired = false;
+  const retire = () => { retired = true; };
+  const currentToken = () => {
+    if (retired) return null;
+    let token;
+    try { token = getAccessToken?.(); } catch { retire(); return null; }
+    if (typeof token !== 'string' || !token.trim() || typeof resolvedBase !== 'string' || !resolvedBase.trim()) {
+      // A Promise is not the synchronous capability contract (also consume a
+      // possible rejection without ever accepting its eventual token).
+      if (token instanceof Promise) token.catch(() => {});
+      retire();
+      return null;
+    }
+    return token;
+  };
+  const isActive = () => !retired && (!hosted || currentToken() !== null);
+  const client = async (endpoint, options = {}) => {
+    if (!hosted) return httpClient(endpoint, {
+      ...options, apiBaseUrl: options.apiBaseUrl || options.baseUrl || resolvedBase,
+    });
+    const token = currentToken();
+    if (!token) throw retiredRequest();
+    const headers = Object.fromEntries(new Headers(options.headers).entries());
+    delete headers.authorization;
+    try {
+      const result = await httpClient(endpoint, {
+        ...options, headers, token, baseUrl: undefined, apiBaseUrl: resolvedBase,
+      });
+      if (!isActive()) throw retiredRequest();
+      return result;
+    } catch (error) {
+      if (!isActive()) throw retiredRequest();
+      throw error;
+    }
+  };
+  return Object.assign(client, { retire, isActive, getAccessToken: currentToken });
 }
 
 /**

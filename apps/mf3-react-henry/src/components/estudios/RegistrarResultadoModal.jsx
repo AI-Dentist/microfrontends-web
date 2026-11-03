@@ -1,11 +1,11 @@
 /* oxlint-disable react/set-state-in-effect, react-hooks/exhaustive-deps */
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Modal } from '../common/Modal.jsx';
 import { Button } from '../common/Button.jsx';
 import { Input } from '../common/Input.jsx';
 import { Alert } from '../common/Alert.jsx';
 import { Spinner } from '../common/Spinner.jsx';
-import { estudiosService } from '../../api/estudios.service.js';
+import { useClinicalServices, useClinicalActivity, useClinicalState as useState } from '../../context/ClinicalServices.jsx';
 import { useDevAuth } from '../../hooks/useDevAuth.js';
 
 export function RegistrarResultadoModal({
@@ -15,6 +15,8 @@ export function RegistrarResultadoModal({
   onResultadoRegistrado,
 }) {
   const { token } = useDevAuth();
+  const estudiosService = useClinicalServices('estudiosService');
+  const isActive = useClinicalActivity();
   const [resumen, setResumen] = useState('');
   const [observaciones, setObservaciones] = useState('');
   const [laboratorioId, setLaboratorioId] = useState('');
@@ -59,7 +61,7 @@ export function RegistrarResultadoModal({
         isMounted = false;
       };
     }
-  }, [isOpen, token]);
+  }, [isOpen, token, estudiosService]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -84,6 +86,7 @@ export function RegistrarResultadoModal({
       };
 
       const result = await estudiosService.registrarResultado(solicitud.id, payload, token);
+      if (!isActive()) return;
       if (onResultadoRegistrado) {
         onResultadoRegistrado(result);
       }

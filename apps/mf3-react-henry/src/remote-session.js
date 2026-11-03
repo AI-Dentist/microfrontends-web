@@ -1,3 +1,42 @@
+import { createHttpClient } from './api/client.js';
+import { createHistoriasClinicasService } from './api/historias-clinicas.service.js';
+import { createConsultasOdontologicasService } from './api/consultas-odontologicas.service.js';
+import { createOdontogramasService } from './api/odontogramas.service.js';
+import { createEstudiosService } from './api/estudios.service.js';
+
+export function createClinicalServices(client) {
+  return {
+    historiasClinicasService: createHistoriasClinicasService(client),
+    consultasOdontologicasService: createConsultasOdontologicasService(client),
+    odontogramasService: createOdontogramasService(client),
+    estudiosService: createEstudiosService(client),
+    isActive: client.isActive || (() => true),
+  };
+}
+
+let nextSessionKey = 0;
+function createSession(context) {
+  const client = createHttpClient({ ...context, hosted: true });
+  let current = context;
+  const sessionKey = ++nextSessionKey;
+  const services = createClinicalServices(client);
+  return {
+    retire: client.retire,
+    getAccessToken: context.getAccessToken,
+    apiBaseUrl: context.apiBaseUrl,
+    value(next) {
+      current = next;
+      return {
+        ...next,
+        sessionKey,
+        clinicalServices: services,
+        getAccessToken: client.getAccessToken,
+        onNavigate: path => { if (client.isActive()) current.onNavigate(path); },
+      };
+    },
+  };
+}
+
 const tabs = [
   'consulta',
   'crear',
@@ -35,17 +74,25 @@ export function mountRemote(container, context, createRenderer) {
   const basePath = context.basePath;
   const renderer = createRenderer(container);
   let disposed = false;
-  try { renderer.render(context); } catch (error) { renderer.unmount(); throw error; }
+  let session = createSession(context);
+  try { renderer.render(session.value(context)); } catch (error) {
+    session.retire(); renderer.unmount(); throw error;
+  }
   return {
     update(nextContext) {
       if (disposed) return;
       if (nextContext.basePath !== basePath) throw new Error('Cannot change basePath');
       tabFromContext(nextContext);
-      renderer.render(nextContext);
+      if (nextContext.apiBaseUrl !== session.apiBaseUrl || nextContext.getAccessToken !== session.getAccessToken) {
+        session.retire();
+        session = createSession(nextContext);
+      }
+      renderer.render(session.value(nextContext));
     },
     unmount() {
       if (disposed) return;
       disposed = true;
+      session.retire();
       renderer.unmount();
     },
   };

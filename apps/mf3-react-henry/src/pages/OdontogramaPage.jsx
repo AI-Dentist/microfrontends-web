@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useOdontograma } from '../hooks/useOdontograma.js';
 import { useDevAuth } from '../hooks/useDevAuth.js';
-import { odontogramasService } from '../api/odontogramas.service.js';
+import { useClinicalServices, useClinicalActivity, useClinicalState as useState } from '../context/ClinicalServices.jsx';
 import { Card } from '../components/common/Card.jsx';
 import { Input } from '../components/common/Input.jsx';
 import { Button } from '../components/common/Button.jsx';
@@ -26,13 +26,15 @@ export function OdontogramaPage({
   onVolverAHistoria,
   onVerConsultas,
 }) {
-  const { token } = useDevAuth();
+  const { token, isRemote } = useDevAuth();
+  const odontogramasService = useClinicalServices('odontogramasService');
+  const isActive = useClinicalActivity();
   const [historiaInput, setHistoriaInput] = useState(initialHistoriaId);
   const [historiaConsultada, setHistoriaConsultada] = useState(initialHistoriaId);
 
   // Detección del backend aislado en puerto 3002
   const [esEntornoAislado, setEsEntornoAislado] = useState(() => {
-    if (typeof window === 'undefined') return false;
+    if (isRemote || typeof window === 'undefined') return false;
     const urlParam = new URLSearchParams(window.location.search).get('apiPort');
     if (urlParam === '3002') return true;
     return Boolean(
@@ -67,6 +69,7 @@ export function OdontogramaPage({
 
   // Función para activar o verificar la conexión con el backend aislado en puerto 3002
   const verificarConexionAislada = useCallback(async (activar = true) => {
+    if (isRemote || !isActive()) return;
     setVerificandoAislamiento(true);
     try {
       if (activar) {
@@ -78,6 +81,7 @@ export function OdontogramaPage({
       }
 
       const res = await odontogramasService.consultarEstadoEntornoAislado(token);
+      if (!isActive()) return;
       if (res?.aislado && res?.puertoMongo === 27018) {
         setEsEntornoAislado(true);
       } else {
@@ -86,16 +90,18 @@ export function OdontogramaPage({
         setEsEntornoAislado(false);
       }
     } catch {
+      if (!isActive()) return;
       delete window.__ODONTOGRAMA_TEST_API_URL__;
       window.localStorage?.removeItem('ODONTOGRAMA_TEST_API_URL');
       setEsEntornoAislado(false);
     } finally {
       setVerificandoAislamiento(false);
     }
-  }, [token]);
+  }, [token, isRemote, isActive, odontogramasService]);
 
   // Si está presente el parámetro apiPort=3002 o ya estaba configurado, verificar conexión al montar
   useEffect(() => {
+    if (isRemote) return;
     let activo = true;
     const urlParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('apiPort') : null;
     if (urlParam === '3002' || esEntornoAislado) {
@@ -116,7 +122,7 @@ export function OdontogramaPage({
     return () => {
       activo = false;
     };
-  }, [token, esEntornoAislado]);
+  }, [token, esEntornoAislado, isRemote, odontogramasService]);
 
   // Si se provee un initialHistoriaId, cargar su odontograma actual al montar
   useEffect(() => {
@@ -128,7 +134,9 @@ export function OdontogramaPage({
   const handleInicializarOdontograma = async () => {
     if (!historiaConsultada.trim()) return;
     const confirmar = window.confirm(
-      `¿Desea inicializar el odontograma longitudinal para la historia clínica "${historiaConsultada}"?\n\nSe crearán las 52 posiciones FDI en estado basal (DESCONOCIDO y NO_EVALUADO) exclusivamente en MongoDB temporal 27018.`
+      isRemote
+        ? `¿Desea inicializar el odontograma longitudinal para la historia clínica "${historiaConsultada}" en el servicio configurado por el host?`
+        : `¿Desea inicializar el odontograma longitudinal para la historia clínica "${historiaConsultada}"?\n\nSe crearán las 52 posiciones FDI en estado basal (DESCONOCIDO y NO_EVALUADO) exclusivamente en MongoDB temporal 27018.`
     );
     if (!confirmar) return;
 
@@ -249,7 +257,7 @@ export function OdontogramaPage({
       )}
 
       {/* Banner de Estado de Aislamiento Clínico */}
-      <div style={{
+      {!isRemote && <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -279,7 +287,8 @@ export function OdontogramaPage({
         >
           {esEntornoAislado ? 'Cambiar a Principal (3001)' : '🧪 Conectar a Backend Aislado (3002)'}
         </Button>
-      </div>
+      </div>}
+      {isRemote && <p>Conexión online al servicio clínico configurado por el host. El servidor autoriza las operaciones.</p>}
 
       {/* Visor interactivo del Odontograma con flujo de revisión y visor longitudinal */}
       <OdontogramaViewer
@@ -292,7 +301,7 @@ export function OdontogramaPage({
         isSubmitting={isSubmitting}
         errorRegistro={error}
         conflictRegistro={conflict}
-        escrituraHabilitada={esEntornoAislado}
+        escrituraHabilitada={isRemote || esEntornoAislado}
         onInicializarOdontograma={handleInicializarOdontograma}
         historial={historial}
         loadingHistorial={loadingHistorial}
