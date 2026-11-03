@@ -18,6 +18,7 @@ import {
   OBTENER_CONFIGURACION_EMPRESA,
 } from '../../core/graphql/queries.graphql';
 import { AuthContextService } from '../../core/auth/auth-context.service';
+import { ERP_RUNTIME } from '../../core/runtime/erp-runtime-context';
 import { cachedCatalog } from '../../core/offline/catalog-cache';
 import { NetworkStatusService } from '../../core/offline/network-status.service';
 import { CLINIC_ROLE_OPTIONS, upsertById } from './catalog-list';
@@ -130,6 +131,7 @@ export class CompanySecurity implements OnInit {
   private readonly messages = inject(MessageService);
   private readonly network = inject(NetworkStatusService);
   private readonly auth = inject(AuthContextService);
+  private readonly runtime = inject(ERP_RUNTIME);
   private readonly fb = inject(FormBuilder).nonNullable;
 
   readonly online = this.network.online;
@@ -161,7 +163,7 @@ export class CompanySecurity implements OnInit {
     this.auth.refresh();
     const identity = this.auth.principalKey() ?? undefined;
     const admin = this.isAdmin();
-    const access = { online: this.network.isOnline(), identity };
+    const access = { online: this.network.isOnline(), identity, mode: this.runtime.cacheMode };
     // Rejection must leave no previous session's protected rows visible.
     this.users.set([]); this.logs.set([]); this.form.reset(); this.currencySymbol.set('');
     const [company, users, logs] = await Promise.allSettled([
@@ -213,7 +215,7 @@ export class CompanySecurity implements OnInit {
       if (!updated) throw new Error('El backend no confirmó la actualización del usuario');
       if (this.auth.principalKey() !== owner || !this.isAdmin()) return;
       this.users.update((rows) => upsertById(rows, updated));
-      await cachedCatalog('usuarios', async () => ({ data: { listarUsuarios: this.users() } }), { online: true, identity: owner ?? undefined });
+      await cachedCatalog('usuarios', async () => ({ data: { listarUsuarios: this.users() } }), { online: true, identity: owner ?? undefined, mode: this.runtime.cacheMode });
       this.messages.add({ severity: 'success', summary, detail: user.username });
     } catch (error) {
       // Re-emit the unchanged list so the role select snaps back to the stored value.
@@ -245,7 +247,7 @@ export class CompanySecurity implements OnInit {
       const result = await firstValueFrom(this.apollo.mutate({ mutation: ACTUALIZAR_CONFIGURACION_EMPRESA, variables: { input } }));
       if (!result.data?.actualizarConfiguracionEmpresa) throw new Error('El backend no confirmó los datos de la clínica');
       const company = result.data.actualizarConfiguracionEmpresa;
-      await cachedCatalog('empresa', async () => ({ data: { obtenerConfiguracionEmpresa: company } }), { online: true, identity: owner ?? undefined });
+      await cachedCatalog('empresa', async () => ({ data: { obtenerConfiguracionEmpresa: company } }), { online: true, identity: owner ?? undefined, mode: this.runtime.cacheMode });
       this.messages.add({ severity: 'success', summary: 'Datos de la clínica actualizados' });
     } catch (error) {
       this.messages.add({

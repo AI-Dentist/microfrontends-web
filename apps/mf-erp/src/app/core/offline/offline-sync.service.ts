@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { AuthContextService } from '../auth/auth-context.service';
 import { IDEMPOTENCY_CONTEXT_KEY, OWNER_CONTEXT_KEY } from '../graphql/graphql.provider';
 import { OFFLINE_REPLAYABLE_MUTATIONS, OfflineMutationName } from '../graphql/mutations.graphql';
+import { ERP_RUNTIME } from '../runtime/erp-runtime-context';
 import { OfflineMutationRecord, erpLocalDb } from './dexie.db';
 import { classifyMutationError, describeError } from './mutation-errors';
 import { NetworkStatusService } from './network-status.service';
@@ -12,6 +13,7 @@ import { findPendingDuplicate } from './pending-actions';
 import { ReplayOutcome, ReplayResult, replayQueue } from './replay-queue';
 
 const OUTBOX_LOCK_NAME = 'dental-erp-offline-outbox';
+const HOSTED_OUTBOX = 'La cola local no está disponible en el ERP alojado; la operación requiere conexión con el servidor.';
 
 /**
  * Only one tab replays the outbox at a time (Web Locks API). A tab that finds the lock taken
@@ -29,13 +31,18 @@ function withOutboxLock(replay: () => Promise<ReplayResult[]>): Promise<ReplayRe
 /**
  * Offline outbox: stores critical mutations made without connection and replays them, in
  * order and with their original Idempotency-Key, as soon as the browser is back online.
+ *
+ * A hosted ERP suspends the whole outbox: it never opens, reads, writes, replays or counts
+ * the persistent queue, so records left by a standalone session stay untouched.
  */
 @Injectable({ providedIn: 'root' })
 export class OfflineSyncService {
   private readonly apollo = inject(Apollo);
   private readonly auth = inject(AuthContextService);
   private readonly network = inject(NetworkStatusService);
-  private readonly db = erpLocalDb();
+  private readonly runtime = inject(ERP_RUNTIME);
+  /** Lazy: a hosted scope must never activate the persistent database. */
+  private get db() { return erpLocalDb(); }
   private inFlight: Promise<ReplayResult[]> | null = null;
   private rerunRequested = false;
 
@@ -45,6 +52,7 @@ export class OfflineSyncService {
   readonly lastSyncAt = signal<string | null>(null);
 
   constructor() {
+    if (this.runtime.hosted) return;
     liveQuery(() => this.db.offlineQueue.where('status').equals('PENDING_SYNC').count()).subscribe({
       next: (count) => this.pendingCount.set(count),
       error: (error) => console.warn('[OfflineSync] queue unavailable', error),
@@ -65,6 +73,7 @@ export class OfflineSyncService {
    * the queue.
    */
   async enqueue(mutationName: OfflineMutationName, variables: unknown, idempotencyKey: string, ownerPrincipal = this.requirePrincipal()): Promise<void> {
+    if (this.runtime.hosted) throw new Error(HOSTED_OUTBOX);
     this.assertPrincipal(ownerPrincipal);
     const queue = this.db.offlineQueue;
     await this.db.transaction('rw', queue, async () => {
@@ -90,12 +99,14 @@ export class OfflineSyncService {
 
   /** A still-pending record for the same business action (same installment, same CI/NIT). */
   async findPendingDuplicate(mutationName: OfflineMutationName, variables: unknown, ownerPrincipal = this.requirePrincipal()): Promise<OfflineMutationRecord | undefined> {
+    if (this.runtime.hosted) return undefined;
     const pending = await this.db.offlineQueue.where('status').equals('PENDING_SYNC').toArray();
     this.assertPrincipal(ownerPrincipal);
     return findPendingDuplicate(pending, mutationName, variables, ownerPrincipal);
   }
 
   async listFailed(): Promise<OfflineMutationRecord[]> {
+    if (this.runtime.hosted) return [];
     const owner = this.requirePrincipal();
     const records = await this.db.offlineQueue.where('status').equals('FAILED').sortBy('createdAt');
     this.assertPrincipal(owner);
@@ -104,6 +115,7 @@ export class OfflineSyncService {
 
   /** Returns a failed record to the queue (same key, so MS1 still deduplicates it). */
   async retry(idempotencyKey: string): Promise<void> {
+    if (this.runtime.hosted) throw new Error(HOSTED_OUTBOX);
     await this.db.transaction('rw', this.db.offlineQueue, async () => {
       const record = await this.db.offlineQueue.get(idempotencyKey);
       if (!record?.ownerPrincipal) throw new Error('La acción no tiene propietario confirmado.');
@@ -114,6 +126,7 @@ export class OfflineSyncService {
   }
 
   async discard(idempotencyKey: string): Promise<void> {
+    if (this.runtime.hosted) throw new Error(HOSTED_OUTBOX);
     await this.db.transaction('rw', this.db.offlineQueue, async () => {
       const record = await this.db.offlineQueue.get(idempotencyKey);
       if (!record?.ownerPrincipal) throw new Error('La acción no tiene propietario confirmado.');
@@ -127,7 +140,7 @@ export class OfflineSyncService {
    * a call arriving mid-flight (e.g. a retry) schedules one more pass before it resolves.
    */
   flush(): Promise<ReplayResult[]> {
-    if (!this.network.isOnline()) {
+    if (this.runtime.hosted || !this.network.isOnline()) {
       return Promise.resolve([]);
     }
     if (this.inFlight) {

@@ -13,6 +13,7 @@ import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { Paciente, PacienteInput } from '../../core/graphql/models';
 import { AuthContextService } from '../../core/auth/auth-context.service';
+import { ERP_RUNTIME } from '../../core/runtime/erp-runtime-context';
 import { LISTAR_PACIENTES, OBTENER_PACIENTE_POR_ID } from '../../core/graphql/queries.graphql';
 import { ACTUALIZAR_PACIENTE } from '../../core/graphql/mutations.graphql';
 import { IDEMPOTENCY_CONTEXT_KEY, OWNER_CONTEXT_KEY } from '../../core/graphql/graphql.provider';
@@ -170,6 +171,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 export class PatientsCatalog implements OnInit {
   private readonly apollo = inject(Apollo);
   private readonly auth = inject(AuthContextService);
+  private readonly runtime = inject(ERP_RUNTIME);
   readonly canWrite = computed(() => this.auth.roles().some(role => ['ADMIN', 'RECEPCIONISTA'].includes(role)));
   private readonly critical = inject(CriticalMutationService);
   private readonly network = inject(NetworkStatusService);
@@ -243,10 +245,15 @@ export class PatientsCatalog implements OnInit {
         this.apollo.query({ query: LISTAR_PACIENTES, variables: { busqueda: term || null }, fetchPolicy: 'network-only' }),
       );
       const rows = [...(result.data?.listarPacientes ?? [])];
-      await erpLocalDb().pacientes.bulkPut(rows.map((row) => ({ ...row })));
+      if (!this.runtime.hosted) await erpLocalDb().pacientes.bulkPut(rows.map((row) => ({ ...row })));
       this.patients.set(rows);
       this.fromCache.set(false);
-    } catch {
+    } catch (error) {
+      if (this.runtime.hosted) {
+        // Online-only: surface the real failure, never a persistent local copy.
+        this.messages.add({ severity: 'error', summary: 'No se pudo cargar los pacientes', detail: error instanceof Error ? error.message : 'Error desconocido' });
+        return;
+      }
       this.patients.set(await this.readCache(term));
       this.fromCache.set(true);
     } finally {
@@ -404,7 +411,7 @@ export class PatientsCatalog implements OnInit {
       if (!this.canWrite() || !this.online()) return;
       const result = await firstValueFrom(this.apollo.mutate({ mutation: ELIMINAR_PACIENTE, variables: { id: patient.id } }));
       if (result.data?.eliminarPaciente !== true) throw new Error('El backend no confirmó la baja lógica');
-      await erpLocalDb().pacientes.delete(patient.id);
+      if (!this.runtime.hosted) await erpLocalDb().pacientes.delete(patient.id);
       this.patients.update((rows) => removeById(rows, patient.id));
       this.messages.add({ severity: 'success', summary: 'Paciente desactivado', detail: `${patient.nombres} ${patient.apellidos}` });
     } catch (error) {
@@ -418,7 +425,7 @@ export class PatientsCatalog implements OnInit {
 
   private async upsertLocal(patient: Paciente, mayCommit: () => boolean = () => true): Promise<void> {
     if (!mayCommit()) return;
-    await erpLocalDb().pacientes.put({ ...patient });
+    if (!this.runtime.hosted) await erpLocalDb().pacientes.put({ ...patient });
     if (!mayCommit()) return;
     this.patients.update((rows) =>
       rows.some((row) => row.id === patient.id)

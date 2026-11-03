@@ -20,12 +20,20 @@ export interface CachedCatalog<T> {
 /**
  * Network-first read of a catalog with its last copy kept in IndexedDB, so screens keep
  * showing data offline or when MS1 is down. Offline it never calls the server.
+ *
+ * `mode: 'hosted'` is the online-only path: the persistent cache is never opened, read,
+ * written or invalidated, so copies kept by a standalone session are left untouched, and
+ * a real failure is surfaced instead of being masked by stale data.
  */
 export async function cachedCatalog<T>(
   key: string,
   fetcher: () => Promise<T>,
-  { online, identity }: { online: boolean; identity?: string },
+  { online, identity, mode }: { online: boolean; identity?: string; mode?: 'hosted' },
 ): Promise<CachedCatalog<T>> {
+  if (mode === 'hosted') {
+    if (!online) throw new Error('Se requiere conexión con el servidor para consultar este catálogo.');
+    return { data: await fetcher(), fromCache: false };
+  }
   const table = erpLocalDb().catalogCache;
   if (['empresa', 'usuarios', 'logs'].includes(key)) {
     if (!identity) throw new Error('Se requiere una sesión vigente para acceder al catálogo');

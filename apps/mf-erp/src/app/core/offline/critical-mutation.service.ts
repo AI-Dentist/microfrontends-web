@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { AuthContextService } from '../auth/auth-context.service';
 import { IDEMPOTENCY_CONTEXT_KEY, OWNER_CONTEXT_KEY } from '../graphql/graphql.provider';
 import { OFFLINE_REPLAYABLE_MUTATIONS, OfflineMutationName } from '../graphql/mutations.graphql';
+import { ERP_RUNTIME } from '../runtime/erp-runtime-context';
 import { IdempotentAction } from './idempotent-action';
 import { classifyMutationError } from './mutation-errors';
 import { NetworkStatusService } from './network-status.service';
@@ -27,6 +28,10 @@ export function newIdempotencyKey(): string {
  * Runs a critical mutation with its Idempotency-Key. Without connection (or when MS1 cannot
  * be reached) the mutation goes to the offline queue with that same key, so the later
  * replay can never duplicate a charge.
+ *
+ * A hosted ERP is online-first: it never queues. A disconnected or failed request surfaces
+ * its real error, and a result that arrives after the host capability or principal changed
+ * is withheld from the caller.
  */
 @Injectable({ providedIn: 'root' })
 export class CriticalMutationService {
@@ -34,6 +39,7 @@ export class CriticalMutationService {
   private readonly auth = inject(AuthContextService);
   private readonly network = inject(NetworkStatusService);
   private readonly offlineSync = inject(OfflineSyncService);
+  private readonly runtime = inject(ERP_RUNTIME);
 
   async run<N extends OfflineMutationName>(
     mutationName: N,
@@ -44,6 +50,7 @@ export class CriticalMutationService {
     const ownerPrincipal = this.auth.principalKey();
     if (!ownerPrincipal) throw new Error('Se requiere una sesión vigente con identidad confirmada.');
     const idempotencyKey = typeof keyOrAction === 'string' ? keyOrAction : keyOrAction.keyFor(variables);
+    if (this.runtime.hosted) return this.runOnline(mutationName, variables, idempotencyKey, ownerPrincipal);
     // The same charge is already waiting in the outbox: never create a second one.
     const duplicate = await this.offlineSync.findPendingDuplicate(mutationName, variables, ownerPrincipal);
     this.auth.refresh();
@@ -71,5 +78,22 @@ export class CriticalMutationService {
       }
       throw error;
     }
+  }
+
+  private async runOnline<N extends OfflineMutationName>(
+    mutationName: N, variables: MutationVariables<N>, idempotencyKey: string, ownerPrincipal: string,
+  ): Promise<CriticalMutationResult<N>> {
+    if (!this.network.isOnline()) throw new Error('Se requiere conexión con el servidor para realizar esta operación.');
+    const result = await firstValueFrom(
+      this.apollo.mutate({
+        mutation: OFFLINE_REPLAYABLE_MUTATIONS[mutationName] as any,
+        variables: variables as any,
+        context: { [IDEMPOTENCY_CONTEXT_KEY]: idempotencyKey, [OWNER_CONTEXT_KEY]: ownerPrincipal },
+      }),
+    );
+    // Throws when the capability was lost or the principal switched while the request ran.
+    this.auth.refresh();
+    if (this.auth.principalKey() !== ownerPrincipal) throw new Error('La sesión cambió; el resultado se descartó para su usuario original.');
+    return { status: 'completed', idempotencyKey, data: result.data as MutationData<N> };
   }
 }

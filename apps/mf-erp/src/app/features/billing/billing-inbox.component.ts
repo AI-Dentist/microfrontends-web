@@ -7,6 +7,7 @@ import { ButtonModule } from 'primeng/button';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { AuthContextService } from '../../core/auth/auth-context.service';
+import { ERP_RUNTIME } from '../../core/runtime/erp-runtime-context';
 import { canCollectPayments, canManageOrders } from './finance-permissions';
 import { Cuota, OrdenCobro, Recibo } from '../../core/graphql/models';
 import { OBTENER_ORDEN_COBRO_DETALLE, LISTAR_ORDENES_COBRO } from '../../core/graphql/queries.graphql';
@@ -186,6 +187,7 @@ import { QrPagofacilModal } from './qr-pagofacil-modal.component';
 export class BillingInbox implements OnInit {
   protected readonly network = inject(NetworkStatusService);
   private readonly auth = inject(AuthContextService);
+  private readonly runtime = inject(ERP_RUNTIME);
   protected readonly canManage = computed(() => canManageOrders(this.auth.roles()));
   protected readonly canCollect = computed(() => canCollectPayments(this.auth.roles()));
   private readonly apollo = inject(Apollo);
@@ -206,7 +208,7 @@ export class BillingInbox implements OnInit {
   protected readonly hasPaidCuota = computed(() => this.selected()?.cuotas.some((cuota) => cuota.estado === 'PAGADA') ?? false);
 
   constructor() {
-    this.network.onReconnect(() => void this.load());
+    if (!this.runtime.hosted) this.network.onReconnect(() => void this.load());
   }
 
   ngOnInit(): void {
@@ -236,12 +238,18 @@ export class BillingInbox implements OnInit {
           const orders = result.data?.listarOrdenesCobro ?? [];
           this.orders.set(orders);
           this.fromCache.set(false);
-          await this.cacheOrders(orders);
+          if (!this.runtime.hosted) await this.cacheOrders(orders);
           this.refreshSelected(orders);
           return;
         } catch (error) {
           this.messages.add({ severity: 'warn', summary: 'No se pudo cargar desde el servidor', detail: errorMessage(error) });
         }
+      }
+      // Hosted ERP is online-only: no persistent copy is read, so the real error stays visible.
+      if (this.runtime.hosted) {
+        this.fromCache.set(false);
+        if (!this.network.isOnline()) this.messages.add({ severity: 'warn', summary: 'Sin conexión', detail: 'Se requiere conexión con el servidor para ver las órdenes.' });
+        return;
       }
       const cached: OrdenCobro[] = await erpLocalDb().ordenesCobro.where('estado').equals('PENDIENTE').toArray();
       this.orders.set(cached);

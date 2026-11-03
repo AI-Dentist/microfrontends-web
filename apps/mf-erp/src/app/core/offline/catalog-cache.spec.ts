@@ -55,6 +55,23 @@ describe('cachedCatalog', () => {
     expect((await cachedCatalog('usuarios', async () => [], { online: false, identity: 'admin' })).data).toEqual(['private']);
   });
 
+  it.each(['offline', 'network', 'authorization'] as const)('hosted %s rejection never reuses or invalidates a standalone catalog copy', async failure => {
+    const key = 'hosted-preserves-standalone';
+    const original = ['synthetic-original'];
+    await cachedCatalog(key, async () => original, { online: true });
+    const error = failure === 'authorization' ? { status: 403 } : new TypeError('Synthetic connection failure');
+    const fetcher = vi.fn(async () => { throw error; });
+    const options = { online: failure !== 'offline', mode: 'hosted' as const };
+    const result = await cachedCatalog(key, fetcher, options).then(value => ({ value }), rejection => ({ rejection }));
+    expect(result).not.toHaveProperty('value');
+    expect(result).toHaveProperty('rejection');
+    if (failure !== 'offline') {
+      expect(result).toEqual({ rejection: error });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    } else expect(fetcher).not.toHaveBeenCalled();
+    expect(await cachedCatalog(key, async () => [], { online: false })).toEqual({ data: original, fromCache: true });
+  });
+
   it('keeps the v1 tables of the spec untouched', () => {
     const tables = erpLocalDb().tables.map((t) => [t.name, t.schema.primKey.src, t.schema.indexes.map((i) => i.src)]);
     expect(tables).toEqual(

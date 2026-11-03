@@ -11,6 +11,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { AuthContextService } from '../../core/auth/auth-context.service';
+import { ERP_RUNTIME } from '../../core/runtime/erp-runtime-context';
 import { TableModule } from 'primeng/table';
 import { TabsModule } from 'primeng/tabs';
 import { TagModule } from 'primeng/tag';
@@ -250,6 +251,7 @@ export class DoctorsCatalog implements OnInit {
   readonly initialTab = input<'odontologos' | 'especialidades' | 'consultorios'>('odontologos');
   private readonly apollo = inject(Apollo);
   private readonly auth = inject(AuthContextService);
+  private readonly runtime = inject(ERP_RUNTIME);
   readonly canWrite = computed(() => this.auth.roles().includes('ADMIN'));
   readonly roomStates = ['DISPONIBLE', 'MANTENIMIENTO'];
   private readonly network = inject(NetworkStatusService);
@@ -302,9 +304,9 @@ export class DoctorsCatalog implements OnInit {
     this.loading.set(true);
     try {
       const [doctors, specialties, rooms] = await Promise.all([
-        cachedCatalog('odontologos', () => firstValueFrom(this.apollo.query({ query: LISTAR_ODONTOLOGOS, variables: {}, fetchPolicy: 'network-only' })), { online: this.network.isOnline() }),
-        cachedCatalog('especialidades', () => firstValueFrom(this.apollo.query({ query: LISTAR_ESPECIALIDADES, variables: {}, fetchPolicy: 'network-only' })), { online: this.network.isOnline() }),
-        cachedCatalog('consultorios', () => firstValueFrom(this.apollo.query({ query: LISTAR_CONSULTORIOS, variables: {}, fetchPolicy: 'network-only' })), { online: this.network.isOnline() }),
+        cachedCatalog('odontologos', () => firstValueFrom(this.apollo.query({ query: LISTAR_ODONTOLOGOS, variables: {}, fetchPolicy: 'network-only' })), { online: this.network.isOnline(), mode: this.runtime.cacheMode }),
+        cachedCatalog('especialidades', () => firstValueFrom(this.apollo.query({ query: LISTAR_ESPECIALIDADES, variables: {}, fetchPolicy: 'network-only' })), { online: this.network.isOnline(), mode: this.runtime.cacheMode }),
+        cachedCatalog('consultorios', () => firstValueFrom(this.apollo.query({ query: LISTAR_CONSULTORIOS, variables: {}, fetchPolicy: 'network-only' })), { online: this.network.isOnline(), mode: this.runtime.cacheMode }),
       ]);
       this.doctors.set([...(doctors.data.data?.listarOdontologos ?? [])]);
       this.specialties.set([...(specialties.data.data?.listarEspecialidades ?? [])]);
@@ -403,7 +405,7 @@ export class DoctorsCatalog implements OnInit {
       const result = await firstValueFrom(this.apollo.mutate({ mutation: ELIMINAR_ODONTOLOGO, variables: { id: doctor.id } }));
       if (result.data?.eliminarOdontologo !== true) throw new Error('El backend no confirmó la baja lógica');
       this.doctors.update((rows) => removeById(rows, doctor.id));
-      await cachedCatalog('odontologos', async () => ({ data: { listarOdontologos: this.doctors() } }), { online: true });
+      await cachedCatalog('odontologos', async () => ({ data: { listarOdontologos: this.doctors() } }), { online: true, mode: this.runtime.cacheMode });
     });
   }
 
@@ -412,7 +414,7 @@ export class DoctorsCatalog implements OnInit {
       const result = await firstValueFrom(this.apollo.mutate({ mutation: ELIMINAR_ESPECIALIDAD, variables: { id: specialty.id } }));
       if (result.data?.eliminarEspecialidad !== true) throw new Error('El backend no confirmó la baja lógica');
       this.specialties.update((rows) => removeById(rows, specialty.id));
-      await cachedCatalog('especialidades', async () => ({ data: { listarEspecialidades: this.specialties() } }), { online: true });
+      await cachedCatalog('especialidades', async () => ({ data: { listarEspecialidades: this.specialties() } }), { online: true, mode: this.runtime.cacheMode });
     });
   }
 
@@ -422,7 +424,7 @@ export class DoctorsCatalog implements OnInit {
       const result = await firstValueFrom(this.apollo.mutate({ mutation: ELIMINAR_CONSULTORIO, variables: { id: room.id } }));
       if (result.data?.eliminarConsultorio !== true) throw new Error('El backend no confirmó la baja lógica');
       this.rooms.update((rows) => rows.map(row => row.id === room.id ? { ...row, estado: 'INACTIVO' } : row));
-      await cachedCatalog('consultorios', async () => ({ data: { listarConsultorios: this.rooms() } }), { online: true });
+      await cachedCatalog('consultorios', async () => ({ data: { listarConsultorios: this.rooms() } }), { online: true, mode: this.runtime.cacheMode });
     });
   }
 

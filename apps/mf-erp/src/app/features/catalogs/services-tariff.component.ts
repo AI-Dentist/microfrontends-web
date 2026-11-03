@@ -11,6 +11,7 @@ import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { AuthContextService } from '../../core/auth/auth-context.service';
+import { ERP_RUNTIME } from '../../core/runtime/erp-runtime-context';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { TextareaModule } from 'primeng/textarea';
@@ -178,6 +179,7 @@ const SEARCH_LIMIT = 8;
 export class ServicesTariff implements OnInit {
   private readonly apollo = inject(Apollo);
   private readonly auth = inject(AuthContextService);
+  private readonly runtime = inject(ERP_RUNTIME);
   readonly canWrite = computed(() => this.auth.roles().includes('ADMIN'));
   readonly specialties = signal<Especialidad[]>([]);
   private readonly network = inject(NetworkStatusService);
@@ -241,11 +243,16 @@ export class ServicesTariff implements OnInit {
         this.apollo.query({ query: LISTAR_SERVICIOS_ODONTOLOGICOS, variables: {}, fetchPolicy: 'network-only' }),
       );
       const rows = [...(result.data?.listarServiciosOdontologicos ?? [])];
-      await erpLocalDb().serviciosOdontologicos.bulkPut(rows.map((row) => ({ ...row })));
+      if (!this.runtime.hosted) await erpLocalDb().serviciosOdontologicos.bulkPut(rows.map((row) => ({ ...row })));
       this.services.set(rows);
       if (this.query().trim()) this.onQuery(this.query());
       this.fromCache.set(false);
-    } catch {
+    } catch (error) {
+      if (this.runtime.hosted) {
+        // Online-only: surface the real failure, never a persistent local copy.
+        this.messages.add({ severity: 'error', summary: 'No se pudo cargar el tarifario', detail: error instanceof Error ? error.message : 'Error desconocido' });
+        return;
+      }
       this.services.set(await erpLocalDb().serviciosOdontologicos.toArray());
       if (this.query().trim()) this.onQuery(this.query());
       this.fromCache.set(true);
@@ -297,7 +304,7 @@ export class ServicesTariff implements OnInit {
             ?.crearServicioOdontologico;
       if (!saved) throw new Error('El backend no confirmó el servicio guardado');
       {
-        await erpLocalDb().serviciosOdontologicos.put({ ...saved });
+        if (!this.runtime.hosted) await erpLocalDb().serviciosOdontologicos.put({ ...saved });
         this.services.update((rows) => upsertById(rows, saved));
         if (this.query().trim()) this.onQuery(this.query());
       }
@@ -331,7 +338,7 @@ export class ServicesTariff implements OnInit {
       if (!this.canWrite() || !this.online()) return;
       const result = await firstValueFrom(this.apollo.mutate({ mutation: ELIMINAR_SERVICIO_ODONTOLOGICO, variables: { id: service.id } }));
       if (result.data?.eliminarServicioOdontologico !== true) throw new Error('El backend no confirmó la baja lógica');
-      await erpLocalDb().serviciosOdontologicos.delete(service.id);
+      if (!this.runtime.hosted) await erpLocalDb().serviciosOdontologicos.delete(service.id);
       this.services.update((rows) => removeById(rows, service.id));
       this.onQuery(this.query());
       this.messages.add({ severity: 'success', summary: 'Servicio desactivado', detail: service.nombre });
