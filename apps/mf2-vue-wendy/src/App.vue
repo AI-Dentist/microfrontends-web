@@ -148,10 +148,13 @@ import { createMs3Service } from './api/ms3Api.js';
 import { tabForContext, navigateTab } from './lifecycle.js';
 
 const props = defineProps({ context: Object });
-const ms3Service = computed(() => createMs3Service({
-  apiBaseUrl: props.context?.apiBaseUrl,
-  getAccessToken: () => props.context?.getAccessToken() ?? null,
-}));
+// Hosted instances bind the exact host getter and base; replacing either
+// retires the previous service so its late results never reach this view.
+const ms3Service = computed(() => props.context
+  ? createMs3Service({ hosted: true, apiBaseUrl: props.context.apiBaseUrl,
+    getAccessToken: props.context.getAccessToken })
+  : createMs3Service());
+watch(ms3Service, (_, previous) => previous.retire());
 const tab = ref(tabForContext(props.context));
 watch(() => props.context?.path, () => { tab.value = tabForContext(props.context); });
 function selectTab(next) {
@@ -187,7 +190,7 @@ const cargarDatos = async () => {
       service.getHorarios(),
       service.getStock()
     ]);
-    if (!active || generation !== loadGeneration) return;
+    if (!active || generation !== loadGeneration || service !== ms3Service.value) return;
     citas.value = citasRes.citas || [];
     horarios.value = horariosRes.horarios || [];
     stock.value = stockRes.insumos || [];
@@ -201,6 +204,7 @@ const cargarDatos = async () => {
 const guardarCita = async () => {
   enviando.value = true;
   mensajeExito.value = '';
+  const service = ms3Service.value;
   try {
     const formattedDate = nuevaCita.value.fecha_hora.replace('T', ' ') + 
       (nuevaCita.value.fecha_hora.length === 16 ? ':00' : '');
@@ -212,8 +216,8 @@ const guardarCita = async () => {
       fecha_hora: formattedDate
     };
 
-    const resCrear = await ms3Service.value.crearCita(payload);
-    if (!active) return;
+    const resCrear = await service.crearCita(payload);
+    if (!active || service !== ms3Service.value) return;
 
     // Si Laravel devolvió un error de validación HTTP
     if (resCrear.error || resCrear.errors) {
@@ -244,26 +248,28 @@ const guardarCita = async () => {
     // Sincronizar en segundo plano con el archivo de persistencia
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(async () => {
+      if (service !== ms3Service.value) return;
       try {
-        const resListado = await ms3Service.value.getCitas();
-        if (active && resListado?.citas) citas.value = resListado.citas;
+        const resListado = await service.getCitas();
+        if (active && service === ms3Service.value && resListado?.citas) citas.value = resListado.citas;
       } catch {
-        if (active) error.value = 'Error al sincronizar citas con MS3.';
+        if (active && service === ms3Service.value) error.value = 'Error al sincronizar citas con MS3.';
       }
     }, 500);
 
   } catch {
-    if (active) error.value = 'Ocurrió un error al contactar al backend.';
+    if (active && service === ms3Service.value) error.value = 'Ocurrió un error al contactar al backend.';
   } finally {
     if (active) enviando.value = false;
   }
 };
 
 onMounted(cargarDatos);
-watch(() => props.context?.apiBaseUrl, cargarDatos);
+watch(ms3Service, cargarDatos);
 onUnmounted(() => {
   active = false;
   clearTimeout(refreshTimer);
+  ms3Service.value.retire();
 });
 </script>
 

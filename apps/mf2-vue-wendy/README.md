@@ -33,12 +33,23 @@ ignored after teardown. The host must unmount before reusing a container.
 Tabs request `${basePath}/citas`, `/horarios` or `/stock` via `onNavigate`;
 `context.path` selects the tab, including after updates. The host owns history.
 Runtime API base changes reload data. Every request reads `getAccessToken()`
-on demand; tokens are never serialized or stored. POST retains both existing
+on demand; tokens are never serialized or stored.
+
+Hosted mounts are online-only and fail closed. The remote builds its client
+with `createMs3Service({ hosted: true, apiBaseUrl, getAccessToken })`: there is
+no default base and no anonymous request. A `null`, empty or throwing getter
+rejects with `Ms3CapabilityError` before any HTTP and retires that client for
+good, even if the same getter later returns a token. Replacing the getter or
+the API base, or unmounting, retires the previous client: its new requests send
+nothing, and responses that arrive later are discarded instead of updating
+citas, errors or the follow-up resync. Requests already sent cannot be recalled.
+A refresh behind the same getter needs no remount. POST retains both existing
 idempotency headers. Absolute and relative API bases retain their query suffix
 when endpoints are appended: `/api/?tenant=one` becomes
 `/api/citas?tenant=one`. Query encoding and repeated keys are preserved.
 The named `ms3Service` export remains the default standalone factory instance;
-use `createMs3Service` for isolated runtime/session configuration.
+use `createMs3Service` for isolated runtime/session configuration. Standalone
+(no `hosted` flag) keeps its defaults: optional token, no retirement.
 Every non-2xx response rejects before JSON parsing and the
 UI shows a local error rather than reporting a failed write as successful.
 
@@ -50,6 +61,7 @@ Do not put tokens in manifests, environment files, URLs or logs.
 ## Checks
 
 `node --test test/*.test.mjs` covers public API requests, standalone defaults,
-HTTP failures, instance lifecycle and navigation without backend writes.
+hosted fail-closed capabilities and retirement, HTTP failures, instance
+lifecycle and navigation without backend writes.
 Run `npm run build` and `npm run build:remote` too. The host integration owns
 real-browser standalone/Shadow DOM mount-update-unmount verification.
