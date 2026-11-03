@@ -1,5 +1,6 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { environment } from '../../../environments/environment';
+import { ERP_RUNTIME } from '../runtime/erp-runtime-context';
 
 export interface ErpUser {
   id: string;
@@ -40,13 +41,17 @@ export function decodeJwtClaims(token: string): JwtClaims | null {
 /**
  * Reads the JWT shared by the Keycloak shell. In development, when no token exists, it
  * activates the mock profile and the `X-Dev-User` header so MS1 can be used without a gateway.
+ *
+ * In a hosted scope (see `ErpRuntimeContext`) the only credential is the host's current
+ * synchronous capability: no storage, no mock profile, no retained token after retirement.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthContextService {
-  private readonly tokenSignal = signal<string | null>(this.readStoredToken());
+  private readonly runtime = inject(ERP_RUNTIME);
+  private readonly tokenSignal = signal<string | null>(this.initialToken());
 
   readonly token = this.tokenSignal.asReadonly();
-  readonly isDevMock = computed(() => this.tokenSignal() === null && !environment.production && environment.enableDevMockAuth);
+  readonly isDevMock = computed(() => !this.runtime.hosted && this.tokenSignal() === null && !environment.production && environment.enableDevMockAuth);
   private readonly claims = signal(this.validClaims(this.tokenSignal()));
   readonly devUserHeader = computed(() => (this.isDevMock() ? environment.devUserHeader : null));
   /** Stable authentication identity, never a bearer token or an assumed ERP UUID. */
@@ -94,11 +99,12 @@ export class AuthContextService {
 
   constructor() {
     // The shell may refresh the token in another tab or after a silent renew.
-    globalThis.addEventListener?.('storage', () => this.refresh());
+    if (!this.runtime.hosted) globalThis.addEventListener?.('storage', () => this.refresh());
   }
 
-  /** Re-reads storage; cheap enough to call before every request. */
+  /** Re-reads storage (or the hosted capability); cheap enough to call before every request. */
   refresh(): string | null {
+    if (this.runtime.hosted) return this.refreshHosted();
     const token = this.readStoredToken();
     if (token !== this.tokenSignal()) {
       this.tokenSignal.set(token);
@@ -108,6 +114,28 @@ export class AuthContextService {
       throw new Error('Credencial ERP inválida o expirada.');
     }
     return token;
+  }
+
+  private initialToken(): string | null {
+    if (!this.runtime.hosted) return this.readStoredToken();
+    try { return this.runtime.credential(); } catch { return null; }
+  }
+
+  /** Reads the current host capability; a lost capability or principal switch retires the scope. */
+  private refreshHosted(): string {
+    try {
+      const token = this.runtime.credential();
+      const claims = this.validClaims(token);
+      if (!claims) throw new Error('Credencial ERP inválida o expirada.');
+      this.tokenSignal.set(token);
+      this.claims.set(claims);
+      this.runtime.bind(this.principalKey());
+      return token;
+    } catch (error) {
+      this.tokenSignal.set(null);
+      this.claims.set(null);
+      throw error;
+    }
   }
 
   private readStoredToken(): string | null {

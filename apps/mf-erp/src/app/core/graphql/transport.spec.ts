@@ -6,6 +6,7 @@ import { Apollo, gql } from 'apollo-angular';
 import { firstValueFrom } from 'rxjs';
 import { AuthContextService } from '../auth/auth-context.service';
 import { provideErpGraphql } from './graphql.provider';
+import { provideErp } from '../erp.providers';
 
 const mutation = gql`mutation TransportProbe { probe }`;
 const query = gql`query TransportProbe { probe }`;
@@ -69,6 +70,121 @@ it('uses an optional validated host endpoint without changing per-request creden
   expect(request.request.headers.has('Idempotency-Key')).toBe(false);
   request.flush({ data: { probe: true } });
   expect((await done).data).toEqual({ probe: true });
+});
+
+describe('hosted online-first transport capability', () => {
+  const endpoint = 'https://host.example/nondefault/erp?tenant=synthetic';
+  const credential = (sub: string, revision = 1) =>
+    `e30.${btoa(JSON.stringify({ iss: 'verified-host', sub, revision, realm_access: { roles: ['ODONTOLOGO'] } }))}.signature`;
+
+  function hosted(getAccessToken: () => string | null) {
+    TestBed.resetTestingModule();
+    // Extra fields deliberately use structural typing: these tests compile against the
+    // existing public provider, so ignored capability fields yield behavioral RED.
+    const config = { mode: 'hosted' as const, graphqlUrl: endpoint, getAccessToken };
+    TestBed.configureTestingModule({ providers: [
+      ...provideErp(config), provideHttpClientTesting(),
+    ] });
+    http = TestBed.inject(HttpTestingController);
+    apollo = TestBed.inject(Apollo);
+    return config;
+  }
+
+  const settleUnexpected = () => {
+    const requests = http.match(() => true);
+    requests.forEach(request => request.flush({ data: { probe: 'unexpected' } }));
+    return requests;
+  };
+
+  it('reads the CURRENT synchronous host getter on every request at the verbatim endpoint', async () => {
+    let current = credential('actor-A');
+    const getter = vi.fn(() => current);
+    hosted(getter);
+    const storageRead = vi.fn(() => token);
+    vi.stubGlobal('localStorage', { getItem: storageRead });
+    vi.stubGlobal('sessionStorage', { getItem: storageRead });
+    for (const revision of [1, 2]) {
+      current = credential('actor-A', revision);
+      const done = firstValueFrom(apollo.query({ query, fetchPolicy: 'network-only', context: {
+        uri: 'https://caller.invalid/override',
+        headers: { authorization: 'Bearer stale-caller', 'x-dev-user': 'prototype' },
+      } }));
+      await drain();
+      const requests = http.match(() => true);
+      requests.forEach(request => request.flush({ data: { probe: revision } }));
+      expect(requests).toHaveLength(1);
+      expect(requests[0].request.urlWithParams).toBe(endpoint);
+      expect(requests[0].request.headers.get('Authorization')).toBe(`Bearer ${current}`);
+      expect(requests[0].request.headers.has('X-Dev-User')).toBe(false);
+      expect((await done).data).toEqual({ probe: revision });
+    }
+    expect(getter.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(storageRead).not.toHaveBeenCalled();
+    expect(TestBed.inject(AuthContextService).financialUserId()).toBeNull();
+  });
+
+  it.each(['missing', 'rejected'] as const)('fails closed with %s capability despite a valid legacy storage token', async kind => {
+    const getter = vi.fn(() => {
+      if (kind === 'rejected') throw new Error('host capability rejected');
+      return null;
+    });
+    hosted(getter);
+    const before = apollo.client.cache.extract();
+    const done = firstValueFrom(apollo.query({ query })).catch(error => error);
+    await drain();
+    const requests = settleUnexpected();
+    const result = await done;
+    expect(requests).toHaveLength(0);
+    expect(result).toBeInstanceOf(Error);
+    expect(getter).toHaveBeenCalled();
+    expect(apollo.client.cache.extract()).toEqual(before);
+  });
+
+  it('permanently retires an old provider after revocation even if the same actor getter returns again', async () => {
+    let current: string | null = credential('actor-A');
+    hosted(() => current);
+    const initial = firstValueFrom(apollo.query({ query, fetchPolicy: 'network-only' }));
+    await drain();
+    http.expectOne(endpoint).flush({ data: { probe: 'active' } });
+    await initial;
+    current = null;
+    const revoked = firstValueFrom(apollo.query({ query, fetchPolicy: 'network-only' })).catch(error => error);
+    await drain();
+    const revokedRequests = settleUnexpected();
+    expect(await revoked).toBeInstanceOf(Error);
+    expect(revokedRequests).toHaveLength(0);
+    current = credential('actor-A', 2);
+    const revived = firstValueFrom(apollo.query({ query, fetchPolicy: 'network-only' })).catch(error => error);
+    await drain();
+    const revivedRequests = settleUnexpected();
+    expect(await revived).toBeInstanceOf(Error);
+    expect(revivedRequests).toHaveLength(0);
+    expect(apollo.client.cache.extract()).not.toEqual(expect.objectContaining({ ROOT_QUERY: expect.objectContaining({ probe: 'unexpected' }) }));
+  });
+
+  it.each(['principal', 'backend', 'revocation'] as const)('suppresses already-issued results and cache effects after %s switch', async boundary => {
+    let current: string | null = credential('actor-A');
+    const config = hosted(() => current);
+    const before = apollo.client.cache.extract();
+    const done = firstValueFrom(apollo.query({ query, fetchPolicy: 'network-only' }))
+      .then(value => ({ value }), error => ({ error }));
+    await drain();
+    const issued = http.expectOne(endpoint);
+    if (boundary === 'principal') current = credential('actor-B');
+    else if (boundary === 'backend') config.graphqlUrl = 'https://other.example/erp';
+    else current = null;
+    // The server request already exists; the boundary can only suppress its effects.
+    issued.flush({ data: { probe: 'old-principal-result' } });
+    const result = await done;
+    expect(result).toHaveProperty('error');
+    expect(result).not.toHaveProperty('value');
+    expect(apollo.client.cache.extract()).toEqual(before);
+    const next = firstValueFrom(apollo.query({ query, fetchPolicy: 'network-only' })).catch(error => error);
+    await drain();
+    const requests = settleUnexpected();
+    expect(await next).toBeInstanceOf(Error);
+    expect(requests).toHaveLength(0);
+  });
 });
 
 it('does not generate a key for existing queries', async () => {

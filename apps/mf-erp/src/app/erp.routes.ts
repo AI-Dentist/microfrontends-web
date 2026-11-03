@@ -1,9 +1,14 @@
 import { Routes } from '@angular/router';
 import { provideErp } from './core/erp.providers';
+import type { ErpGraphqlConfig } from './core/runtime/erp-runtime-context';
 import { ErpLayout } from './shared/components/erp-layout/erp-layout.component';
 
-/** Routes exposed through Native Federation as `./Routes` (mounted by the shell under /erp). */
-export function createErpRoutes(config: { graphqlUrl?: string } = {}): Routes {
+/**
+ * Routes exposed through Native Federation as `./Routes` (mounted by the shell under /erp).
+ * A host passes `{ mode: 'hosted', graphqlUrl, getAccessToken }`; each call yields routes whose
+ * providers are bound to that capability, so a new login needs freshly created routes.
+ */
+export function createErpRoutes(config: ErpGraphqlConfig = {}): Routes {
   return [
   {
     path: '',
