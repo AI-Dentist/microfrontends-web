@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, DestroyRef, inject, InjectionToken } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { NavigationStart, provideRouter, Router, RouterLink, RouterLinkActive, RouterOutlet, Routes, withNavigationErrorHandler } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -7,6 +7,7 @@ import type { PlatformConfigV1 } from '../../../packages/mfe-contract/index.js';
 import { bounded } from './remote-runtime.mjs';
 import { AUTH_SESSION, initializeAuthentication, NavigationStatus, PLATFORM_CONFIG } from './platform';
 import { AuthService } from './auth.service';
+import type { AuthSession } from './auth-session.mjs';
 import { ModulePage } from './module-page';
 
 @Component({ standalone: true, imports: [RouterLink], template: `
@@ -45,6 +46,8 @@ const authenticated = () => {
   const auth = inject(AuthService);
   return auth.session.getAccessToken() !== null || inject(Router).createUrlTree(['/login']);
 };
+/** Builds a fresh route tree; a new login needs new lazy ERP injectors and a new host lease. */
+const ROUTE_FACTORY = new InjectionToken<() => Routes>('platform route factory');
 @Component({
   selector: 'platform-shell', standalone: true,
   imports: [RouterLink, RouterLinkActive, RouterOutlet],
@@ -75,13 +78,51 @@ class Shell {
   readonly config = inject(PLATFORM_CONFIG);
   readonly status = inject(NavigationStatus);
   private readonly router = inject(Router);
+  private readonly routes = inject(ROUTE_FACTORY);
   constructor() {
+    // Lazy route injectors are cached by the router. When the session ends, replace the tree so a
+    // later login mounts a new ERP bound to a new lease instead of reusing a retired injector.
+    let wasAuthenticated = this.auth.authenticated();
+    const unsubscribe = this.auth.session.subscribe(next => {
+      const now = next.status === 'authenticated';
+      if (wasAuthenticated && !now) this.router.resetConfig(this.routes());
+      wasAuthenticated = now;
+    });
+    inject(DestroyRef).onDestroy(unsubscribe);
     this.router.events.pipe(takeUntilDestroyed()).subscribe(event => {
       if (event instanceof NavigationStart) this.status.failedUrl.set(null);
     });
   }
   retry() { const url = this.status.failedUrl(); if (url) void this.router.navigateByUrl(url).catch(() => {}); }
 }
+
+// <erp-host-capability>
+/**
+ * One lease per ERP mount. It dies for good once the session leaves the verified subject
+ * (logout, expiry, refresh rejection or a different subject), so a retained getter cannot
+ * revive after a same-subject login. The token is read synchronously per call.
+ */
+export function createErpHostCapability(session: Pick<AuthSession, 'getAccessToken' | 'snapshot' | 'subscribe'>) {
+  const bound = session.snapshot();
+  let revoked = bound.status !== 'authenticated' || !bound.subject;
+  let unsubscribe: (() => void) | undefined;
+  const check = (next: { status: string; subject: string | null }) => {
+    if (next.status !== 'authenticated' || next.subject !== bound.subject) {
+      revoked = true;
+      unsubscribe?.();
+    }
+  };
+  unsubscribe = session.subscribe(check);
+  if (revoked) unsubscribe();
+  return {
+    getAccessToken(): string | null {
+      if (revoked) return null;
+      check(session.snapshot());
+      return revoked ? null : session.getAccessToken();
+    },
+  };
+}
+// </erp-host-capability>
 
 export function bootstrap(config: PlatformConfigV1) {
   const authSession = initializeAuthentication(config);
@@ -105,7 +146,7 @@ export function bootstrap(config: PlatformConfigV1) {
     }
     return styleReady;
   }
-  const routes: Routes = [
+  const buildRoutes = (): Routes => [
     { path: '', pathMatch: 'full', component: Home },
     { path: 'login', component: Login },
     { path: 'auth/callback', component: Callback },
@@ -115,8 +156,11 @@ export function bootstrap(config: PlatformConfigV1) {
         // Public remoteEntry API initializes ERP only when this route is requested.
         const module = await loadRemoteModule({ remoteEntry: erp.entry, exposedModule: './Routes' });
         await erpStyles();
-        const children = typeof module.createErpRoutes === 'function'
-          ? module.createErpRoutes({ graphqlUrl: erp.apiBaseUrl }) : module.ERP_ROUTES ?? module.default;
+        // Hosted ERP: the configured endpoint plus this mount's lease. No storage/standalone fallback.
+        if (typeof module.createErpRoutes !== 'function') throw Error('Invalid ERP routes');
+        const children = module.createErpRoutes({
+          mode: 'hosted', graphqlUrl: erp.apiBaseUrl, getAccessToken: createErpHostCapability(authSession).getAccessToken,
+        });
         if (!Array.isArray(children)) throw Error('Invalid ERP routes');
         return [...children, { path: '**', component: Missing }];
       })()).finally(() => status.loading.set(false));
@@ -127,7 +171,8 @@ export function bootstrap(config: PlatformConfigV1) {
   return bootstrapApplication(Shell, { providers: [
     { provide: PLATFORM_CONFIG, useValue: config },
     { provide: AUTH_SESSION, useValue: authSession },
-    provideRouter(routes, withNavigationErrorHandler(error => {
+    { provide: ROUTE_FACTORY, useValue: buildRoutes },
+    provideRouter(buildRoutes(), withNavigationErrorHandler(error => {
       const status = inject(NavigationStatus); status.loading.set(false); status.failedUrl.set(error.url);
     })),
   ] });

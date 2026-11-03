@@ -133,6 +133,35 @@ The cached Angular shell build passed, exit 0 in 26 seconds, without dependency
 installation. The same parent-owned verifier's blocker-targeted recheck remains
 pending; these author/owner checks do not constitute independent acceptance.
 
+## Hosted ERP transport (T4.A, online-first)
+
+The shell mounts the Angular ERP through `createErpRoutes({ mode: 'hosted', graphqlUrl,
+getAccessToken })`; `graphqlUrl` is the manifest `apiBaseUrl` and `getAccessToken` is a
+per-load lease from `createErpHostCapability(session)` in `apps/shell/src/bootstrap.ts`.
+Online means connected to the real API in a local bounded environment, not a deployment.
+
+| Aspect | Hosted ERP | Explicit standalone ERP (unchanged) |
+|---|---|---|
+| Credential | Host getter read synchronously for every request and again when a response arrives. No storage, `kc_token`, mock profile or `X-Dev-User`. | Browser-stored token or development mock. |
+| Endpoint | Configured URL used **verbatim** (no `/graphql` appended, query kept); a per-call `uri` override is dropped. A missing URL fails closed, never the prototype URL. | `graphqlUrl` option or `environment.graphqlUrl`. |
+| Lost capability | Missing, empty or throwing getter retires the scope: zero HTTP/GraphQL requests. | Existing behavior. |
+| Retirement | Permanent per provider scope. A logout, expiry or different subject revokes the shell lease, so a retained getter cannot revive after a same-subject login. The shell replaces its route tree on session end, so the next login builds new lazy injectors. | Not applicable. |
+| Switches | A principal switch or a changed `graphqlUrl` retires the scope; a response that arrives afterwards is rejected before it reaches the Apollo cache or the caller. | Existing owner checks. |
+| Persistence | No IndexedDB open/read/write/transaction, no outbox enqueue/replay/claim/delete, no reconnect or `liveQuery` subscription, no catalog or patient/service/order copies, no global queue counters. | Existing offline cache and outbox. |
+| Errors | Real API or connection errors are surfaced; nothing is reported as queued or served from a stale copy. | Existing fallbacks. |
+
+A token refresh with the same subject keeps the mounted ERP working without a remount.
+Existing IndexedDB records, schema and legacy financial queue entries are neither read
+nor migrated, cleared, reassigned or replayed by the hosted ERP: this suspends unsafe
+hosted offline reuse, it does not destroy offline data. S2 defers isolated offline; it
+does **not** claim safe offline affinity. A request already sent to the server cannot be
+recalled; only its effects in the hosted client are suppressed. Server guards stay the
+authority and no doctor or finance identifier is guessed.
+
+Native shell tests: `node --test apps/shell/test/erp-host-capabilities.test.mjs` (lease
+executed from the production bootstrap source). Angular specs cover the transport, outbox
+and catalog boundaries; real-service and browser acceptance remain T10.
+
 ## Remaining stages
 
 Corrected risk-2/risk-4 acceptance remains pending on the actual work-unit
