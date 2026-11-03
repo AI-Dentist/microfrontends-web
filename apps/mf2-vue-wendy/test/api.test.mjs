@@ -2,26 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMs3Service } from '../src/api/ms3Api.js';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
 test('standalone defaults preserve reads, POST payload and both idempotency keys', async (t) => {
   const calls = [];
   t.mock.method(globalThis, 'fetch', async (...args) => {
     calls.push(args);
     return { ok: true, json: async () => ({ citas: [] }) };
   });
-  t.mock.method(Date, 'now', () => 123);
   const service = createMs3Service();
   assert.deepEqual(await service.getCitas(), { citas: [] });
   await service.getHorarios();
   await service.getStock();
   await service.crearCita({ paciente_id: 'p1' });
   const base = 'http://localhost:8001/api/agendamiento';
+  const key = calls[3][1].headers['Idempotency-Key'];
+  assert.match(key, UUID);
   assert.deepEqual(calls, [
     [`${base}/citas`, { method: 'GET', headers: {} }],
     [`${base}/horarios`, { method: 'GET', headers: {} }],
     [`${base}/stock`, { method: 'GET', headers: {} }],
     [`${base}/citas`, { method: 'POST', headers: {
-      'Content-Type': 'application/json', 'X-Idempotency-Key': 'key-123',
-      'Idempotency-Key': 'key-123',
+      'Content-Type': 'application/json', 'X-Idempotency-Key': key,
+      'Idempotency-Key': key,
     }, body: '{"paciente_id":"p1"}' }],
   ]);
 });
@@ -32,7 +35,6 @@ test('runtime base and token are read on every request without leaking across in
     calls.push(args);
     return { ok: true, json: async () => ({}) };
   });
-  t.mock.method(Date, 'now', () => 456);
   let token = 'first';
   let reads = 0;
   const service = createMs3Service({ apiBaseUrl: 'https://api.example/clinical/',
@@ -53,9 +55,11 @@ test('runtime base and token are read on every request without leaking across in
     ['https://api.example/clinical/stock', { method: 'GET', headers: {} }],
   ]);
   assert.deepEqual(calls[3], ['http://localhost:8001/api/agendamiento/stock', { method: 'GET', headers: {} }]);
+  const key = calls[4][1].headers['Idempotency-Key'];
+  assert.match(key, UUID);
   assert.deepEqual(calls[4], ['https://api.example/clinical/citas', { method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': 'key-456',
-      'Idempotency-Key': 'key-456', Authorization: 'Bearer write-session' },
+    headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': key,
+      'Idempotency-Key': key, Authorization: 'Bearer write-session' },
     body: '{"paciente_id":"p2"}' }]);
 });
 
@@ -90,9 +94,9 @@ test('named legacy ms3Service export retains default factory behavior', async (t
   assert.deepEqual(calls, ['http://localhost:8001/api/agendamiento/citas']);
 });
 
-test('every API operation rejects non-ok HTTP without exposing response credentials', async (t) => {
+test('every API operation rejects non-ok HTTP with the status when the body is unreadable', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => ({ ok: false, status: 401,
-    json: async () => { throw new Error('must not parse rejected body'); } }));
+    json: async () => { throw new Error('unreadable body'); } }));
   const service = createMs3Service();
   for (const operation of ['getCitas', 'getHorarios', 'getStock', 'crearCita']) {
     await assert.rejects(service[operation]({}), { message: 'MS3 request failed (HTTP 401)' });
