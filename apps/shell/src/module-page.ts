@@ -45,8 +45,10 @@ export class ModulePage implements AfterViewInit, OnDestroy {
     if (this.allowed()) void this.session?.update(this.context(this.lease!));
   });
   private context(lease: { revoked: boolean }): RemoteContextV1 {
+    const services = this.remote.serviceBaseUrls;
     return {
       contractVersion: 1, basePath: this.remote.basePath, path: this.router.url.split('#')[0], apiBaseUrl: this.remote.apiBaseUrl,
+      ...(services ? { serviceBaseUrls: Object.freeze({ ...services }) } : {}),
       getAccessToken: () => this.allowed(lease) ? getAccessToken() : null,
       onNavigate: (path: string) => {
         if (!this.allowed(lease)) return;

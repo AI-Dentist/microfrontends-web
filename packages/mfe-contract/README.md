@@ -15,7 +15,10 @@ not a direct ESM import of that JSON.
 
 The context contains `contractVersion: 1`, `basePath`, `path` (full current pathname
 plus search), `apiBaseUrl`, `getAccessToken: () => string | null`, and
-`onNavigate: (path: string) => void`. Read the token when making a request so session
+`onNavigate: (path: string) => void`. It may also contain `serviceBaseUrls`, a frozen
+map of extra public API bases keyed by `erp`, `agenda` or `clinical`, when the
+deployment config sets one for that remote; it is absent otherwise. The same host
+token is used for every listed service. Read the token when making a request so session
 changes do not require remounting. Never put credentials in JSON, URLs, storage,
 logs, or module globals. Do not retain a token captured at mount time.
 

@@ -47,7 +47,7 @@ async function sign(claims) {
   const input = `${encode({ alg: 'RS256', kid: jwk.kid })}.${encode(claims)}`;
   return input + '.' + Buffer.from(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key.privateKey, new TextEncoder().encode(input))).toString('base64url');
 }
-function fixture() {
+function fixture(remoteExtra = {}) {
   let now = 1_000_000, tx, serial = 0, subject = 'same-person', rejectRefresh = false;
   const storage = new Map(), mounts = [], states = [], navigations = [], timers = new Map();
   const auth = createAuthSession({ oidc, pageUrl: 'https://shell.example/', crypto, now: () => now,
@@ -69,7 +69,7 @@ function fixture() {
   const remote = { id: 'erp', basePath: '/erp', apiBaseUrl: 'https://api.example', entry: asModule(`
     export const contractVersion = 1;
     export const mount = (container, context) => globalThis.${bridge}.mount(container, context);
-  `) };
+  `), ...remoteExtra };
   const root = { append() {} };
   const controls = { auth, runtime, states,
     inject: token => token === 'auth' ? auth : token === 'config' ? { remotes: [remote] } : token === Router ? routerInstance : token === ActivatedRoute ? { snapshot: { data: { remoteId: 'erp' } } } : assert.fail('Unexpected injection'),
@@ -109,6 +109,25 @@ function retired(f, mount) {
   // Never include token values in assertion diagnostics, even on failure.
   assert.deepEqual({ staleGetterReturnedNewToken: token !== null, staleNavigation: f.navigations.length - before }, { staleGetterReturnedNewToken: false, staleNavigation: 0 });
 }
+
+test('mount context carries a frozen copy of configured service base URLs only when present', async () => {
+  const urls = { agenda: 'https://api.example/api/agendamiento', erp: 'https://api.example/api/erp/graphql' };
+  const f = fixture({ serviceBaseUrls: urls });
+  try {
+    await f.login(); const mount = await f.open();
+    assert.deepEqual(mount.context.serviceBaseUrls, urls);
+    assert.notEqual(mount.context.serviceBaseUrls, urls);
+    assert.equal(Object.isFrozen(mount.context.serviceBaseUrls), true);
+    mount.finish(); await f.drain(); f.navigate(); await f.drain();
+    assert.deepEqual(mount.updates.at(-1).serviceBaseUrls, urls);
+  } finally { await f.cleanup(); }
+  const plain = fixture();
+  try {
+    await plain.login(); const mount = await plain.open();
+    assert.equal(Object.hasOwn(mount.context, 'serviceBaseUrls'), false);
+    mount.finish(); await plain.drain();
+  } finally { await plain.cleanup(); }
+});
 
 test('C1: logout + destroy + same-subject login cannot revive a held production mount', async () => {
   const f = fixture();

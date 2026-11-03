@@ -25,7 +25,8 @@
       "kind": "module",
       "entry": "http://localhost:4202/remote.js",
       "styles": "http://localhost:4202/remote.css",
-      "apiBaseUrl": "/api/agendamiento"
+      "apiBaseUrl": "/api/agendamiento",
+      "serviceBaseUrls": { "erp": "/api/erp/graphql" }
     },
     {
       "id": "clinical",
@@ -34,7 +35,8 @@
       "kind": "module",
       "entry": "http://localhost:4203/remote.js",
       "styles": "http://localhost:4203/remote.css",
-      "apiBaseUrl": "/api/expediente"
+      "apiBaseUrl": "/api/expediente",
+      "serviceBaseUrls": { "agenda": "/api/agendamiento" }
     }
   ]
 }

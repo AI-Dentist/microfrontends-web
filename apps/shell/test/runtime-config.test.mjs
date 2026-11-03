@@ -35,6 +35,19 @@ test('optional ERP stylesheet, ordering and default page URL', () => {
   assert.deepEqual(validateConfig(input), input);
 });
 
+test('optional service base URLs are normalized per remote and omitted when absent', () => {
+  const input = manifest();
+  input.remotes[1].serviceBaseUrls = { erp: '/api/erp/graphql?tenant=a' };
+  input.remotes[2].serviceBaseUrls = { agenda: 'https://api.example/api/agendamiento', erp: '/api/erp/graphql' };
+  const before = structuredClone(input);
+  const result = validateConfig(input, page);
+  assert.deepEqual(result.remotes[1].serviceBaseUrls, { erp: 'https://shell.example/api/erp/graphql?tenant=a' });
+  assert.deepEqual(result.remotes[2].serviceBaseUrls, { agenda: 'https://api.example/api/agendamiento', erp: 'https://shell.example/api/erp/graphql' });
+  assert.equal(Object.hasOwn(result.remotes[0], 'serviceBaseUrls'), false);
+  assert.notEqual(result.remotes[1].serviceBaseUrls, input.remotes[1].serviceBaseUrls);
+  assert.deepEqual(input, before);
+});
+
 for (const host of ['localhost', '127.0.0.1', '[::1]']) {
   test(`HTTP development URLs allowed only from loopback HTTP page: ${host}`, () => {
     const input = manifest();
@@ -61,6 +74,11 @@ const invalid = [
   ['non-string id', c => { c.remotes[0].id = ['erp']; }, /id must be/],
   ['unknown remote key', c => { c.remotes[0].accessToken = 'not-a-secret'; }, /unknown field: accessToken/],
   ['unknown id', c => { c.remotes[0].id = 'other'; }, /id must be/],
+  ['non-object service URLs', c => { c.remotes[1].serviceBaseUrls = ['/api/erp']; }, /serviceBaseUrls must be an object/],
+  ['empty service URLs', c => { c.remotes[1].serviceBaseUrls = {}; }, /serviceBaseUrls must name at least one service/],
+  ['unknown service', c => { c.remotes[1].serviceBaseUrls = { billing: '/api/erp' }; }, /serviceBaseUrls unknown field: billing/],
+  ['relative non-API service URL', c => { c.remotes[1].serviceBaseUrls = { erp: '/graphql' }; }, /serviceBaseUrls\.erp relative path must be \/api/],
+  ['service URL with credentials', c => { c.remotes[2].serviceBaseUrls = { agenda: 'https://user:pass@api.example/api' }; }, /serviceBaseUrls\.agenda must not contain credentials/],
   ['duplicate id', c => { c.remotes[2] = { ...c.remotes[1] }; }, /duplicate id/],
   ['duplicate path', c => { c.remotes[1].basePath = '/erp'; }, /basePath/],
   ['path collision', c => { c.remotes[1].basePath = '/erp/operations'; }, /basePath/],
@@ -139,5 +157,6 @@ test('example platform config validates with independent local origins', () => {
   assert.equal(parsed.remotes.length, 3);
   assert.equal(parsed.oidc.issuer, 'http://localhost:8180/realms/dental-platform');
   assert.equal(parsed.oidc.redirectUri, 'http://localhost:4200/auth/callback');
+  assert.deepEqual(parsed.remotes.map(r => r.serviceBaseUrls), [undefined, { erp: 'http://localhost:4200/api/erp/graphql' }, { agenda: 'http://localhost:4200/api/agendamiento' }]);
   assert.throws(() => validateConfig(input, 'http://localhost:4300/'), /shell origin/);
 });

@@ -1,6 +1,8 @@
 // Pure validation: no fetching, imports, storage, or credential handling.
 const paths = { erp: '/erp', operations: '/operations', clinical: '/clinical' };
 const loopback = new Set(['localhost', '127.0.0.1', '[::1]']);
+// Extra public API bases a remote may call besides its own apiBaseUrl.
+const services = ['erp', 'agenda', 'clinical'];
 
 function fail(message) {
   throw new Error(`Invalid platform config: ${message}`);
@@ -86,7 +88,7 @@ export function validateConfig(input, pageUrl = globalThis.location?.href ?? 'ht
   const ids = new Set();
   const remotes = Array.from(input.remotes, (remote, index) => {
     const at = `remotes[${index}]`;
-    object(remote, ['id', 'label', 'basePath', 'kind', 'entry', 'styles', 'apiBaseUrl'], at);
+    object(remote, ['id', 'label', 'basePath', 'kind', 'entry', 'styles', 'apiBaseUrl', 'serviceBaseUrls'], at);
     if (typeof remote.id !== 'string' || !Object.hasOwn(paths, remote.id)) {
       fail(`${at}.id must be erp, operations or clinical`);
     }
@@ -108,6 +110,13 @@ export function validateConfig(input, pageUrl = globalThis.location?.href ?? 'ht
       result.styles = styles.href;
     }
     result.apiBaseUrl = url(remote.apiBaseUrl, `${at}.apiBaseUrl`, page, true).href;
+    if (Object.hasOwn(remote, 'serviceBaseUrls')) {
+      const field = `${at}.serviceBaseUrls`;
+      object(remote.serviceBaseUrls, services, field);
+      const names = Object.keys(remote.serviceBaseUrls);
+      if (!names.length) fail(`${field} must name at least one service`);
+      result.serviceBaseUrls = Object.fromEntries(names.map(name => [name, url(remote.serviceBaseUrls[name], `${field}.${name}`, page, true).href]));
+    }
     return result;
   });
   return { schemaVersion: 1, remotes, ...(Object.hasOwn(input, 'oidc') ? { oidc: validateOidc(input.oidc, page.href) } : {}) };
