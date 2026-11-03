@@ -2,7 +2,7 @@
   <div class="container">
     <header class="header">
       <h1>Microfrontend MF2 — Agenda, Horarios y Stock</h1>
-      <p class="subtitle">Conectado a MS3 (Laravel - Puerto 8001)</p>
+      <p class="subtitle">Conectado a MS3 (Agenda y Stock)</p>
     </header>
 
     <!-- Navegación entre módulos -->
@@ -21,29 +21,8 @@
         <!-- Formulario de Agendamiento -->
         <div class="card form-card">
           <h3>Agendar Nueva Cita Médica</h3>
-          <form @submit.prevent="guardarCita" class="form-grid">
-            <div class="form-group">
-              <label>Paciente ID:</label>
-              <input v-model="nuevaCita.paciente_id" required placeholder="Ej: pac-001" />
-            </div>
-            <div class="form-group">
-              <label>Odontólogo ID:</label>
-              <input v-model="nuevaCita.odontologo_id" required placeholder="Ej: odo-123" />
-            </div>
-            <div class="form-group">
-              <label>Consultorio ID:</label>
-              <input v-model="nuevaCita.consultorio_id" required placeholder="Ej: con-01" />
-            </div>
-            <div class="form-group">
-              <label>Fecha y Hora:</label>
-              <input type="datetime-local" v-model="nuevaCita.fecha_hora" required />
-            </div>
-            <div class="form-action">
-              <button type="submit" class="btn-primary" :disabled="enviando">
-                {{ enviando ? 'Agendando...' : 'Confirmar Cita' }}
-              </button>
-            </div>
-          </form>
+          <CitaForm :key="formVersion" :hosted="hosted" :catalogos="catalogos" :catalog-error="catalogError"
+            :enviando="enviando" @guardar="guardarCita" @buscar-pacientes="buscarPacientes" />
           <p v-if="mensajeExito" class="success-msg">{{ mensajeExito }}</p>
         </div>
 
@@ -57,19 +36,27 @@
               <th>Consultorio</th>
               <th>Paciente</th>
               <th>Estado</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="c in citas" :key="c.id">
               <td><code>{{ c.id.substring(0, 8) }}...</code></td>
               <td>{{ c.fecha_hora }}</td>
-              <td>{{ c.odontologo_id }}</td>
-              <td>{{ c.consultorio_id }}</td>
-              <td>{{ c.paciente_id }}</td>
+              <td>{{ nombre('odontologos', c.odontologo_id) }}</td>
+              <td>{{ nombre('consultorios', c.consultorio_id) }}</td>
+              <td>{{ nombre('pacientes', c.paciente_id) }}</td>
               <td><span class="badge">{{ c.estado }}</span></td>
+              <td>
+                <CitaAcciones :cita="c" :stock="stock" :busy="enviando"
+                  @cancelar="ejecutar(s => s.cancelarCita(c.id), 'Cita cancelada.')"
+                  @no-asistio="ejecutar(s => s.noAsistio(c.id), 'Cita marcada como no asistió.')"
+                  @reprogramar="fecha => ejecutar(s => s.reprogramarCita(c.id, toBackendDateTime(fecha)), 'Cita reprogramada.')"
+                  @completar="datos => ejecutar(s => s.completarCita(c.id, datos), 'Cita completada.')" />
+              </td>
             </tr>
             <tr v-if="citas.length === 0">
-              <td colspan="6" class="text-center">No hay citas agendadas</td>
+              <td colspan="7" class="text-center">No hay citas agendadas</td>
             </tr>
           </tbody>
         </table>
@@ -78,6 +65,13 @@
       <!-- TAB 2: HORARIOS -->
       <section v-if="tab === 'horarios' && !cargando">
         <h3 class="section-title">Disponibilidad de Odontólogos</h3>
+        <div v-if="puedeEditarHorarios" class="card form-card">
+          <h3>Crear horario (solo ADMIN)</h3>
+          <HorarioForm :hosted="hosted" :catalogos="catalogos" :catalog-error="catalogError" :busy="enviando"
+            @crear="horario => ejecutar(s => s.crearHorario(horario), 'Horario creado.')" />
+          <p v-if="mensajeExito" class="success-msg">{{ mensajeExito }}</p>
+        </div>
+        <p v-else class="read-only">Los horarios son de solo lectura: crear o modificar horarios requiere el rol ADMIN.</p>
         <table class="data-table">
           <thead>
             <tr>
@@ -93,9 +87,9 @@
           <tbody>
             <tr v-for="h in horarios" :key="h.id">
               <td>{{ h.id }}</td>
-              <td>{{ h.odontologo_id }}</td>
+              <td>{{ nombre('odontologos', h.odontologo_id) }}</td>
               <td>{{ h.especialidad }}</td>
-              <td>{{ h.consultorio_id }}</td>
+              <td>{{ nombre('consultorios', h.consultorio_id) }}</td>
               <td>{{ h.fecha }}</td>
               <td>{{ h.hora_inicio }} - {{ h.hora_fin }}</td>
               <td>
@@ -111,6 +105,12 @@
       <!-- TAB 3: STOCK -->
       <section v-if="tab === 'stock' && !cargando">
         <h3 class="section-title">Stock de Insumos Odontológicos</h3>
+        <div class="card form-card">
+          <h3>Registrar movimiento de stock</h3>
+          <MovimientoForm :stock="stock" :busy="enviando"
+            @registrar="mov => ejecutar(s => s.registrarMovimiento(mov), 'Movimiento registrado.')" />
+          <p v-if="mensajeExito" class="success-msg">{{ mensajeExito }}</p>
+        </div>
         <table class="data-table">
           <thead>
             <tr>
@@ -144,10 +144,16 @@
 
 <script setup>
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
-import { createMs3Service } from './api/ms3Api.js';
+import { createMs3Service, createIntent, describeError, hasRole, listFrom, toBackendDateTime } from './api/ms3Api.js';
+import { createErpCatalogService } from './api/erpCatalogApi.js';
 import { tabForContext, navigateTab } from './lifecycle.js';
+import CitaForm from './components/CitaForm.vue';
+import CitaAcciones from './components/CitaAcciones.vue';
+import HorarioForm from './components/HorarioForm.vue';
+import MovimientoForm from './components/MovimientoForm.vue';
 
 const props = defineProps({ context: Object });
+const hosted = computed(() => !!props.context);
 // Hosted instances bind the exact host getter and base; replacing either
 // retires the previous service so its late results never reach this view.
 const ms3Service = computed(() => props.context
@@ -155,6 +161,13 @@ const ms3Service = computed(() => props.context
     getAccessToken: props.context.getAccessToken })
   : createMs3Service());
 watch(ms3Service, (_, previous) => previous.retire());
+// Catalog IDs come only from the ERP. erpUrl is a string, so unrelated context
+// updates (navigation) do not recreate the client.
+const erpUrl = computed(() => props.context?.serviceBaseUrls?.erp);
+const erpService = computed(() => props.context
+  ? createErpCatalogService({ hosted: true, erpUrl: erpUrl.value, getAccessToken: props.context.getAccessToken })
+  : null);
+watch(erpService, (_, previous) => previous?.retire());
 const tab = ref(tabForContext(props.context));
 watch(() => props.context?.path, () => { tab.value = tabForContext(props.context); });
 function selectTab(next) {
@@ -162,114 +175,130 @@ function selectTab(next) {
   if (local) tab.value = local;
 }
 let active = true;
-let refreshTimer;
 let loadGeneration = 0;
+let catalogGeneration = 0;
 const citas = ref([]);
 const horarios = ref([]);
 const stock = ref([]);
+const catalogos = ref({ odontologos: [], consultorios: [], pacientes: [] });
+const catalogError = ref(null);
+const puedeEditarHorarios = ref(true);
 const cargando = ref(true);
 const enviando = ref(false);
 const error = ref(null);
 const mensajeExito = ref('');
+const formVersion = ref(0);
+// One idempotency key per appointment-creation intent; retries of the same payload reuse it.
+const citaIntent = createIntent();
 
-const nuevaCita = ref({
-  paciente_id: '',
-  odontologo_id: '',
-  consultorio_id: '',
-  fecha_hora: ''
-});
+// Hosted views show the ERP label; unknown IDs fall back to the raw ID.
+const nombre = (catalogo, id) => catalogos.value[catalogo].find(item => item.id === id)?.label ?? id;
+
+// The backend guard stays authoritative; this only hides the ADMIN-only form.
+function actualizarRol() {
+  if (!props.context) { puedeEditarHorarios.value = true; return; }
+  let token = null;
+  try { token = props.context.getAccessToken(); } catch { /* the service fails closed */ }
+  puedeEditarHorarios.value = hasRole(token, 'ADMIN');
+}
+
+async function leerDatos(service) {
+  const [citasRes, horariosRes, stockRes] = await Promise.all([
+    service.getCitas(),
+    service.getHorarios(),
+    service.getStock()
+  ]);
+  return { citas: listFrom(citasRes, 'citas'), horarios: listFrom(horariosRes, 'horarios'),
+    stock: listFrom(stockRes, 'insumos') };
+}
+
+function aplicar(datos) {
+  citas.value = datos.citas;
+  horarios.value = datos.horarios;
+  stock.value = datos.stock;
+}
 
 const cargarDatos = async () => {
   const generation = ++loadGeneration;
   cargando.value = true;
   error.value = null;
+  actualizarRol();
   try {
     const service = ms3Service.value;
-    const [citasRes, horariosRes, stockRes] = await Promise.all([
-      service.getCitas(),
-      service.getHorarios(),
-      service.getStock()
-    ]);
+    const datos = await leerDatos(service);
     if (!active || generation !== loadGeneration || service !== ms3Service.value) return;
-    citas.value = citasRes.citas || [];
-    horarios.value = horariosRes.horarios || [];
-    stock.value = stockRes.insumos || [];
-  } catch {
-    if (active && generation === loadGeneration) error.value = 'Error al conectar con el backend MS3.';
+    aplicar(datos);
+  } catch (e) {
+    if (active && generation === loadGeneration) error.value = describeError(e);
   } finally {
     if (active && generation === loadGeneration) cargando.value = false;
   }
 };
 
-const guardarCita = async () => {
-  enviando.value = true;
-  mensajeExito.value = '';
-  const service = ms3Service.value;
+const cargarCatalogos = async () => {
+  const service = erpService.value;
+  if (!service) return;
+  const generation = ++catalogGeneration;
+  catalogError.value = null;
   try {
-    const formattedDate = nuevaCita.value.fecha_hora.replace('T', ' ') + 
-      (nuevaCita.value.fecha_hora.length === 16 ? ':00' : '');
-
-    const payload = {
-      paciente_id: nuevaCita.value.paciente_id,
-      odontologo_id: nuevaCita.value.odontologo_id,
-      consultorio_id: nuevaCita.value.consultorio_id,
-      fecha_hora: formattedDate
-    };
-
-    const resCrear = await service.crearCita(payload);
-    if (!active || service !== ms3Service.value) return;
-
-    // Si Laravel devolvió un error de validación HTTP
-    if (resCrear.error || resCrear.errors) {
-      error.value = 'Error de validación al agendar cita.';
-      return;
-    }
-
-    mensajeExito.value = '¡Cita agendada exitosamente!';
-
-    // Si el backend devolvió el objeto cita, lo agregamos de inmediato a la lista
-    if (resCrear.cita) {
-      citas.value.unshift(resCrear.cita);
-    } else {
-      // Si devolvió solo mensaje, agregamos los datos locales con un ID temporal
-      citas.value.unshift({
-        id: resCrear.id || 'temp-' + Date.now().toString(16),
-        fecha_hora: payload.fecha_hora,
-        odontologo_id: payload.odontologo_id,
-        consultorio_id: payload.consultorio_id,
-        paciente_id: payload.paciente_id,
-        estado: 'RESERVADA'
-      });
-    }
-
-    // Limpiar formulario
-    nuevaCita.value = { paciente_id: '', odontologo_id: '', consultorio_id: '', fecha_hora: '' };
-
-    // Sincronizar en segundo plano con el archivo de persistencia
-    clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(async () => {
-      if (service !== ms3Service.value) return;
-      try {
-        const resListado = await service.getCitas();
-        if (active && service === ms3Service.value && resListado?.citas) citas.value = resListado.citas;
-      } catch {
-        if (active && service === ms3Service.value) error.value = 'Error al sincronizar citas con MS3.';
-      }
-    }, 500);
-
-  } catch {
-    if (active && service === ms3Service.value) error.value = 'Ocurrió un error al contactar al backend.';
-  } finally {
-    if (active) enviando.value = false;
+    const [odontologos, consultorios, pacientes] = await Promise.all([
+      service.listarOdontologos(), service.listarConsultorios(), service.listarPacientes()]);
+    if (!active || generation !== catalogGeneration || service !== erpService.value) return;
+    catalogos.value = { odontologos, consultorios, pacientes };
+  } catch (e) {
+    if (active && generation === catalogGeneration) catalogError.value = e.message;
   }
 };
 
-onMounted(cargarDatos);
+async function buscarPacientes(termino) {
+  const service = erpService.value;
+  try {
+    const pacientes = await service.listarPacientes(termino);
+    if (active && service === erpService.value) catalogos.value = { ...catalogos.value, pacientes };
+  } catch (e) {
+    if (active && service === erpService.value) catalogError.value = e.message;
+  }
+}
+
+// Runs one explicit user action against the current service, then re-reads the
+// server state. A failure keeps the form (and its idempotency intent) for a retry.
+async function ejecutar(accion, mensajePorDefecto) {
+  const service = ms3Service.value;
+  enviando.value = true;
+  error.value = null;
+  mensajeExito.value = '';
+  try {
+    const respuesta = await accion(service);
+    if (!active || service !== ms3Service.value) return false;
+    mensajeExito.value = respuesta?.mensaje || mensajePorDefecto;
+    const datos = await leerDatos(service);
+    if (active && service === ms3Service.value) aplicar(datos);
+    return true;
+  } catch (e) {
+    if (active && service === ms3Service.value) error.value = describeError(e);
+    return false;
+  } finally {
+    if (active) enviando.value = false;
+  }
+}
+
+async function guardarCita(payload) {
+  const idempotencyKey = citaIntent.key(payload);
+  const creada = await ejecutar(service => service.crearCita(payload, { idempotencyKey }),
+    '¡Cita agendada exitosamente!');
+  if (creada) {
+    citaIntent.renew();
+    formVersion.value++;
+  }
+}
+
+onMounted(() => { cargarDatos(); cargarCatalogos(); });
 watch(ms3Service, cargarDatos);
+watch(erpService, cargarCatalogos);
 onUnmounted(() => {
   active = false;
-  clearTimeout(refreshTimer);
   ms3Service.value.retire();
+  erpService.value?.retire();
 });
 </script>
 
@@ -407,6 +436,10 @@ onUnmounted(() => {
   text-align: center;
   padding: 20px;
   color: #64748b;
+}
+.read-only {
+  color: #64748b;
+  font-size: 14px;
 }
 .error {
   background: #fee2e2;
