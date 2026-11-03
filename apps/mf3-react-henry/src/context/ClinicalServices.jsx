@@ -3,10 +3,12 @@ import { historiasClinicasService } from '../api/historias-clinicas.service.js';
 import { consultasOdontologicasService } from '../api/consultas-odontologicas.service.js';
 import { odontogramasService } from '../api/odontogramas.service.js';
 import { estudiosService } from '../api/estudios.service.js';
+import { createAgendaService } from '../api/agenda.service.js';
 
 // Absence of a provider is the existing standalone entry, never the remote.
 const standalone = {
   historiasClinicasService, consultasOdontologicasService, odontogramasService, estudiosService,
+  agendaService: createAgendaService(),
   isActive: () => true,
 };
 export const ClinicalServicesContext = createContext(standalone);

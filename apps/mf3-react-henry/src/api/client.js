@@ -145,7 +145,15 @@ export async function httpClient(endpoint, {
   }
 
   if (!response.ok) {
+    // MS3 answers { success:false, error, code } rather than problem details.
+    const raw = typeof response.clone === 'function'
+      ? await response.clone().json().catch(() => null)
+      : null;
     const problem = await parseProblemDetails(response);
+    if (raw && typeof raw === 'object' && !raw.detail && typeof raw.error === 'string' && raw.error.trim()) {
+      problem.detail = raw.error;
+      problem.message = raw.error;
+    }
     throw problem;
   }
 

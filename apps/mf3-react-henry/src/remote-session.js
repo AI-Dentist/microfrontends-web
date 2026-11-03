@@ -3,13 +3,15 @@ import { createHistoriasClinicasService } from './api/historias-clinicas.service
 import { createConsultasOdontologicasService } from './api/consultas-odontologicas.service.js';
 import { createOdontogramasService } from './api/odontogramas.service.js';
 import { createEstudiosService } from './api/estudios.service.js';
+import { createAgendaService } from './api/agenda.service.js';
 
-export function createClinicalServices(client) {
+export function createClinicalServices(client, agendaClient = null) {
   return {
     historiasClinicasService: createHistoriasClinicasService(client),
     consultasOdontologicasService: createConsultasOdontologicasService(client),
     odontogramasService: createOdontogramasService(client),
     estudiosService: createEstudiosService(client),
+    agendaService: createAgendaService(agendaClient),
     isActive: client.isActive || (() => true),
   };
 }
@@ -17,13 +19,20 @@ export function createClinicalServices(client) {
 let nextSessionKey = 0;
 function createSession(context) {
   const client = createHttpClient({ ...context, hosted: true });
+  // The agenda lives in MS3: its own base, the same current host token, and no
+  // client at all (fail closed) when the host configures none.
+  const agendaBaseUrl = context.serviceBaseUrls?.agenda;
+  const agendaClient = typeof agendaBaseUrl === 'string' && agendaBaseUrl.trim()
+    ? createHttpClient({ apiBaseUrl: agendaBaseUrl, getAccessToken: context.getAccessToken, hosted: true })
+    : null;
   let current = context;
   const sessionKey = ++nextSessionKey;
-  const services = createClinicalServices(client);
+  const services = createClinicalServices(client, agendaClient);
   return {
-    retire: client.retire,
+    retire() { client.retire(); agendaClient?.retire(); },
     getAccessToken: context.getAccessToken,
     apiBaseUrl: context.apiBaseUrl,
+    agendaBaseUrl,
     value(next) {
       current = next;
       return {
@@ -83,7 +92,8 @@ export function mountRemote(container, context, createRenderer) {
       if (disposed) return;
       if (nextContext.basePath !== basePath) throw new Error('Cannot change basePath');
       tabFromContext(nextContext);
-      if (nextContext.apiBaseUrl !== session.apiBaseUrl || nextContext.getAccessToken !== session.getAccessToken) {
+      if (nextContext.apiBaseUrl !== session.apiBaseUrl || nextContext.getAccessToken !== session.getAccessToken
+        || nextContext.serviceBaseUrls?.agenda !== session.agendaBaseUrl) {
         session.retire();
         session = createSession(nextContext);
       }

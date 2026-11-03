@@ -74,12 +74,58 @@ The legacy default remains exactly `/api/expediente/health` for health requests.
 HTTP non-OK responses keep the
 existing ProblemDetailsError behavior, including health requests.
 
+## Hosted clinical attention (no AI)
+
+The classic flow is: history (MS2) -> open a consulta from an appointment ->
+update the attention -> complete or cancel. Everything goes through the host
+token capability and the T4 transport rules; nothing here calls AI, diagnosis
+or provider endpoints.
+
+- **Appointments.** The host passes `context.serviceBaseUrls.agenda` (MS3 base,
+  e.g. `https://host/api/agendamiento`) next to `apiBaseUrl` (MS2). Hosted "open
+  consulta" lists `GET {agenda}/citas` and the user picks one; typing a `citaId`
+  exists only in standalone. The picker keeps the states MS2 accepts when
+  opening: `RESERVADA`, `CONFIRMADA`, `EN_ATENCION`, `PROGRAMADA`, `PENDIENTE`
+  and `REPROGRAMADA` (a rescheduled appointment can open a consulta);
+  `CANCELADA`, `COMPLETADA` and `NO_ASISTIO` are hidden. Picking one fills the
+  appointment's patient. MS3 does not filter by doctor, so the list is the
+  clinic's open appointments, each showing the doctor id MS3 returned.
+  Without an agenda base only the picker fails closed (clear message, zero
+  HTTP, no free-text fallback); the other clinical screens keep working. The
+  agenda client follows the same rules as every client: current token per
+  request, null/revoked means no HTTP, permanent retirement, late results
+  inert; changing the agenda base replaces the mount's services.
+- **Identity.** MS2 derives the doctor from the JWT. Hosted never shows or sends
+  a guessed doctor id (`od_henry_principal`, `od_dev_henry`): the open form says
+  the server decides, the create-history form omits `odontologoResponsableId`,
+  and the doctor appears only where an API response returns it. Standalone dev
+  identities are unchanged.
+- **Bodies.** The consultation service sends exactly the MS2 DTO fields (open,
+  update attention, complete, cancel) and drops anything else (doctor, state,
+  version). Complete and cancel carry `versionEsperada`; a 409 version conflict
+  and 422 closure errors show MS2's problem details. MS3 errors
+  (`{ success: false, error, code }`) surface their `error` text as the detail.
+- **Billing.** The frontend never creates a billing order. The completion modal
+  reads the billable catalog (`GET /consultas-odontologicas/catalogo-servicios`,
+  `{ id, codigo, nombre, precioBaseBs, ... }`) through the injected service and
+  lets the doctor enter a quantity per service. It sends
+  `{ versionEsperada, serviciosFacturables: [{ servicioId, cantidad }] }`
+  (integer `cantidad >= 1`; `piezaDental` is optional and not collected here).
+  With services selected, MS2 writes the `clinica.consulta.finalizada` outbox
+  event and the ERP creates one billing order, which shows in the ERP billing
+  inbox. With none selected the modal says no order will be created, the
+  request carries no services and MS2 completes the consulta as no-charge
+  without an event. The total shown is only an estimate from base prices; MS2
+  returns the real `totalFacturableBs`. After completing, the detail page states
+  which of the two outcomes applies. The catalog read follows the same hosted
+  rules (current token, zero HTTP when null/revoked, late results inert).
+
 ## Checks
 
 From this app directory, run the bounded transport checks:
 
 ```sh
-node --test test/remote.test.mjs test/api-query.test.mjs test/host-clients.test.mjs
+node --test test/remote.test.mjs test/api-query.test.mjs test/host-clients.test.mjs test/clinical-flows.test.mjs
 node --test test/atencion-odontologica.test.js test/cierre-consultas.test.js test/consultas-odontologicas.test.js test/estudios-api.test.js test/iteracion-5c.test.js test/odontograma-api.test.js test/odontograma-component-integration.test.js test/odontograma-editor.test.js test/odontograma-enmiendas.test.js test/odontograma-historial.test.js test/odontograma-revisiones.test.js test/odontograma-viewer.test.js
 ```
 

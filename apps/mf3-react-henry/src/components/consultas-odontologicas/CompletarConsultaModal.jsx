@@ -1,9 +1,71 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal } from '../common/Modal.jsx';
 import { Button } from '../common/Button.jsx';
 import { Alert } from '../common/Alert.jsx';
 import { Badge } from '../common/Badge.jsx';
 import { Spinner } from '../common/Spinner.jsx';
+import { buildServiciosFacturables } from '../../api/consultas-odontologicas.service.js';
+
+// Prices are exact decimal strings; sum in cents to avoid float drift.
+const aCentimos = (texto) => {
+  const m = /^([0-9]+)(?:\.([0-9]{1,2}))?$/.exec(String(texto ?? '').trim());
+  return m ? Number(m[1]) * 100 + Number((m[2] || '').padEnd(2, '0') || 0) : 0;
+};
+const formatoBs = (centimos) => `${Math.floor(centimos / 100)}.${String(centimos % 100).padStart(2, '0')}`;
+
+/**
+ * Selector de servicios facturables del catálogo de MS2. El total mostrado es solo
+ * una estimación con el precio base; el backend calcula el total real.
+ */
+export function ServiciosFacturablesSelector({ catalogo, selection, onChange, loading, error, onReload }) {
+  const { items } = buildServiciosFacturables(selection);
+  const estimado = items.reduce((suma, item) => {
+    const servicio = catalogo.find((s) => s.id === item.servicioId);
+    return suma + aCentimos(servicio?.precioBaseBs) * item.cantidad;
+  }, 0);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+        SERVICIOS FACTURABLES (CATÁLOGO DEL ERP):
+      </div>
+      {error && <Alert title={error.title} detail={error.detail} status={error.status} />}
+      {loading && <span style={{ fontSize: '12px' }}>Cargando catálogo...</span>}
+      {!loading && catalogo.length === 0 && (
+        <Button type="button" variant="secondary" onClick={onReload} style={{ fontSize: '12px', padding: '4px 10px', alignSelf: 'flex-start' }}>
+          Recargar catálogo
+        </Button>
+      )}
+      {catalogo.length > 0 && (
+        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {catalogo.map((servicio) => (
+            <li key={servicio.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', fontSize: '13px' }}>
+              <span>{servicio.nombre} <code>{servicio.codigo}</code> - Bs {servicio.precioBaseBs}</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                aria-label={`Cantidad de ${servicio.nombre}`}
+                value={selection[servicio.id] ?? ''}
+                placeholder="0"
+                onChange={(e) => onChange({ ...selection, [servicio.id]: e.target.value })}
+                style={{ width: '72px', padding: '4px 8px' }}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+      {items.length > 0 ? (
+        <p style={{ margin: 0, fontSize: '13px' }}>
+          Al completar, el ERP creará una orden de cobro con {items.length} servicio(s). Total estimado: Bs {formatoBs(estimado)} (el backend calcula el total final).
+        </p>
+      ) : (
+        <p style={{ margin: 0, fontSize: '13px', color: 'var(--warning)' }}>
+          Sin servicios seleccionados: la consulta se completará como sin cobro y no se creará orden de cobro en el ERP.
+        </p>
+      )}
+    </div>
+  );
+}
 
 /**
  * Modal accesible para la confirmación y sellado formal de una Consulta Odontológica (Iteración 6F-3).
@@ -19,7 +81,7 @@ import { Spinner } from '../common/Spinner.jsx';
  * @param {boolean} props.isOpen
  * @param {object} props.consulta - ConsultaOdontologicaResponseDto
  * @param {Function} props.onClose
- * @param {Function} props.onConfirmar - ({ versionEsperada }) => Promise<any>
+ * @param {Function} props.onConfirmar - ({ versionEsperada, serviciosFacturables }) => Promise<any>
  * @param {Function} props.onRecargar - Callback para recargar datos frescos ante 409
  * @param {Function} [props.onIrAEditar] - Callback para abrir la pantalla de atención si faltan requisitos
  */
@@ -30,9 +92,19 @@ export function CompletarConsultaModal({
   onConfirmar,
   onRecargar,
   onIrAEditar,
+  catalogo = [],
+  catalogoLoading = false,
+  catalogoError = null,
+  onCargarCatalogo,
 }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState(null);
+  const [seleccion, setSeleccion] = useState({});
+  const abierta = Boolean(isOpen && consulta);
+
+  useEffect(() => {
+    if (abierta && onCargarCatalogo) void onCargarCatalogo();
+  }, [abierta, onCargarCatalogo]);
 
   if (!isOpen || !consulta) return null;
 
@@ -71,7 +143,8 @@ export function CompletarConsultaModal({
     requisitosFaltantes.push('Debe registrarse al menos un diagnóstico clínico (presuntivo o definitivo).');
   }
 
-  const puedeCompletar = requisitosFaltantes.length === 0;
+  const { items: serviciosFacturables, invalid: cantidadInvalida } = buildServiciosFacturables(seleccion);
+  const puedeCompletar = requisitosFaltantes.length === 0 && !cantidadInvalida;
 
   const handleConfirmar = async () => {
     if (!puedeCompletar || isSubmitting) return;
@@ -80,7 +153,7 @@ export function CompletarConsultaModal({
     setLocalError(null);
 
     try {
-      const res = await onConfirmar({ versionEsperada: version });
+      const res = await onConfirmar({ versionEsperada: version, serviciosFacturables });
       if (res) {
         onClose();
       }
@@ -158,6 +231,20 @@ export function CompletarConsultaModal({
             </li>
           </ul>
         </div>
+
+        <ServiciosFacturablesSelector
+          catalogo={catalogo}
+          selection={seleccion}
+          onChange={setSeleccion}
+          loading={catalogoLoading}
+          error={catalogoError}
+          onReload={onCargarCatalogo}
+        />
+        {cantidadInvalida && (
+          <span style={{ fontSize: '12px', color: 'var(--danger)' }}>
+            Las cantidades deben ser números enteros mayores o iguales a 1.
+          </span>
+        )}
 
         {/* Advertencia si faltan requisitos clínicos */}
         {!puedeCompletar && (

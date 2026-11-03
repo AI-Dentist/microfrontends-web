@@ -13,6 +13,7 @@ export function CrearHistoriaPage({ onVerHistoria }) {
   const historiasClinicasService = useClinicalServices();
 
   const [pacienteId, setPacienteId] = useState('');
+  // Hosted: MS2 assigns the authenticated doctor when the field is omitted.
   const [odontologoResponsableId, setOdontologoResponsableId] = useState(isRemote ? '' : 'od_dev_henry');
   const [observacionesGenerales, setObservacionesGenerales] = useState('Apertura de expediente clínico en consulta inicial.');
   const [antecedentes, setAntecedentes] = useState({
@@ -73,7 +74,7 @@ export function CrearHistoriaPage({ onVerHistoria }) {
 
     const payload = {
       pacienteId: pacienteId.trim(),
-      odontologoResponsableId: odontologoResponsableId?.trim() || undefined,
+      odontologoResponsableId: isRemote ? undefined : odontologoResponsableId?.trim() || undefined,
       observacionesGenerales: observacionesGenerales?.trim() || undefined,
       antecedentes: serializeAntecedentes(antecedentes),
     };
@@ -204,14 +205,14 @@ export function CrearHistoriaPage({ onVerHistoria }) {
                 placeholder="ej. a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
               />
 
-              <Input
+              {!isRemote && <Input
                 label="Odontólogo Responsable Clínico"
                 id="odontologoResponsableId"
                 value={odontologoResponsableId}
                 disabled={loading}
                 onChange={(e) => setOdontologoResponsableId(e.target.value)}
                 placeholder="ej. od_dev_henry"
-              />
+              />}
             </div>
 
             <div style={{ marginBottom: '24px' }}>

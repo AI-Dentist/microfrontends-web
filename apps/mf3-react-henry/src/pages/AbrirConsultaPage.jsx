@@ -1,10 +1,53 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDevAuth } from '../hooks/useDevAuth.js';
+import { useCitasAgenda } from '../hooks/useCitasAgenda.js';
+import { buildAperturaPayload } from './apertura-payload.js';
 import { useConsultasOdontologicas } from '../hooks/useConsultasOdontologicas.js';
 import { Card } from '../components/common/Card.jsx';
 import { Input } from '../components/common/Input.jsx';
 import { Button } from '../components/common/Button.jsx';
 import { Alert } from '../components/common/Alert.jsx';
+
+/** Hosted picker over real MS3 appointments (replaces typing a citaId). */
+export function CitaAgendaPicker({ configured, citas, value, onChange, loading, error, onReload }) {
+  if (!configured) {
+    return (
+      <Alert
+        type="warning"
+        title="Agenda no disponible"
+        detail="El host no configuró el servicio de agenda (MS3), por lo que no se pueden elegir citas. Registre la atención sin cita (urgencia) o contacte al administrador."
+      />
+    );
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {error && <Alert title={error.title} detail={error.detail} status={error.status} />}
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <select
+          id="citaAgendaSelect"
+          aria-label="Cita de la agenda"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={loading}
+          style={{ flex: 1, padding: '9px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '13px' }}
+        >
+          <option value="">{loading ? 'Cargando citas…' : 'Seleccione una cita de la agenda'}</option>
+          {citas.map((cita) => (
+            <option key={cita.id} value={cita.id}>
+              {`${cita.fechaHora} · ${cita.estado} · paciente ${cita.pacienteId} · odontólogo ${cita.odontologoId}`}
+            </option>
+          ))}
+        </select>
+        <Button type="button" variant="secondary" onClick={onReload} disabled={loading}>Actualizar</Button>
+      </div>
+      {!loading && !error && citas.length === 0 && (
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+          No hay citas abribles (reservadas, confirmadas, programadas, reprogramadas o en atención).
+        </span>
+      )}
+    </div>
+  );
+}
 
 export function AbrirConsultaPage({
   initialHistoriaId = '',
@@ -12,8 +55,10 @@ export function AbrirConsultaPage({
   onConsultaCreada,
   onCancelar,
 }) {
-  const { operadorId } = useDevAuth();
+  const { operadorId, isRemote } = useDevAuth();
   const { loading, error, abrirConsulta, resetError } = useConsultasOdontologicas();
+  const agenda = useCitasAgenda();
+  const { configured: agendaConfigurada, cargar: cargarCitas } = agenda;
 
   const [historiaClinicaId, setHistoriaClinicaId] = useState(initialHistoriaId);
   const [pacienteId, setPacienteId] = useState(initialPacienteId);
@@ -35,6 +80,16 @@ export function AbrirConsultaPage({
 
   const [validationError, setValidationError] = useState('');
 
+  useEffect(() => {
+    if (isRemote && tieneCita && agendaConfigurada) void cargarCitas();
+  }, [isRemote, tieneCita, agendaConfigurada, cargarCitas]);
+
+  const handleElegirCita = (id) => {
+    setCitaId(id);
+    const elegida = agenda.citas.find((cita) => cita.id === id);
+    if (elegida && elegida.pacienteId) setPacienteId(elegida.pacienteId);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setValidationError('');
@@ -52,25 +107,20 @@ export function AbrirConsultaPage({
       return;
     }
     if (tieneCita && !citaId.trim()) {
-      setValidationError('Debe ingresar el identificador de la cita o marcar como atención de urgencia.');
+      setValidationError(isRemote
+        ? 'Seleccione una cita de la agenda o desmarque la atención programada.'
+        : 'Debe ingresar el identificador de la cita o marcar como atención de urgencia.');
       return;
     }
 
-    const payload = {
-      historiaClinicaId: historiaClinicaId.trim(),
-      pacienteId: pacienteId.trim(),
-      motivoConsulta: motivoConsulta.trim(),
-      citaId: tieneCita && citaId.trim() ? citaId.trim() : null,
-      fechaAtencion: fechaAtencion ? new Date(fechaAtencion).toISOString() : new Date().toISOString(),
-    };
-
-    if (incluirAnamnesis && anamnesisDescripcion.trim()) {
-      payload.anamnesisActual = {
-        descripcion: anamnesisDescripcion.trim(),
-        tiempoEvolucion: tiempoEvolucion.trim() || null,
-        escalaDolorEVA: escalaDolorEVA !== '' ? Number(escalaDolorEVA) : null,
-      };
-    }
+    const payload = buildAperturaPayload({
+      historiaClinicaId,
+      pacienteId,
+      motivoConsulta,
+      citaId: tieneCita ? citaId : '',
+      fechaAtencion,
+      anamnesis: incluirAnamnesis ? { descripcion: anamnesisDescripcion, tiempoEvolucion, escalaDolorEVA } : null,
+    });
 
     const resultado = await abrirConsulta(payload);
     if (resultado && resultado.id) {
@@ -137,7 +187,7 @@ export function AbrirConsultaPage({
                 value={pacienteId}
                 onChange={(e) => setPacienteId(e.target.value)}
                 placeholder="ej. pac_e2e_05f25861"
-                disabled={loading}
+                disabled={loading || (isRemote && tieneCita && Boolean(citaId))}
                 required
               />
             </div>
@@ -173,7 +223,11 @@ export function AbrirConsultaPage({
                   color: 'var(--text-secondary)',
                 }}
               >
-                👨‍⚕️ <code>{operadorId || 'od_henry_principal'}</code>
+                {isRemote ? (
+                  <span>El servidor lo determina a partir de su sesión al abrir la consulta.</span>
+                ) : (
+                  <>👨‍⚕️ <code>{operadorId || 'od_henry_principal'}</code></>
+                )}
               </div>
             </div>
           </div>
@@ -201,7 +255,19 @@ export function AbrirConsultaPage({
               </label>
             </div>
 
-            {tieneCita ? (
+            {tieneCita && isRemote ? (
+              <div style={{ marginTop: '8px' }}>
+                <CitaAgendaPicker
+                  configured={agenda.configured}
+                  citas={agenda.citas}
+                  value={citaId}
+                  onChange={handleElegirCita}
+                  loading={agenda.loading}
+                  error={agenda.error}
+                  onReload={cargarCitas}
+                />
+              </div>
+            ) : tieneCita ? (
               <div style={{ marginTop: '8px' }}>
                 <label htmlFor="citaIdInput" style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
                   Identificador canónico de la cita programada:

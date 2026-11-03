@@ -9,6 +9,31 @@ import { ConsultaDetailView } from '../components/consultas-odontologicas/Consul
 import { CompletarConsultaModal } from '../components/consultas-odontologicas/CompletarConsultaModal.jsx';
 import { CancelarConsultaModal } from '../components/consultas-odontologicas/CancelarConsultaModal.jsx';
 
+/** After completion the ERP, not this app, produces the billing order from MS2's published event. */
+export function BillingHandoffNotice({ consulta }) {
+  if (!consulta || consulta.estado !== 'COMPLETADA') return null;
+  const servicios = consulta.serviciosFacturables || [];
+  return (
+    <div className="problem-alert info" role="status">
+      <div style={{ flex: 1 }}>
+        <h4 className="problem-alert-title">Cobro gestionado por el ERP</h4>
+        {servicios.length > 0 ? (
+          <p className="problem-alert-detail">
+            La consulta se completó con {servicios.length} servicio(s) facturable(s) por un total de Bs {consulta.totalFacturableBs}.
+            El backend publicó el evento de cierre y el ERP crea una orden de cobro; revísela en la bandeja de cobros del ERP.
+            Esta pantalla no crea órdenes de cobro.
+          </p>
+        ) : (
+          <p className="problem-alert-detail">
+            La consulta se completó sin servicios facturables, por lo que no se genera orden de cobro en el ERP.
+            Esta pantalla no crea órdenes de cobro.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DetalleConsultaPage({
   initialConsultaId = '',
   onVolver,
@@ -28,6 +53,10 @@ export function DetalleConsultaPage({
     selectedConsulta,
     obtenerPorId,
     completarConsulta,
+    catalogo,
+    catalogoLoading,
+    catalogoError,
+    cargarCatalogoServicios,
     cancelarConsulta,
     resetError,
     limpiar,
@@ -59,9 +88,9 @@ export function DetalleConsultaPage({
     return null;
   };
 
-  const handleConfirmarCompletar = async ({ versionEsperada }) => {
+  const handleConfirmarCompletar = async ({ versionEsperada, serviciosFacturables }) => {
     if (!selectedConsulta?.id) return null;
-    return completarConsulta(selectedConsulta.id, { versionEsperada });
+    return completarConsulta(selectedConsulta.id, { versionEsperada, serviciosFacturables });
   };
 
   const handleConfirmarCancelar = async ({ versionEsperada, motivoCancelacion }) => {
@@ -136,6 +165,8 @@ export function DetalleConsultaPage({
         />
       )}
 
+      {!loading && !error && <BillingHandoffNotice consulta={selectedConsulta} />}
+
       {/* Modal para Completar y Sellar Consulta */}
       {selectedConsulta && (
         <CompletarConsultaModal
@@ -145,6 +176,10 @@ export function DetalleConsultaPage({
           onConfirmar={handleConfirmarCompletar}
           onRecargar={handleRecargar}
           onIrAEditar={onEditarAtencion}
+          catalogo={catalogo}
+          catalogoLoading={catalogoLoading}
+          catalogoError={catalogoError}
+          onCargarCatalogo={cargarCatalogoServicios}
         />
       )}
 

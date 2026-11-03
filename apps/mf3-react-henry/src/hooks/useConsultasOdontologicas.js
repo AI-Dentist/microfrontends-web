@@ -22,6 +22,11 @@ export function useConsultasOdontologicas() {
   // Estado para consulta individual (detalle)
   const [selectedConsulta, setSelectedConsulta] = useState(null);
 
+  // Billable catalog for completion (read from MS2).
+  const [catalogo, setCatalogo] = useState([]);
+  const [catalogoLoading, setCatalogoLoading] = useState(false);
+  const [catalogoError, setCatalogoError] = useState(null);
+
   const abortControllerRef = useRef(null);
 
   const resetError = useCallback(() => {
@@ -263,6 +268,24 @@ export function useConsultasOdontologicas() {
     [token, consultasOdontologicasService],
   );
 
+  const cargarCatalogoServicios = useCallback(async () => {
+    setCatalogoLoading(true);
+    setCatalogoError(null);
+    try {
+      const response = await consultasOdontologicasService.listarCatalogoServicios(token);
+      setCatalogo(response);
+      return response;
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        setCatalogoError(err);
+        setCatalogo([]);
+      }
+      return null;
+    } finally {
+      setCatalogoLoading(false);
+    }
+  }, [token, consultasOdontologicasService]);
+
   const limpiar = useCallback(() => {
     setListData({ consultas: [], total: 0, limite: 10, offset: 0 });
     setSelectedConsulta(null);
@@ -278,6 +301,10 @@ export function useConsultasOdontologicas() {
     listarPorHistoria,
     obtenerPorId,
     consultarEstadoServidor,
+    catalogo,
+    catalogoLoading,
+    catalogoError,
+    cargarCatalogoServicios,
     abrirConsulta,
     actualizarAtencion,
     completarConsulta,

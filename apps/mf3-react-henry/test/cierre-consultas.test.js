@@ -384,4 +384,24 @@ describe('Iteración 6F-3 — Completar, Cancelar y Cerrar Consultas Odontológi
     assert.ok(url.endsWith('/cancelar'));
     assert.equal(url.includes('/delete'), false);
   });
+
+  // ─── 11. Servicios facturables en el cierre (standalone) ─────────────────────
+  test('11. Completar envía serviciosFacturables según el DTO y el catálogo se lee por GET', async () => {
+    globalThis.fetch = async (url, options) => {
+      fetchCalls.push({ url, options });
+      return new Response(JSON.stringify(url.endsWith('catalogo-servicios') ? [{ id: 's1' }] : { ...mockConsultaEnCurso, estado: 'COMPLETADA' }));
+    };
+    assert.deepEqual(await consultasOdontologicasService.listarCatalogoServicios(TEST_TOKEN), [{ id: 's1' }]);
+    await consultasOdontologicasService.completarConsulta(
+      mockConsultaEnCurso.id,
+      { versionEsperada: 1, serviciosFacturables: [{ servicioId: 's1', cantidad: 2 }] },
+      TEST_TOKEN,
+    );
+    assert.equal(fetchCalls[0].options.method, 'GET');
+    assert.ok(fetchCalls[0].url.endsWith('/consultas-odontologicas/catalogo-servicios'));
+    assert.deepEqual(JSON.parse(fetchCalls[1].options.body), {
+      versionEsperada: 1,
+      serviciosFacturables: [{ servicioId: 's1', cantidad: 2 }],
+    });
+  });
 });

@@ -10,7 +10,10 @@ export function Input({
   id,
   name,
   onKeyDown,
+  ...rest
 }) {
+  // Only accessibility attributes are forwarded; everything else stays explicit.
+  const aria = Object.fromEntries(Object.entries(rest).filter(([key]) => key.startsWith('aria-')));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
       {label && (
@@ -30,6 +33,7 @@ export function Input({
         placeholder={placeholder}
         disabled={disabled}
         onKeyDown={onKeyDown}
+        {...aria}
         className={`search-input ${className}`}
       />
       {error && (

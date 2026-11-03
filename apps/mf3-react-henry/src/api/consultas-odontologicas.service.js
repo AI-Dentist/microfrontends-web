@@ -4,6 +4,45 @@ import { httpClient as standaloneHttpClient } from './client.js';
  * Servicio API para interactuar con los endpoints de Consultas Odontológicas en MS2.
  * Ruta base resuelta a través de Nginx: /api/expediente/consultas-odontologicas
  */
+const pick = (source, keys) => Object.fromEntries(
+  keys.filter(key => source[key] !== undefined).map(key => [key, source[key]]),
+);
+
+// Bodies carry exactly the MS2 DTO fields: the server derives the doctor, state and version.
+const bodyAbrir = payload => pick(payload, [
+  'historiaClinicaId', 'pacienteId', 'citaId', 'motivoConsulta', 'anamnesisActual', 'exploracionFisica',
+  'diagnosticos', 'procedimientosRealizados', 'evolucionSOAP', 'recomendaciones', 'fechaAtencion',
+]);
+const bodyActualizar = payload => pick(payload, [
+  'versionEsperada', 'motivoConsulta', 'anamnesisActual', 'exploracionFisica', 'diagnosticos',
+  'procedimientosRealizados', 'evolucionSOAP', 'recomendaciones',
+]);
+const bodyCompletar = payload => {
+  const body = pick(payload, ['versionEsperada', 'serviciosFacturables', 'observacionesCobro']);
+  if (Array.isArray(body.serviciosFacturables)) {
+    body.serviciosFacturables = body.serviciosFacturables.map(item => pick(item, ['servicioId', 'cantidad', 'piezaDental']));
+  }
+  return body;
+};
+const bodyCancelar = payload => pick(payload, ['versionEsperada', 'motivoCancelacion']);
+
+/**
+ * Turns { servicioId: quantity text } into ItemServicioFacturableHttpDto items
+ * (servicioId + integer cantidad >= 1). Empty or 0 means not selected; anything
+ * else that is not a positive integer is reported as invalid.
+ */
+export function buildServiciosFacturables(selection = {}) {
+  const items = [];
+  let invalid = false;
+  for (const [servicioId, raw] of Object.entries(selection)) {
+    const text = String(raw ?? '').trim();
+    if (text === '' || text === '0') continue;
+    if (!/^[1-9][0-9]*$/.test(text)) { invalid = true; continue; }
+    items.push({ servicioId, cantidad: Number(text) });
+  }
+  return { items, invalid };
+}
+
 export function createConsultasOdontologicasService(httpClient = standaloneHttpClient) {
   return {
   /**
@@ -41,7 +80,7 @@ export function createConsultasOdontologicasService(httpClient = standaloneHttpC
 
     return httpClient('/consultas-odontologicas', {
       method: 'POST',
-      body: payload,
+      body: bodyAbrir(payload),
       token,
       signal,
     });
@@ -82,6 +121,22 @@ export function createConsultasOdontologicasService(httpClient = standaloneHttpC
   },
 
   /**
+   * Lista los servicios facturables activos del catálogo de MS1 (vía MS2).
+   *
+   * @param {string} token - Token de autenticación del operador
+   * @param {AbortSignal} [signal]
+   * @returns {Promise<Array<{ id: string, codigo: string, nombre: string, precioBaseBs: string }>>}
+   */
+  async listarCatalogoServicios(token, signal) {
+    const catalogo = await httpClient('/consultas-odontologicas/catalogo-servicios', {
+      method: 'GET',
+      token,
+      signal,
+    });
+    return Array.isArray(catalogo) ? catalogo : [];
+  },
+
+  /**
    * Obtiene la ficha clínica completa de una consulta odontológica por su ID.
    *
    * @param {string} id - Identificador canónico de la consulta (cons_...)
@@ -116,7 +171,7 @@ export function createConsultasOdontologicasService(httpClient = standaloneHttpC
 
     return httpClient(`/consultas-odontologicas/${encodeURIComponent(id.trim())}/atencion`, {
       method: 'PUT',
-      body: payload,
+      body: bodyActualizar(payload || {}),
       token,
       signal,
     });
@@ -126,7 +181,7 @@ export function createConsultasOdontologicasService(httpClient = standaloneHttpC
    * Completa y sella formalmente una consulta odontológica (Iteración 6F-3).
    *
    * @param {string} id - Identificador de la consulta
-   * @param {object} payload - CompletarConsultaHttpDto ({ versionEsperada })
+   * @param {object} payload - CompletarConsultaHttpDto ({ versionEsperada, serviciosFacturables?, observacionesCobro? })
    * @param {string} token - Token de autenticación del operador
    * @param {AbortSignal} [signal]
    */
@@ -137,7 +192,7 @@ export function createConsultasOdontologicasService(httpClient = standaloneHttpC
 
     return httpClient(`/consultas-odontologicas/${encodeURIComponent(id.trim())}/completar`, {
       method: 'POST',
-      body: payload,
+      body: bodyCompletar(payload || {}),
       token,
       signal,
     });
@@ -158,7 +213,7 @@ export function createConsultasOdontologicasService(httpClient = standaloneHttpC
 
     return httpClient(`/consultas-odontologicas/${encodeURIComponent(id.trim())}/cancelar`, {
       method: 'POST',
-      body: payload,
+      body: bodyCancelar(payload || {}),
       token,
       signal,
     });
