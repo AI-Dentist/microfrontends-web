@@ -17,6 +17,7 @@ import { LISTAR_ODONTOLOGOS, LISTAR_PACIENTES, LISTAR_SERVICIOS_ODONTOLOGICOS } 
 import { CriticalMutationService } from '../../core/offline/critical-mutation.service';
 import { IdempotentAction } from '../../core/offline/idempotent-action';
 import { erpLocalDb } from '../../core/offline/dexie.db';
+import { ERP_RUNTIME } from '../../core/runtime/erp-runtime-context';
 import { NetworkStatusService } from '../../core/offline/network-status.service';
 import { errorMessage, fullName } from './billing-labels';
 
@@ -97,6 +98,7 @@ export class ManualOrderModal implements OnInit {
   readonly closed = output<void>();
 
   private readonly auth = inject(AuthContextService);
+  private readonly runtime = inject(ERP_RUNTIME);
   private readonly apollo = inject(Apollo);
   private readonly network = inject(NetworkStatusService);
   private readonly mutations = inject(CriticalMutationService);
@@ -126,14 +128,17 @@ export class ManualOrderModal implements OnInit {
   );
 
   async ngOnInit(): Promise<void> {
-    const db = erpLocalDb();
-    const [cachedPatients, cachedServices] = await Promise.all([
-      db.pacientes.toArray().catch(() => [] as Paciente[]),
-      db.serviciosOdontologicos.toArray().catch(() => [] as ServicioOdontologico[]),
-    ]);
+    // Hosted ERP is online-only: the persistent catalog copies are never opened or read.
+    const [cachedPatients, cachedServices] = this.runtime.hosted
+      ? [[] as Paciente[], [] as ServicioOdontologico[]]
+      : await Promise.all([
+          erpLocalDb().pacientes.toArray().catch(() => [] as Paciente[]),
+          erpLocalDb().serviciosOdontologicos.toArray().catch(() => [] as ServicioOdontologico[]),
+        ]);
     this.patients.set(cachedPatients);
     this.services.set(cachedServices);
     if (!this.network.isOnline()) {
+      if (this.runtime.hosted) this.messages.add({ severity: 'warn', summary: 'Sin conexión', detail: 'Se requiere conexión con el servidor para crear órdenes.' });
       return;
     }
     try {
