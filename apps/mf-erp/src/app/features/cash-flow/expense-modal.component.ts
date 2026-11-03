@@ -11,6 +11,7 @@ import { AuthContextService } from '../../core/auth/auth-context.service';
 import { FinancialIdentityService } from '../../core/auth/financial-identity.service';
 import { canCollectPayments } from '../billing/finance-permissions';
 import { CategoriaEgreso, MetodoPago } from '../../core/graphql/models';
+import { ERP_RUNTIME } from '../../core/runtime/erp-runtime-context';
 import { CriticalMutationService } from '../../core/offline/critical-mutation.service';
 import { IdempotentAction } from '../../core/offline/idempotent-action';
 import { errorMessage } from '../billing/billing-labels';
@@ -105,6 +106,7 @@ export class ExpenseModal {
   private readonly auth = inject(AuthContextService);
   private readonly identity = inject(FinancialIdentityService);
   private readonly ai = inject(LocalAiService);
+  private readonly runtime = inject(ERP_RUNTIME);
   private readonly mutations = inject(CriticalMutationService);
   private readonly messages = inject(MessageService);
   /** One key per user action: a retry after an error reuses it. */
@@ -147,7 +149,8 @@ export class ExpenseModal {
     if (this.debounceTimer !== null) {
       clearTimeout(this.debounceTimer);
     }
-    if (this.manualCategory() || !this.concepto().trim()) {
+    // Hosted scopes never use the local AI: the category stays a manual choice.
+    if (this.runtime.hosted || this.manualCategory() || !this.concepto().trim()) {
       return;
     }
     this.debounceTimer = setTimeout(() => void this.suggest(request), SUGGESTION_DEBOUNCE_MS);

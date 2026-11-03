@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, OnInit, ViewEncapsulation, inject }
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { ToastModule } from 'primeng/toast';
 import { LocalAiService } from '../../../core/ai-local/local-ai.service';
+import { ERP_RUNTIME } from '../../../core/runtime/erp-runtime-context';
 import { OfflineSyncService } from '../../../core/offline/offline-sync.service';
 import { NetworkAiStatusBar } from '../network-ai-status-bar/network-ai-status-bar.component';
 
@@ -54,11 +55,13 @@ export const ERP_NAV_ITEMS: ErpNavItem[] = [
 })
 export class ErpLayout implements OnInit {
   private readonly ai = inject(LocalAiService);
+  private readonly runtime = inject(ERP_RUNTIME);
   // Instantiated here so the outbox starts listening for reconnection as soon as the ERP opens.
   private readonly offlineSync = inject(OfflineSyncService);
   protected readonly navItems = ERP_NAV_ITEMS;
 
   ngOnInit(): void {
-    void this.ai.start();
+    // Hosted scopes stay online-only and never start the local model (worker + external download).
+    if (!this.runtime.hosted) void this.ai.start();
   }
 }

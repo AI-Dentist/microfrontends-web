@@ -11,7 +11,7 @@ import { CriticalMutationService } from '../../core/offline/critical-mutation.se
 import { ExpenseModal } from './expense-modal.component';
 
 function deferred() { let resolve!: (v: any) => void; const promise = new Promise<any>(r => { resolve = r; }); return { promise, resolve }; }
-async function setup() {
+async function setup(runtime = new ErpRuntimeContext()) {
   const timers: (() => void)[] = [];
   const native = globalThis.setTimeout;
   vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: any, ms: number, ...args: any[]) => {
@@ -24,6 +24,7 @@ async function setup() {
   const messages = { add: vi.fn() };
   const principal = signal('owner');
   await TestBed.configureTestingModule({ imports: [ExpenseModal], providers: [
+    { provide: ERP_RUNTIME, useValue: runtime },
     { provide: LocalAiService, useValue: { suggestExpenseCategory: ai } },
     { provide: AuthContextService, useValue: { roles: () => ['ADMIN'], refresh: () => null,
       principalKey: principal, requireFinancialUserId: () => 'cashier' } },
@@ -142,4 +143,16 @@ describe('hosted cashier identity', () => {
     expect(s.run).not.toHaveBeenCalled();
     expect(s.messages.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'No se pudo registrar el egreso' }));
   });
+});
+
+it('never asks the local AI for a category in a hosted scope and keeps manual category entry working', async () => {
+  const s = await setup(new ErpRuntimeContext({ mode: 'hosted', graphqlUrl: 'https://api.example/erp/graphql', getAccessToken: () => 'token' }));
+  s.type('Guantes'); s.timers.forEach((run) => run());
+  await s.fixture.whenStable();
+  expect(s.ai).not.toHaveBeenCalled();
+  expect(s.hint()).not.toContain('Procesando');
+  s.category('INSUMOS');
+  s.fixture.debugElement.query(By.css('p-inputnumber')).triggerEventHandler('ngModelChange', 20);
+  await s.fixture.whenStable();
+  expect(s.fixture.nativeElement.textContent).toContain('Registrar egreso');
 });

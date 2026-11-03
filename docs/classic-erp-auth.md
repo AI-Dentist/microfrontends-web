@@ -196,6 +196,11 @@ revives. Standalone keeps `environment.graphqlUrl` and the stored token.
 consumers resolve the hosted instances instead of root-scoped ones.
 No AI or agent activation is part of this path.
 
+**Local AI.** A hosted scope never starts the browser-local AI: `ErpLayout` skips `start()`,
+so no worker is created and no model is downloaded from an external provider. The tariff
+semantic search shows "Búsqueda semántica no disponible en este entorno" and the expense
+category stays a manual choice; no fake AI results are produced. Standalone is unchanged.
+
 ## Remaining stages
 
 Corrected risk-2/risk-4 acceptance remains pending on the actual work-unit

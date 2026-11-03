@@ -5,6 +5,7 @@ import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocalAiService } from '../../../core/ai-local/local-ai.service';
 import { AuthContextService } from '../../../core/auth/auth-context.service';
+import { ERP_RUNTIME, ErpRuntimeContext } from '../../../core/runtime/erp-runtime-context';
 import { NetworkStatusService } from '../../../core/offline/network-status.service';
 import { OfflineSyncService } from '../../../core/offline/offline-sync.service';
 import { ErpLayout } from './erp-layout.component';
@@ -15,13 +16,16 @@ describe('ERP shared standalone/federated frame', () => {
   const pending = signal(0);
   const progress = signal(0);
   const flush = vi.fn(async () => {});
+  const start = vi.fn(async () => {});
+  let runtime = new ErpRuntimeContext();
   beforeEach(() => {
-    status.set('idle'); online.set(true); pending.set(0); progress.set(0); flush.mockClear();
+    status.set('idle'); online.set(true); pending.set(0); progress.set(0); flush.mockClear(); start.mockClear(); runtime = new ErpRuntimeContext();
     TestBed.configureTestingModule({
       imports: [ErpLayout],
       providers: [
         provideRouter([]), MessageService,
-        { provide: LocalAiService, useValue: { status, progress, ready: computed(() => status() === 'ready'), device: signal(null), lastError: signal(null), start: vi.fn(async () => {}) } },
+        { provide: LocalAiService, useValue: { status, progress, ready: computed(() => status() === 'ready'), device: signal(null), lastError: signal(null), start } },
+        { provide: ERP_RUNTIME, useFactory: () => runtime },
         { provide: NetworkStatusService, useValue: { online } },
         { provide: OfflineSyncService, useValue: { pendingCount: pending, failedCount: signal(0), lastSyncAt: signal(null), syncing: signal(false), flush } },
         { provide: AuthContextService, useValue: { user: signal(null), isDevMock: signal(false) } },
@@ -34,6 +38,17 @@ describe('ERP shared standalone/federated frame', () => {
     return fixture;
   }
   function text(node: Element | null) { return node?.textContent?.replace(/\s+/g, ' ').trim() ?? ''; }
+
+  it('starts the local AI when mounted standalone', () => {
+    render();
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it('never starts the local AI (no worker, no model download) when mounted hosted', () => {
+    runtime = new ErpRuntimeContext({ mode: 'hosted', graphqlUrl: 'https://api.example/erp/graphql', getAccessToken: () => 'token' });
+    render();
+    expect(start).not.toHaveBeenCalled();
+  });
 
   it('renders one minimal sidebar with the four canonical relative destinations', () => {
     const f = render();

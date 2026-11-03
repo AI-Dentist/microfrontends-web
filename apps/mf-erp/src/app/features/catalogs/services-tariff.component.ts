@@ -87,6 +87,8 @@ const SEARCH_LIMIT = 8;
               Resultados con IA local (similitud semántica)
             } @else if (searchMode() === 'loading') {
               Procesando IA local…
+            } @else if (runtime.hosted) {
+              Búsqueda semántica no disponible en este entorno. Consulte el arancel manualmente.
             } @else {
               Búsqueda semántica no disponible. Consulte el arancel manualmente.
             }
@@ -179,7 +181,7 @@ const SEARCH_LIMIT = 8;
 export class ServicesTariff implements OnInit {
   private readonly apollo = inject(Apollo);
   private readonly auth = inject(AuthContextService);
-  private readonly runtime = inject(ERP_RUNTIME);
+  protected readonly runtime = inject(ERP_RUNTIME);
   readonly canWrite = computed(() => this.auth.roles().includes('ADMIN'));
   readonly specialties = signal<Especialidad[]>([]);
   private readonly network = inject(NetworkStatusService);
@@ -228,6 +230,7 @@ export class ServicesTariff implements OnInit {
     this.query.set(value);
     clearTimeout(this.searchTimer);
     this.matches.set([]); this.searchError.set(null);
+    if (this.runtime.hosted) { this.searchMode.set(value.trim() ? 'unavailable' : 'idle'); return; }
     this.searchMode.set(value.trim() ? 'loading' : 'idle');
     if (!value.trim()) return;
     this.searchTimer = setTimeout(() => void this.runSearch(value, seq), SEARCH_DEBOUNCE_MS);
