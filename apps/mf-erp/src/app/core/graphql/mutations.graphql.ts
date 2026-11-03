@@ -6,7 +6,7 @@ import type {
   CrearEspecialidadArgs, CrearOdontologoInput, CrearOrdenCobroInput, CrearPacienteInput,
   CrearServicioInput, CrearUsuarioInput, EmpresaConfig, EmpresaConfigInput, Especialidad,
   GenerarQrPagoFacilArgs, MovimientoCaja, Odontologo, OrdenCobro, Paciente, Recibo,
-  RegistrarEgresoInput, ServicioOdontologico, TransaccionQr, Usuario, UUID,
+  RegistrarEgresoInput, ServicioOdontologico, TransaccionQr, Usuario, UUID, VincularIdentidadUsuarioInput,
 } from './models';
 import {
   AGENTE_FIELDS, CONSULTORIO_FIELDS, EMPRESA_FIELDS, ESPECIALIDAD_FIELDS, MOVIMIENTO_FIELDS, ODONTOLOGO_FIELDS,
@@ -82,6 +82,15 @@ export const ACTUALIZAR_CONFIGURACION_EMPRESA = gql<
 export const CREAR_USUARIO = gql<{ crearUsuario: Usuario }, { input: CrearUsuarioInput }>`
   mutation CrearUsuario($input: CrearUsuarioInput!) {
     crearUsuario(input: $input) { ${USUARIO_FIELDS} }
+  }
+`;
+
+/** ADMIN only: binds an active ERP user to an opaque Keycloak subject. */
+export const VINCULAR_IDENTIDAD_USUARIO = gql<
+  { vincularIdentidadUsuario: UUID }, { input: VincularIdentidadUsuarioInput }
+>`
+  mutation VincularIdentidadUsuario($input: VincularIdentidadUsuarioInput!) {
+    vincularIdentidadUsuario(input: $input)
   }
 `;
 

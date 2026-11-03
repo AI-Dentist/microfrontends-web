@@ -85,4 +85,21 @@ describe('approved MS1 wire contract', () => {
     ])).toEqual([['instruccion', 'instruccion'], ['modoAutonomoMonitoreo', 'modoAutonomoMonitoreo']]);
     expect(print(queries.LISTAR_ESPECIALIDADES)).toContain('listarEspecialidades');
   });
+
+  it('exposes the argument-free cashier self query and the ADMIN-only two-field identity link', () => {
+    const self = schema.getQueryType()!.getFields()['obtenerMiUsuarioId']!;
+    expect(self.args).toEqual([]);
+    expect(String(self.type)).toBe('UUID!');
+    const link = schema.getMutationType()!.getFields()['vincularIdentidadUsuario']!;
+    expect(link.args.map((arg) => [arg.name, String(arg.type)])).toEqual([['input', 'VincularIdentidadUsuarioInput!']]);
+    expect(String(link.type)).toBe('UUID!');
+    const input = schema.getType('VincularIdentidadUsuarioInput') as any;
+    expect(Object.entries(input.getFields()).map(([name, field]: [string, any]) => [name, String(field.type)]).sort())
+      .toEqual([['keycloakSubject', 'String!'], ['usuarioId', 'UUID!']]);
+    expect(queries).toHaveProperty('OBTENER_MI_USUARIO_ID');
+    expect(mutations).toHaveProperty('VINCULAR_IDENTIDAD_USUARIO');
+    expect(print((queries as any).OBTENER_MI_USUARIO_ID)).toContain('obtenerMiUsuarioId');
+    expect(print((queries as any).OBTENER_MI_USUARIO_ID)).not.toContain('(');
+    expect(print((mutations as any).VINCULAR_IDENTIDAD_USUARIO)).toContain('vincularIdentidadUsuario(input: $input)');
+  });
 });

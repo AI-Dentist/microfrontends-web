@@ -100,3 +100,17 @@ describe('AuthContextService identity boundaries', () => {
     } finally { environment.production = production; }
   });
 });
+
+describe('AuthContextService financial identity in a hosted scope', () => {
+  it('never offers the dev-mock or JWT-subject id as the cashier, even for ADMIN', async () => {
+    const { ERP_RUNTIME, ErpRuntimeContext } = await import('../runtime/erp-runtime-context');
+    const token = jwt({ iss: 'https://issuer', sub: 'a1000000-0000-0000-0000-000000000001', realm_access: { roles: ['ADMIN'] } });
+    TestBed.configureTestingModule({ providers: [{ provide: ERP_RUNTIME,
+      useValue: new ErpRuntimeContext({ mode: 'hosted', graphqlUrl: 'https://api.example/graphql', getAccessToken: () => token }) }] });
+    const auth = TestBed.inject(AuthContextService);
+    expect(auth.isDevMock()).toBe(false);
+    expect(auth.financialUserId()).toBeNull();
+    expect(() => auth.requireFinancialUserId()).toThrow('No hay un usuario cajero ERP confirmado');
+    TestBed.resetTestingModule();
+  });
+});

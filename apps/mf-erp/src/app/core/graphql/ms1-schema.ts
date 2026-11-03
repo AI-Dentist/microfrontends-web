@@ -3,6 +3,8 @@
 // Additive patient readback verified at496e64eed48841998aea7b029ccf45b7adacf27c:
 // Paciente.fechaNacimiento: Date and Paciente.genero: String, both nullable.
 // All unrelated snapshot definitions remain unchanged; this is not a wholesale SDL refresh.
+// Additive identity operations (obtenerMiUsuarioId, vincularIdentidadUsuario, VincularIdentidadUsuarioInput)
+// mirror platform-infrastructure/contracts/graphql/ms1-erp.graphql; other definitions are unchanged.
 // Whitespace/descriptions compacted below; names, types, defaults and nullability preserved.
 // Refresh deliberately from the backend source; never change this to accommodate frontend documents.
 export const MS1_SCHEMA_SDL = `
@@ -54,6 +56,7 @@ type Query {
   listarUsuarios: [Usuario!]!
   obtenerConfiguracionEmpresa: EmpresaConfig!
   obtenerFlujoCaja(fechaFin: DateTime!, fechaInicio: DateTime!): ResumenFlujoCaja!
+  obtenerMiUsuarioId: UUID!
   obtenerOrdenCobroDetalle(id: UUID!): OrdenCobro
   obtenerPacientePorId(id: UUID!): Paciente
 }
@@ -83,6 +86,7 @@ type Mutation {
   generarQrPagoFacil(ciNitCliente: String!, cuotaId: UUID!, razonSocialCliente: String!): TransaccionQr!
   registrarEgresoCaja(input: RegistrarEgresoInput!): MovimientoCaja!
   simularConfirmacionQrDev(pagofacilTransactionId: String!): Recibo!
+  vincularIdentidadUsuario(input: VincularIdentidadUsuarioInput!): UUID!
 }
 input ActualizarConsultorioInput { codigo: String! estado: String nombre: String! ubicacion: String }
 input ActualizarEspecialidadInput { codigo: String! descripcion: String nombre: String! }
@@ -100,5 +104,6 @@ input CrearServicioInput { codigo: String! descripcion: String especialidadId: U
 input CrearUsuarioInput { email: String! nombreCompleto: String! password: String! rolCodigo: String! username: String! }
 input EmpresaConfigInput { direccion: String! emailContacto: String nit: String! nombreComercial: String! razonSocial: String! telefonoContacto: String! }
 input OrdenCobroItemInput { cantidad: Int! piezaDental: String servicioId: UUID! }
+input VincularIdentidadUsuarioInput { keycloakSubject: String! usuarioId: UUID! }
 input RegistrarEgresoInput { categoria: String! descripcion: String! metodoPago: MetodoPago! montoBs: BigDecimal! usuarioCajeroId: UUID! }
 `;

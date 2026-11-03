@@ -263,6 +263,11 @@ export interface CrearUsuarioInput {
   nombreCompleto: string;
   password: string;
 }
+/** The subject is opaque: send it exactly as typed (the backend validates it). */
+export interface VincularIdentidadUsuarioInput {
+  usuarioId: UUID;
+  keycloakSubject: string;
+}
 export interface ActualizarUsuarioInput {
   rolCodigo: string;
   activo: boolean;

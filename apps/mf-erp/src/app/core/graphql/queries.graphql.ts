@@ -79,6 +79,13 @@ export const LISTAR_USUARIOS = gql<{ listarUsuarios: Usuario[] }, Record<string,
   }
 `;
 
+/** ADMIN/CAJERO: canonical financial Usuario.id of the verified caller (no arguments, no client-chosen subject). */
+export const OBTENER_MI_USUARIO_ID = gql<{ obtenerMiUsuarioId: UUID }, Record<string, never>>`
+  query ObtenerMiUsuarioId {
+    obtenerMiUsuarioId
+  }
+`;
+
 export const LISTAR_ROLES = gql<{ listarRoles: Rol[] }, Record<string, never>>`
   query ListarRoles {
     listarRoles { ${ROL_FIELDS} }
