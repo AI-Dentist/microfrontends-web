@@ -5,6 +5,7 @@ import { LocalAiService } from '../../../core/ai-local/local-ai.service';
 import { AuthContextService } from '../../../core/auth/auth-context.service';
 import { NetworkStatusService } from '../../../core/offline/network-status.service';
 import { OfflineSyncService } from '../../../core/offline/offline-sync.service';
+import { ERP_RUNTIME } from '../../../core/runtime/erp-runtime-context';
 
 const AI_STATUS_LABELS = {
   idle: 'IA Navegador sin iniciar',
@@ -86,5 +87,8 @@ export class NetworkAiStatusBar {
   protected readonly sync = inject(OfflineSyncService);
   protected readonly ai = inject(LocalAiService);
   protected readonly auth = inject(AuthContextService);
-  protected readonly aiLabel = computed(() => AI_STATUS_LABELS[this.ai.status()]);
+  private readonly runtime = inject(ERP_RUNTIME);
+  protected readonly aiLabel = computed(() => this.runtime.hosted
+    ? 'IA Navegador deshabilitada en este entorno'
+    : AI_STATUS_LABELS[this.ai.status()]);
 }
