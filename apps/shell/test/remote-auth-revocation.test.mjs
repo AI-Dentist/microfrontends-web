@@ -129,6 +129,23 @@ test('mount context carries a frozen copy of configured service base URLs only w
   } finally { await plain.cleanup(); }
 });
 
+test('navigation keeps the same mount token capability so remotes retain form state', async () => {
+  const f = fixture();
+  try {
+    await f.login(); const mount = await f.open();
+    mount.finish(); await f.drain();
+    const initial = mount.context.getAccessToken;
+    f.navigate(); await f.drain();
+    const next = mount.updates.at(-1).getAccessToken;
+    assert.equal(next === initial, true, 'navigation must not replace the token capability');
+    const before = initial();
+    await f.auth.refresh();
+    assert.equal(initial() !== before, true, 'stable capability must read renewed token');
+    await f.auth.logout();
+    assert.equal(initial() === null && next() === null, true);
+  } finally { await f.cleanup(); }
+});
+
 test('C1: logout + destroy + same-subject login cannot revive a held production mount', async () => {
   const f = fixture();
   try {

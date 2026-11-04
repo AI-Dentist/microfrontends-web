@@ -5,6 +5,8 @@ import type { RemoteContextV1, RemoteModuleV1 } from '../../../packages/mfe-cont
 import { AUTH_SESSION, PLATFORM_CONFIG, getAccessToken } from './platform';
 import { confinedPath, createRemoteSession, loadStyles } from './remote-runtime.mjs';
 
+type MountLease = { revoked: boolean; getAccessToken: () => string | null };
+
 @Component({
   standalone: true,
   template: `
@@ -23,7 +25,7 @@ export class ModulePage implements AfterViewInit, OnDestroy {
   private readonly principal = this.auth.snapshot().subject;
   private unsubscribeAuth?: () => void;
   private retired = false;
-  private lease?: { revoked: boolean };
+  private lease?: MountLease;
   private allowed(lease = this.lease) {
     const token = getAccessToken();
     return !this.retired && !!lease && !lease.revoked && lease === this.lease && token !== null && this.auth.snapshot().subject === this.principal;
@@ -44,12 +46,12 @@ export class ModulePage implements AfterViewInit, OnDestroy {
   private readonly navigation = this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => {
     if (this.allowed()) void this.session?.update(this.context(this.lease!));
   });
-  private context(lease: { revoked: boolean }): RemoteContextV1 {
+  private context(lease: MountLease): RemoteContextV1 {
     const services = this.remote.serviceBaseUrls;
     return {
       contractVersion: 1, basePath: this.remote.basePath, path: this.router.url.split('#')[0], apiBaseUrl: this.remote.apiBaseUrl,
       ...(services ? { serviceBaseUrls: Object.freeze({ ...services }) } : {}),
-      getAccessToken: () => this.allowed(lease) ? getAccessToken() : null,
+      getAccessToken: lease.getAccessToken,
       onNavigate: (path: string) => {
         if (!this.allowed(lease)) return;
         const target = confinedPath(path, this.remote.basePath, location.origin);
@@ -75,7 +77,12 @@ export class ModulePage implements AfterViewInit, OnDestroy {
   retry() {
     if (!this.root || this.retired || getAccessToken() === null || this.auth.snapshot().subject !== this.principal) return;
     this.retireMount();
-    const lease = { revoked: false };
+    // One capability per mount: route updates retain local remote state, while
+    // retry/logout still retire the captured lease permanently.
+    const lease: MountLease = {
+      revoked: false,
+      getAccessToken: () => this.allowed(lease) ? getAccessToken() : null,
+    };
     this.lease = lease;
     const root = this.root;
     const container = document.createElement('div'); root.append(container);
