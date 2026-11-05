@@ -217,6 +217,29 @@ test('standalone default movement stays anonymous and keyless for the legacy cal
     headers: { 'Content-Type': 'application/json' }, body: movement }]);
 });
 
+for (const [label, idempotencyKey] of [['undefined', undefined], ['null', null], ['empty', '']]) {
+  test(`minor adjustments: stock key ${label} keeps the request keyless`, async t => {
+    const movement = { insumo_id: 'fixture-i', tipo_movimiento: 'ENTRADA_COMPRA', cantidad: 1, motivo: 'Conteo ficticio' };
+    const { service, calls } = hosted(t, () => reply(201, { success: true, data: movement }));
+    await service.registrarMovimiento(movement, { idempotencyKey });
+    assert.deepEqual(calls, [{ url: `${BASE}/stock/movimientos`, method: 'POST', body: movement,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' } }]);
+  });
+}
+for (const [label, idempotencyKey] of [['zero', 0], ['number', 7], ['boolean', false], ['array', []], ['object', {}]]) {
+  test(`minor adjustments: stock key ${label} rejects before HTTP`, async t => {
+    const movement = { insumo_id: 'fixture-i', tipo_movimiento: 'ENTRADA_COMPRA', cantidad: 1, motivo: 'Conteo ficticio' };
+    const { service, calls } = hosted(t);
+    await assert.rejects(service.registrarMovimiento(movement, { idempotencyKey }), error => {
+      assert.equal(error.status, 422);
+      assert.equal(error.code, 'INVALID_IDEMPOTENCY_KEY');
+      assert.match(error.message, /idempotencyKey must be a string/);
+      return true;
+    });
+    assert.deepEqual(calls, []);
+  });
+}
+
 test('datetime-local values become the MS3 date-time format', () => {
   assert.equal(api.toBackendDateTime('2030-01-02T09:30'), '2030-01-02 09:30:00');
   assert.equal(api.toBackendDateTime('2030-01-02T09:30:15'), '2030-01-02 09:30:15');

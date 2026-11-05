@@ -133,7 +133,9 @@ reconcile the kardex before deliberately creating a replacement movement. The
 frontend does not infer an actor from JWT claims.
 
 The public `registrarMovimiento(payload, { idempotencyKey })` accepts an optional
-caller-supplied key and never generates one. Its legacy one-argument call keeps
+caller-supplied key and never generates one. `undefined`, `null` and an empty string
+omit the header; other non-string values reject locally with `INVALID_IDEMPOTENCY_KEY`
+before HTTP. Its legacy one-argument call keeps
 the exact keyless body/headers, including anonymous standalone defaults. The
 standalone form uses the same explicit-intent UI without inventing authentication.
 Appointment creation and completion retain their separate contracts above.

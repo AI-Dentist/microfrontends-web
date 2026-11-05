@@ -144,8 +144,12 @@ export function createMs3Service({ apiBaseUrl, getAccessToken, hosted = false } 
       if (message) {
         return Promise.reject(new Ms3ApiError({ status: 422, code: 'INVALID_MOVEMENT', message }));
       }
+      if (idempotencyKey != null && typeof idempotencyKey !== 'string') {
+        return Promise.reject(new Ms3ApiError({ status: 422, code: 'INVALID_IDEMPOTENCY_KEY',
+          message: 'idempotencyKey must be a string' }));
+      }
       return send('POST', 'stock/movimientos', movimiento,
-        idempotencyKey === undefined ? {} : { 'Idempotency-Key': idempotencyKey });
+        idempotencyKey == null || idempotencyKey === '' ? {} : { 'Idempotency-Key': idempotencyKey });
     },
   };
 }
