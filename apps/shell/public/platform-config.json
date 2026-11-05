@@ -36,7 +36,7 @@
       "entry": "http://localhost:4203/remote.js",
       "styles": "http://localhost:4203/remote.css",
       "apiBaseUrl": "/api/expediente",
-      "serviceBaseUrls": { "agenda": "/api/agendamiento" }
+      "serviceBaseUrls": { "agenda": "/api/agendamiento", "erp": "/api/erp/graphql" }
     }
   ]
 }

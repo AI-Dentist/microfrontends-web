@@ -274,6 +274,31 @@ test('navigation-only updates keep the same lease and allow current synchronous 
   assert.equal(original.getAccessToken(), null);
 });
 
+test('ERP base replacement retires the whole clinical lease; navigation and stable-getter refresh preserve it', async (t) => {
+  let token = 'opaque-one'; let rendered;
+  const getter = () => token;
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls.push([url, options.headers.Authorization]); return new Response('{}');
+  });
+  const configured = context(getter, { serviceBaseUrls: { erp: '/api/erp/graphql?tenant=one' } });
+  const mounted = mountRemote({}, configured, () => ({ render(value) { rendered = value; }, unmount() {} }));
+  const first = rendered;
+  token = 'opaque-two';
+  mounted.update({ ...configured, path: '/clinical/crear' });
+  assert.equal(rendered.sessionKey, first.sessionKey);
+  assert.equal(rendered.clinicalServices.erpPacientesService, first.clinicalServices.erpPacientesService);
+  await first.clinicalServices.historiasClinicasService.getById('synthetic');
+  assert.equal(calls[0][1], 'Bearer opaque-two');
+  mounted.update({ ...configured, serviceBaseUrls: { erp: '/api/erp/graphql?tenant=two' } });
+  assert.notEqual(rendered.sessionKey, first.sessionKey);
+  assert.equal(first.getAccessToken(), null);
+  await assert.rejects(first.clinicalServices.historiasClinicasService.getById('synthetic'), denied);
+  assert.equal(calls.length, 1);
+  await rendered.clinicalServices.historiasClinicasService.getById('synthetic');
+  assert.equal(calls.length, 2); mounted.unmount();
+});
+
 test('explicit standalone client preserves caller bearer/base and unauthenticated health', async (t) => {
   const calls = [];
   t.mock.method(globalThis, 'fetch', async (url, options) => {

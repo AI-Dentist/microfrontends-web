@@ -120,11 +120,39 @@ or provider endpoints.
   which of the two outcomes applies. The catalog read follows the same hosted
   rules (current token, zero HTTP when null/revoked, late results inert).
 
+## Selección canónica de pacientes (hosted)
+
+El host debe configurar `context.serviceBaseUrls.erp` con la URL GraphQL ERP
+(por ejemplo `/api/erp/graphql`), además de la base MS2 y la agenda MS3.
+Crear historia, buscar historia por paciente y abrir una urgencia usan el catálogo;
+no aceptan IDs de paciente escritos a mano. Buscar por ID de historia sigue siendo
+una operación distinta. Sin base ERP se muestra un error, nunca un campo manual.
+Standalone conserva sus campos y casos sintéticos de desarrollo.
+
+- **Catálogo.** `listarPacientes(busqueda)` solicita solamente
+  `id,nombres,apellidos,activo` y muestra activos. La URL ERP se conserva exacta,
+  incluida su query; cada petición lee el token vivo de la capacidad existente.
+  No hay carga automática al montar ni persistencia de pacientes o tokens.
+- **Selección.** Cambiar la búsqueda o elegir otra opción invalida inmediatamente
+  la selección anterior. La última intención gana, incluso si el transporte ignora
+  la cancelación. Vacío, 403, errores GraphQL y fallos de conexión son visibles.
+  Seleccionar y enviar vuelven a validar `obtenerPacientePorId`; UUID inválido no
+  envía HTTP, y null/inactivo se rechaza como `PacienteInexistente` (422).
+- **Envío.** Abrir consulta verifica también que la historia y la cita elegida
+  correspondan al mismo paciente (`PacienteNoCoincide`). Paciente, odontólogo y
+  sujeto autenticado son identidades distintas. MS2 mantiene la autoridad final:
+  historia duplicada (409), sin historia (404) y sus demás errores no se ocultan.
+- **Retiro.** Cambiar la base ERP retira toda la sesión clínica, igual que cambiar
+  la base MS2 o el getter. Una actualización de navegación o token con getter
+  estable conserva la sesión. Resultados y callbacks retirados quedan inertes;
+  no se pueden deshacer escrituras ya enviadas al servidor.
+
 ## Checks
 
 From this app directory, run the bounded transport checks:
 
 ```sh
+node --test test/paciente-selector.test.mjs
 node --test test/remote.test.mjs test/api-query.test.mjs test/host-clients.test.mjs test/clinical-flows.test.mjs
 node --test test/atencion-odontologica.test.js test/cierre-consultas.test.js test/consultas-odontologicas.test.js test/estudios-api.test.js test/iteracion-5c.test.js test/odontograma-api.test.js test/odontograma-component-integration.test.js test/odontograma-editor.test.js test/odontograma-enmiendas.test.js test/odontograma-historial.test.js test/odontograma-revisiones.test.js test/odontograma-viewer.test.js
 ```
@@ -135,6 +163,12 @@ T10 acceptance. The 5C test now uses scripted synthetic fetch responses, retains
 its assertions and rejects unexpected requests; it is no longer backend proof.
 All transport mocks are opaque synthetic data, not identity-provider evidence.
 `npm run build`, `npm run build:remote` and `npm run lint` are separate owner checks.
+`paciente-selector.test.mjs` monta ReactDOM en el JSDOM ya instalado en
+`apps/mf-erp/node_modules/jsdom`; no requiere instalar ni iniciar servicios.
+Ejercita búsquedas fuera de orden, selección, validación y los envíos reales de
+las tres páginas con fetch simulado. Es prueba interactiva DOM aislada, no prueba
+de backend, CORS, OIDC ni del despliegue multi-origen en un navegador real.
+
 Node tests cover real client/service/mount APIs, provider-driven public hooks,
 standalone compatibility and structural pins for every named consumer. SSR checks
 do not prove browser state cleanup. The host's

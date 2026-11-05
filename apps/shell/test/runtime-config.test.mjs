@@ -157,6 +157,6 @@ test('example platform config validates with independent local origins', () => {
   assert.equal(parsed.remotes.length, 3);
   assert.equal(parsed.oidc.issuer, 'http://localhost:8180/realms/dental-platform');
   assert.equal(parsed.oidc.redirectUri, 'http://localhost:4200/auth/callback');
-  assert.deepEqual(parsed.remotes.map(r => r.serviceBaseUrls), [undefined, { erp: 'http://localhost:4200/api/erp/graphql' }, { agenda: 'http://localhost:4200/api/agendamiento' }]);
+  assert.deepEqual(parsed.remotes.map(r => r.serviceBaseUrls), [undefined, { erp: 'http://localhost:4200/api/erp/graphql' }, { agenda: 'http://localhost:4200/api/agendamiento', erp: 'http://localhost:4200/api/erp/graphql' }]);
   assert.throws(() => validateConfig(input, 'http://localhost:4300/'), /shell origin/);
 });

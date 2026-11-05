@@ -4,14 +4,16 @@ import { createConsultasOdontologicasService } from './api/consultas-odontologic
 import { createOdontogramasService } from './api/odontogramas.service.js';
 import { createEstudiosService } from './api/estudios.service.js';
 import { createAgendaService } from './api/agenda.service.js';
+import { createErpPacientesService } from './api/erp-pacientes.service.js';
 
-export function createClinicalServices(client, agendaClient = null) {
+export function createClinicalServices(client, agendaClient = null, erpBaseUrl = null) {
   return {
     historiasClinicasService: createHistoriasClinicasService(client),
     consultasOdontologicasService: createConsultasOdontologicasService(client),
     odontogramasService: createOdontogramasService(client),
     estudiosService: createEstudiosService(client),
     agendaService: createAgendaService(agendaClient),
+    erpPacientesService: createErpPacientesService(client, erpBaseUrl),
     isActive: client.isActive || (() => true),
   };
 }
@@ -27,12 +29,14 @@ function createSession(context) {
     : null;
   let current = context;
   const sessionKey = ++nextSessionKey;
-  const services = createClinicalServices(client, agendaClient);
+  const erpBaseUrl = context.serviceBaseUrls?.erp;
+  const services = createClinicalServices(client, agendaClient, erpBaseUrl);
   return {
     retire() { client.retire(); agendaClient?.retire(); },
     getAccessToken: context.getAccessToken,
     apiBaseUrl: context.apiBaseUrl,
     agendaBaseUrl,
+    erpBaseUrl,
     value(next) {
       current = next;
       return {
@@ -93,7 +97,8 @@ export function mountRemote(container, context, createRenderer) {
       if (nextContext.basePath !== basePath) throw new Error('Cannot change basePath');
       tabFromContext(nextContext);
       if (nextContext.apiBaseUrl !== session.apiBaseUrl || nextContext.getAccessToken !== session.getAccessToken
-        || nextContext.serviceBaseUrls?.agenda !== session.agendaBaseUrl) {
+        || nextContext.serviceBaseUrls?.agenda !== session.agendaBaseUrl
+        || nextContext.serviceBaseUrls?.erp !== session.erpBaseUrl) {
         session.retire();
         session = createSession(nextContext);
       }
