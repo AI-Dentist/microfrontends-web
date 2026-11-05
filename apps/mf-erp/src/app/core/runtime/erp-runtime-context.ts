@@ -25,6 +25,7 @@ export class ErpRuntimeContext {
   readonly endpoint: string | undefined;
   private retiredFlag = false;
   private principal: string | null = null;
+  private readonly retirementListeners = new Set<() => void>();
 
   constructor(private readonly config: ErpGraphqlConfig | null = null) {
     this.hosted = config?.mode === 'hosted';
@@ -67,7 +68,27 @@ export class ErpRuntimeContext {
     this.principal ??= principal;
   }
 
-  retire(): void { this.retiredFlag = true; }
+  /** Subscribe to permanent retirement; late subscribers are notified synchronously. */
+  onRetire(listener: () => void): () => void {
+    if (this.retiredFlag) {
+      try { listener(); } catch { /* A listener cannot alter retirement. */ }
+      return () => {};
+    }
+    // A wrapper gives each subscription its own identity, even for the same listener.
+    const subscription = () => listener();
+    this.retirementListeners.add(subscription);
+    return () => { this.retirementListeners.delete(subscription); };
+  }
+
+  retire(): void {
+    if (this.retiredFlag) return;
+    this.retiredFlag = true;
+    const listeners = [...this.retirementListeners];
+    this.retirementListeners.clear();
+    for (const listener of listeners) {
+      try { listener(); } catch { /* Notify remaining listeners without exposing exceptions. */ }
+    }
+  }
 }
 
 /** Default scope is the explicit standalone ERP; hosted scopes are provided per route injector. */
