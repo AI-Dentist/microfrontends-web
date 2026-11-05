@@ -144,7 +144,9 @@ muestra «El ERP rechazó la facturación de esta consulta.» más el `motivo`; 
 
 El aviso no es descartable. Cambiar/limpiar la consulta no confirma ni modifica
 el rechazo de otra ficha; las lecturas fuera de orden o de una sesión retirada
-no actualizan su aviso. MS2 viejo (campo ausente) y rechazo null conservan el flujo
+no actualizan su aviso. Del mismo modo, la respuesta o el error de un cierre,
+cancelación o edición que llega después de cargar, abrir o limpiar otra consulta
+no reemplaza la consulta vigente ni su error. MS2 viejo (campo ausente) y rechazo null conservan el flujo
 normal. La compensación a `EN_CURSO` con `cerradaEn: null` pertenece al backend:
 el frontend no revierte estados, borra datos clínicos ni crea órdenes de cobro.
 Estas pruebas de UI no demuestran la saga real ERP/MS2.

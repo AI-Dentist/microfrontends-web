@@ -285,9 +285,43 @@ test('S5 reclose: switching consultation while POST is pending does not re-read 
   await page.render({ initialConsultaId: B });
   await act(async () => post.resolve(json(completed())));
   assert.equal(readsA, 1, 'late acknowledgement must not re-read or reactivate the previous consultation');
-  // A late POST overwriting the view is a pre-existing hook behavior outside this change.
+  assert.match(page.node.textContent, new RegExp(B), 'late acknowledgement must not replace the current consultation');
+  assert.doesNotMatch(page.node.textContent, new RegExp(A), 'previous consultation must not reappear');
   assert.ok(page.node.querySelector('[role="alert"]') === null);
   assert.equal(calls.filter(call => call.method === 'POST').length, 1);
+});
+
+test('S5 reclose: late POST error after switching consultation does not leak into the current one', async t => {
+  const s = lease(t); const post = deferred();
+  scripted(t, call => {
+    if (call.method === 'POST') return post.promise;
+    if (call.url === endpoint(B)) return json(compatible(false, B));
+    return json(consulta());
+  });
+  const page = await view(t, DetalleConsultaPage, s.services, { initialConsultaId: A });
+  await click(notice(page.node), /corregir[\s\S]*(?:servicios|cerrar)/i);
+  await change(page.node, '[aria-label="Cantidad de Servicio corregido ficticio"]', '2');
+  await click(page.node.querySelector('[role="dialog"]'), /Confirmar y Sellar/);
+  await page.render({ initialConsultaId: B });
+  await act(async () => post.resolve(json({ title: 'Error tardío ficticio', detail: 'Detalle tardío ficticio', status: 422 }, 422)));
+  assert.match(page.node.textContent, new RegExp(B));
+  assert.doesNotMatch(page.node.textContent, /Detalle tardío ficticio/, 'late error belongs to the previous consultation');
+});
+
+test('S5 reclose: current consultation still applies its own POST response', async t => {
+  const s = lease(t); const post = deferred(); const reread = deferred(); let reads = 0;
+  scripted(t, call => {
+    if (call.method === 'POST') return post.promise;
+    return ++reads === 1 ? json(consulta()) : reread.promise;
+  });
+  const page = await view(t, DetalleConsultaPage, s.services, { initialConsultaId: A });
+  await click(notice(page.node), /corregir[\s\S]*(?:servicios|cerrar)/i);
+  await change(page.node, '[aria-label="Cantidad de Servicio corregido ficticio"]', '2');
+  await click(page.node.querySelector('[role="dialog"]'), /Confirmar y Sellar/);
+  await act(async () => post.resolve(json(completed())));
+  await act(async () => reread.resolve(json(completed())));
+  assert.match(page.node.textContent, /COMPLETADA/);
+  assert.match(page.node.textContent, /Cobro gestionado por el ERP/);
 });
 
 test('S5 reclose: retired session ignores a late acknowledgement without re-reading', async t => {

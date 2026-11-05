@@ -28,6 +28,9 @@ export function useConsultasOdontologicas() {
   const [catalogoError, setCatalogoError] = useState(null);
 
   const abortControllerRef = useRef(null);
+  // Advances whenever the selected consultation changes (load, open, clear). A
+  // write action only publishes its outcome if no new selection started meanwhile.
+  const selectionGeneration = useRef(0);
 
   const resetError = useCallback(() => {
     setError(null);
@@ -95,6 +98,7 @@ export function useConsultasOdontologicas() {
         abortControllerRef.current.abort();
       }
       abortControllerRef.current = new AbortController();
+      selectionGeneration.current++;
 
       setLoading(true);
       setError(null);
@@ -125,6 +129,7 @@ export function useConsultasOdontologicas() {
    */
   const abrirConsulta = useCallback(
     async (payload) => {
+      selectionGeneration.current++;
       setLoading(true);
       setError(null);
 
@@ -159,6 +164,8 @@ export function useConsultasOdontologicas() {
         return null;
       }
 
+      const generation = selectionGeneration.current;
+      const vigente = () => generation === selectionGeneration.current;
       setLoading(true);
       setError(null);
 
@@ -168,13 +175,13 @@ export function useConsultasOdontologicas() {
           payload,
           token,
         );
-        setSelectedConsulta(response);
+        if (vigente()) setSelectedConsulta(response);
         return response;
       } catch (err) {
-        setError(err);
+        if (vigente()) setError(err);
         return null;
       } finally {
-        setLoading(false);
+        if (vigente()) setLoading(false);
       }
     },
     [token, consultasOdontologicasService],
@@ -211,6 +218,8 @@ export function useConsultasOdontologicas() {
         return null;
       }
 
+      const generation = selectionGeneration.current;
+      const vigente = () => generation === selectionGeneration.current;
       setLoading(true);
       setError(null);
 
@@ -220,13 +229,13 @@ export function useConsultasOdontologicas() {
           payload,
           token,
         );
-        setSelectedConsulta(response);
+        if (vigente()) setSelectedConsulta(response);
         return response;
       } catch (err) {
-        setError(err);
+        if (vigente()) setError(err);
         return null;
       } finally {
-        setLoading(false);
+        if (vigente()) setLoading(false);
       }
     },
     [token, consultasOdontologicasService],
@@ -247,6 +256,8 @@ export function useConsultasOdontologicas() {
         return null;
       }
 
+      const generation = selectionGeneration.current;
+      const vigente = () => generation === selectionGeneration.current;
       setLoading(true);
       setError(null);
 
@@ -256,13 +267,13 @@ export function useConsultasOdontologicas() {
           payload,
           token,
         );
-        setSelectedConsulta(response);
+        if (vigente()) setSelectedConsulta(response);
         return response;
       } catch (err) {
-        setError(err);
+        if (vigente()) setError(err);
         return null;
       } finally {
-        setLoading(false);
+        if (vigente()) setLoading(false);
       }
     },
     [token, consultasOdontologicasService],
@@ -287,6 +298,7 @@ export function useConsultasOdontologicas() {
   }, [token, consultasOdontologicasService]);
 
   const limpiar = useCallback(() => {
+    selectionGeneration.current++;
     setListData({ consultas: [], total: 0, limite: 10, offset: 0 });
     setSelectedConsulta(null);
     setError(null);
