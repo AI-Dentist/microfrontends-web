@@ -68,13 +68,16 @@ test.after(() => {
   }
 });
 
-async function mountStock(t, responses = []) {
+async function mountStock(t, responses = [], { citas = [], erp = false } = {}) {
   const calls = [];
   const queue = [...responses];
   let token = 'synthetic-token-a';
   let readFailure = false;
   const getAccessToken = () => token;
   t.mock.method(globalThis, 'fetch', async (url, options = {}) => {
+    if (erp && url === 'https://erp-fixture.invalid/graphql') {
+      return reply(200, { data: { listarPacientes: [], listarOdontologos: [], listarConsultorios: [] } });
+    }
     const call = { url, method: options.method, headers: options.headers,
       body: options.body === undefined ? undefined : JSON.parse(options.body) };
     calls.push(call);
@@ -91,12 +94,13 @@ async function mountStock(t, responses = []) {
     return reply(200, { success: true, data: { [key]: key === 'insumos' ? [
       { id: 'fixture-i', codigo: 'FIX-1', nombre: 'Insumo ficticio', stock_actual: 8, stock_minimo: 1 },
       { id: 'fixture-j', codigo: 'FIX-2', nombre: 'Otro insumo ficticio', stock_actual: 7, stock_minimo: 1 },
-    ] : [] } });
+    ] : key === 'citas' ? citas : [] } });
   });
   const container = document.createElement('div');
   document.body.append(container);
   let context = { contractVersion: 1, basePath: '/clinical', path: '/clinical/stock',
-    apiBaseUrl: BASE, getAccessToken, onNavigate() {} };
+    apiBaseUrl: BASE, getAccessToken, onNavigate() {},
+    ...(erp ? { serviceBaseUrls: { erp: 'https://erp-fixture.invalid/graphql' } } : {}) };
   const instance = remote.mount(container, context);
   t.after(() => { instance.unmount(); container.remove(); });
   await settle();
@@ -317,6 +321,33 @@ test('unmount and remount cannot borrow an unresolved intent', async t => {
   assert.equal(second.posts().length, 1);
   assert.deepEqual(second.posts()[0].body, payload);
   assert.notEqual(key(second.posts()[0]), key(first.posts()[0]));
+});
+
+test('minor adjustments: appointment actions stay disabled throughout a stock POST', async t => {
+  const pending = deferred();
+  const view = await mountStock(t, [() => pending.promise], { erp: true, citas: [{
+    id: 'fixture-cita', estado: 'PROGRAMADA', fecha_hora: '2030-01-02 09:00:00',
+    paciente_id: 'fixture-paciente', odontologo_id: 'fixture-doctor', consultorio_id: 'fixture-room',
+  }] });
+  t.after(() => pending.resolve(success()));
+  await fill(view);
+  submit(view);
+  await settle();
+  await view.update({ path: '/clinical/citas' });
+  const actions = [...view.container.querySelectorAll('.acciones > button')];
+  const create = view.container.querySelector('form button[type=submit]');
+  assert.equal(actions.length, 4, 'all appointment actions are mounted');
+  assert.ok(create, 'appointment creation is mounted');
+  for (const button of [...actions, create]) {
+    assert.equal(button.disabled, true, 'appointments cannot race the stock refresh');
+    button.click();
+  }
+  await settle();
+  assert.equal(view.posts().length, 1);
+  assert.equal(view.calls.filter(call => call.method !== 'GET').length, 1);
+  pending.resolve(success());
+  await settle();
+  for (const button of [...actions, create]) assert.equal(button.disabled, false);
 });
 
 test('submit with a revoked token shows the capability error and does not lock the form', async t => {

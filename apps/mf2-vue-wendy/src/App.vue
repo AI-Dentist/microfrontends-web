@@ -22,7 +22,7 @@
         <div class="card form-card">
           <h3>Agendar Nueva Cita Médica</h3>
           <CitaForm :key="formVersion" :hosted="hosted" :catalogos="catalogos" :catalog-error="catalogError"
-            :enviando="enviando" @guardar="guardarCita" @buscar-pacientes="buscarPacientes" />
+            :enviando="enviando || stockBusy" @guardar="guardarCita" @buscar-pacientes="buscarPacientes" />
           <p v-if="mensajeExito" class="success-msg">{{ mensajeExito }}</p>
         </div>
 
@@ -48,7 +48,7 @@
               <td>{{ nombre('pacientes', c.paciente_id) }}</td>
               <td><span class="badge">{{ c.estado }}</span></td>
               <td>
-                <CitaAcciones :cita="c" :stock="stock" :busy="enviando"
+                <CitaAcciones :cita="c" :stock="stock" :busy="enviando || stockBusy"
                   @cancelar="ejecutar(s => s.cancelarCita(c.id), 'Cita cancelada.')"
                   @no-asistio="ejecutar(s => s.noAsistio(c.id), 'Cita marcada como no asistió.')"
                   @reprogramar="fecha => ejecutar(s => s.reprogramarCita(c.id, toBackendDateTime(fecha)), 'Cita reprogramada.')"
