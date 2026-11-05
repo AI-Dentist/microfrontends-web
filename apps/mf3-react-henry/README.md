@@ -120,6 +120,32 @@ or provider endpoints.
   which of the two outcomes applies. The catalog read follows the same hosted
   rules (current token, zero HTTP when null/revoked, late results inert).
 
+## Rechazo de facturación: corregir y volver a cerrar
+
+Si MS2 devuelve `rechazoFacturacion`, el listado y el detalle muestran un aviso
+accesible con la explicación del código, el `motivo` recibido y la fecha
+`rechazadaEn` (ISO en `<time>`, también visible). El texto del servidor se muestra
+como texto React, nunca como HTML. Se contemplan `PACIENTE_INEXISTENTE`,
+`ODONTOLOGO_INEXISTENTE`, `SERVICIO_INEXISTENTE`, `SERVICIO_INACTIVO`,
+`MONTO_INVALIDO`, `PAYLOAD_INVALIDO` y `REINTENTOS_AGOTADOS`.
+
+1. En el listado, **Corregir servicios y volver a cerrar** abre el detalle.
+2. En el detalle, la misma acción abre el modal de cierre existente. Corrija los
+   servicios/cantidades y confirme: se conserva el POST `/consultas-odontologicas/:id/completar`
+   con `versionEsperada` y `serviciosFacturables`, sin nuevos endpoints.
+3. Use **Cargar Ficha** para releer MS2. Solo un GET exitoso vigente con rechazo
+   null o ausente retira el aviso; un GET con rechazo lo conserva o actualiza.
+   Durante carga, errores, cierre del modal o respuesta del POST, el aviso permanece.
+   Si la lectura falla o la consulta ya figura completada, relea la ficha antes de
+   intentar otra corrección.
+
+El aviso no es descartable. Cambiar/limpiar la consulta no confirma ni modifica
+el rechazo de otra ficha; las lecturas fuera de orden o de una sesión retirada
+no actualizan su aviso. MS2 viejo (campo ausente) y rechazo null conservan el flujo
+normal. La compensación a `EN_CURSO` con `cerradaEn: null` pertenece al backend:
+el frontend no revierte estados, borra datos clínicos ni crea órdenes de cobro.
+Estas pruebas de UI no demuestran la saga real ERP/MS2.
+
 ## Selección canónica de pacientes (hosted)
 
 El host debe configurar `context.serviceBaseUrls.erp` con la URL GraphQL ERP
@@ -152,6 +178,7 @@ Standalone conserva sus campos y casos sintéticos de desarrollo.
 From this app directory, run the bounded transport checks:
 
 ```sh
+node --test --test-concurrency=1 --test-timeout=30000 test/rechazo-facturacion.test.mjs
 node --test test/paciente-selector.test.mjs
 node --test test/remote.test.mjs test/api-query.test.mjs test/host-clients.test.mjs test/clinical-flows.test.mjs
 node --test test/atencion-odontologica.test.js test/cierre-consultas.test.js test/consultas-odontologicas.test.js test/estudios-api.test.js test/iteracion-5c.test.js test/odontograma-api.test.js test/odontograma-component-integration.test.js test/odontograma-editor.test.js test/odontograma-enmiendas.test.js test/odontograma-historial.test.js test/odontograma-revisiones.test.js test/odontograma-viewer.test.js

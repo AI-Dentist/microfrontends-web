@@ -128,6 +128,7 @@ export function CompletarConsultaModal({
   );
   const tieneDiagnosticos = Boolean(diagnosticos && diagnosticos.length >= 1);
   const estaEnCurso = estado === 'EN_CURSO';
+  const esRecierre = consulta.rechazoFacturacion != null;
 
   const requisitosFaltantes = [];
   if (!estaEnCurso) {
@@ -294,11 +295,23 @@ export function CompletarConsultaModal({
               lineHeight: 1.45,
             }}
           >
-            <strong>⚠️ Confirmación de Cierre Irreversible:</strong>
-            <p style={{ margin: '4px 0 0' }}>
-              Al confirmar, la consulta pasará de forma irrevocable al estado <strong>COMPLETADA</strong>.
-              Los datos clínicos quedarán sellados para garantizar la integridad del expediente odontológico y no podrán ser modificados ni cancelados.
-            </p>
+            {esRecierre ? (
+              <>
+                <strong>Confirmación de nuevo cierre tras rechazo de facturación:</strong>
+                <p style={{ margin: '4px 0 0' }}>
+                  Revise los servicios y sus cantidades antes de volver a cerrar. Se usará el cierre habitual,
+                  conservando los datos clínicos. El aviso de rechazo se actualizará al volver a cargar la ficha desde MS2.
+                </p>
+              </>
+            ) : (
+              <>
+                <strong>⚠️ Confirmación de Cierre Irreversible:</strong>
+                <p style={{ margin: '4px 0 0' }}>
+                  Al confirmar, la consulta pasará de forma irrevocable al estado <strong>COMPLETADA</strong>.
+                  Los datos clínicos quedarán sellados para garantizar la integridad del expediente odontológico y no podrán ser modificados ni cancelados.
+                </p>
+              </>
+            )}
           </div>
         )}
 

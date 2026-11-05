@@ -1,6 +1,7 @@
 import { Card } from '../common/Card.jsx';
 import { Button } from '../common/Button.jsx';
 import { EstadoConsultaBadge } from './EstadoConsultaBadge.jsx';
+import { RechazoFacturacionNotice } from './RechazoFacturacionNotice.jsx';
 
 /**
  * Tarjeta individual para renderizar una consulta en el listado cronológico.
@@ -123,6 +124,11 @@ export function ConsultaCard({ consulta, onVerDetalle, onEditarAtencion }) {
           <strong>{procedimientosRealizados.length}</strong>
         </div>
       </div>
+
+      <RechazoFacturacionNotice
+        rechazo={consulta.rechazoFacturacion}
+        onCorregir={() => onVerDetalle && onVerDetalle(id)}
+      />
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
         {onEditarAtencion && estado === 'EN_CURSO' && (

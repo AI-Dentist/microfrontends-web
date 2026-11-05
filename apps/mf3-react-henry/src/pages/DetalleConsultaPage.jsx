@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useClinicalActivity, useClinicalState } from '../context/ClinicalServices.jsx';
+import { RechazoFacturacionNotice } from '../components/consultas-odontologicas/RechazoFacturacionNotice.jsx';
 import { useConsultasOdontologicas } from '../hooks/useConsultasOdontologicas.js';
 import { Card } from '../components/common/Card.jsx';
 import { Input } from '../components/common/Input.jsx';
@@ -46,6 +48,10 @@ export function DetalleConsultaPage({
   const [consultaIdInput, setConsultaIdInput] = useState(initialConsultaId);
   const [isCompletarModalOpen, setIsCompletarModalOpen] = useState(false);
   const [isCancelarModalOpen, setIsCancelarModalOpen] = useState(false);
+  const [activeConsultaId, setActiveConsultaId] = useClinicalState(initialConsultaId.trim());
+  const [rejectionSnapshot, setRejectionSnapshot] = useClinicalState(null);
+  const readGeneration = useRef(0);
+  const isActive = useClinicalActivity();
 
   const {
     loading,
@@ -62,19 +68,40 @@ export function DetalleConsultaPage({
     limpiar,
   } = useConsultasOdontologicas();
 
+  // Only an acknowledged, current GET may replace this snapshot. The hook's
+  // selectedConsulta also changes on POST and disappears on failed GETs.
+  const cargarConsulta = useCallback(async (id) => {
+    const generation = ++readGeneration.current;
+    setActiveConsultaId(id);
+    const response = await obtenerPorId(id);
+    if (!isActive() || generation !== readGeneration.current) return null;
+    if (response && response.id === id) {
+      setRejectionSnapshot({ id, initialConsultaId, rechazo: response.rechazoFacturacion ?? null });
+    }
+    return response;
+  }, [obtenerPorId, isActive, initialConsultaId, setActiveConsultaId, setRejectionSnapshot]);
+
   useEffect(() => {
     if (initialConsultaId && initialConsultaId.trim()) {
-      void obtenerPorId(initialConsultaId.trim());
+      void cargarConsulta(initialConsultaId.trim());
     }
-  }, [initialConsultaId, obtenerPorId]);
+    return () => { readGeneration.current++; };
+  }, [initialConsultaId, cargarConsulta]);
+
+  const rechazoActual = rejectionSnapshot?.id === activeConsultaId &&
+    rejectionSnapshot?.initialConsultaId === initialConsultaId
+    ? rejectionSnapshot.rechazo : null;
 
   const handleBuscar = (e) => {
     if (e) e.preventDefault();
     if (!consultaIdInput.trim()) return;
-    void obtenerPorId(consultaIdInput.trim());
+    void cargarConsulta(consultaIdInput.trim());
   };
 
   const handleLimpiar = () => {
+    readGeneration.current++;
+    setActiveConsultaId('');
+    setRejectionSnapshot(null);
     setConsultaIdInput('');
     setIsCompletarModalOpen(false);
     setIsCancelarModalOpen(false);
@@ -83,7 +110,7 @@ export function DetalleConsultaPage({
 
   const handleRecargar = async () => {
     if (selectedConsulta?.id) {
-      return obtenerPorId(selectedConsulta.id);
+      return cargarConsulta(selectedConsulta.id);
     }
     return null;
   };
@@ -129,6 +156,12 @@ export function DetalleConsultaPage({
         </form>
       </Card>
 
+      <RechazoFacturacionNotice
+        rechazo={rechazoActual}
+        onCorregir={() => setIsCompletarModalOpen(true)}
+        disabled={loading || Boolean(error) || selectedConsulta?.id !== activeConsultaId || selectedConsulta?.estado !== 'EN_CURSO'}
+      />
+
       {/* Indicador de Carga */}
       {loading && (
         <div style={{ textAlign: 'center', padding: '40px 0' }}>
@@ -171,7 +204,7 @@ export function DetalleConsultaPage({
       {selectedConsulta && (
         <CompletarConsultaModal
           isOpen={isCompletarModalOpen}
-          consulta={selectedConsulta}
+          consulta={rechazoActual ? { ...selectedConsulta, rechazoFacturacion: rechazoActual } : selectedConsulta}
           onClose={() => setIsCompletarModalOpen(false)}
           onConfirmar={handleConfirmarCompletar}
           onRecargar={handleRecargar}
