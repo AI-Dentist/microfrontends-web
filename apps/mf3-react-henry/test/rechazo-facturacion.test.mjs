@@ -112,6 +112,12 @@ function readableDate(alert) {
   assert.match(time.textContent, /2026/);
 }
 function noMutations(calls) { assert.equal(calls.filter(call => call.method !== 'GET').length, 0); }
+// A reverted-to-in-progress message must never share the screen with a closed consultation.
+function noContradiction(node) {
+  const reverted = [...node.querySelectorAll('[role="alert"]')].some(item => /volvi[oó] a estar en curso/i.test(item.textContent));
+  const closed = /Cobro gestionado por el ERP/.test(node.textContent);
+  assert.ok(!(reverted && closed), 'reverted notice shown alongside a COMPLETADA consultation');
+}
 
 // Spanish wording is semantic, not an invented exact copy requirement. Each code
 // must explain its own cause, in addition to displaying the distinct server text.
@@ -148,16 +154,16 @@ for (const missing of [false, true]) test(`S5 compatibility: ${missing ? 'absent
     assert.equal(call.url, endpoint(A)); return json(compatible(missing));
   });
   const card = await view(t, ConsultaCard, s.services, { consulta: compatible(missing), onVerDetalle: id => navigated.push(id) });
-  assert.equal(card.node.querySelector('[role="alert"]'), null);
+  assert.ok(card.node.querySelector('[role="alert"]') === null);
   await click(card.node, /Ver Detalle Clínico/);
   assert.deepEqual(navigated, [A]); assert.equal(calls.length, 0);
   const page = await view(t, DetalleConsultaPage, s.services, { initialConsultaId: A });
-  assert.equal(page.node.querySelector('[role="alert"]'), null);
+  assert.ok(page.node.querySelector('[role="alert"]') === null);
   await click(page.node, /Completar Consulta/);
   assert.ok(page.node.querySelector('[role="dialog"]'));
   assert.ok(page.node.querySelector('input[type="number"]'));
   await click(page.node.querySelector('[role="dialog"]'), /^Volver$/);
-  assert.equal(page.node.querySelector('[role="dialog"]'), null);
+  assert.ok(page.node.querySelector('[role="dialog"]') === null);
   assert.deepEqual(calls.map(call => call.url), [endpoint(A), `${base}/consultas-odontologicas/catalogo-servicios`]);
   noMutations(calls);
 });
@@ -169,7 +175,7 @@ for (const surface of ['card', 'page']) test(`S5 ${surface}: hostile server reas
   const { node } = await view(t, surface === 'card' ? ConsultaCard : DetalleConsultaPage, s.services,
     surface === 'card' ? { consulta: consulta(reason) } : { initialConsultaId: A });
   assert.ok(notice(node, reason).textContent.includes(malicious));
-  assert.equal(node.querySelector('img, script, [onerror]'), null);
+  assert.ok(node.querySelector('img, script, [onerror]') === null);
   assert.equal(window.__billingInjected, undefined);
   noMutations(calls);
 });
@@ -199,13 +205,17 @@ test('S5 correction: list action navigates through onVerDetalle, detail action o
   assert.equal(mutations.length, 1);
   assert.equal(mutations[0].url, `${endpoint(A)}/completar`);
   assert.deepEqual(mutations[0].payload, { versionEsperada: 7, serviciosFacturables: [{ servicioId: 'srv-fiction-new', cantidad: 2 }] });
-  assert.equal(node.querySelector('[role="dialog"]'), null);
-  notice(node); // A POST acknowledgement is not a successful GET re-read.
+  assert.ok(node.querySelector('[role="dialog"]') === null);
+  const postIndex = calls.findIndex(call => call.method === 'POST');
+  assert.ok(calls.slice(postIndex + 1).some(call => call.method === 'GET' && call.url === endpoint(A)),
+    'successful reclose re-reads the same consultation automatically');
+  notice(node); // MS2 still reports the rejection on that re-read.
+  noContradiction(node);
 });
 
 // Reach lifecycle stages using the already-existing completion button. This keeps
 // missing correction-action UI from masking the independent snapshot assertions.
-for (const stage of ['modal close', 'POST pending', 'POST acknowledged', 'GET pending', 'GET failed', 'GET retains rejection', 'GET clears null', 'GET clears absent']) {
+for (const stage of ['modal close', 'POST pending', 'GET pending', 'GET failed', 'GET retains rejection', 'GET clears null', 'GET clears absent', 'GET clears completed']) {
   test(`S5 reclose lifecycle: ${stage}`, async t => {
     const s = lease(t); const post = deferred(); const read = deferred(); let reads = 0;
     const calls = scripted(t, call => {
@@ -217,7 +227,7 @@ for (const stage of ['modal close', 'POST pending', 'POST acknowledged', 'GET pe
     await click(node, /Completar Consulta/);
     if (stage === 'modal close') {
       await click(node.querySelector('[role="dialog"]'), /^Volver$/);
-      assert.equal(node.querySelector('[role="dialog"]'), null); notice(node); noMutations(calls); return;
+      assert.ok(node.querySelector('[role="dialog"]') === null); notice(node); noMutations(calls); return;
     }
     await change(node, '[aria-label="Cantidad de Servicio corregido ficticio"]', '2');
     await click(node.querySelector('[role="dialog"]'), /Confirmar y Sellar/);
@@ -230,11 +240,10 @@ for (const stage of ['modal close', 'POST pending', 'POST acknowledged', 'GET pe
       return;
     }
     await act(async () => post.resolve(json(completed())));
-    assert.equal(node.querySelector('[role="dialog"]'), null);
-    assert.equal(reads, 1, 'acknowledgement alone must not fabricate an authoritative read');
-    if (stage === 'POST acknowledged') { notice(node); return; }
-    await reread(node);
-    assert.equal(reads, 2);
+    assert.ok(node.querySelector('[role="dialog"]') === null);
+    // The acknowledged POST triggers exactly one re-read; only that GET can clear the notice.
+    assert.equal(reads, 2, 'successful reclose automatically re-reads the consultation');
+    noContradiction(node);
     if (stage === 'GET pending') {
       try { notice(node); } finally { await act(async () => read.resolve(json(completed()))); }
       return;
@@ -245,14 +254,87 @@ for (const stage of ['modal close', 'POST pending', 'POST acknowledged', 'GET pe
     } else if (stage === 'GET retains rejection') {
       await act(async () => read.resolve(json({ ...consulta(), version: 8 })));
       notice(node);
+    } else if (stage === 'GET clears completed') {
+      await act(async () => read.resolve(json(completed())));
+      assert.ok(node.querySelector('[role="alert"]') === null);
+      assert.match(node.textContent, /Cobro gestionado por el ERP/);
     } else {
       await act(async () => read.resolve(json(compatible(stage === 'GET clears absent'))));
-      assert.equal(node.querySelector('[role="alert"]'), null);
+      assert.ok(node.querySelector('[role="alert"]') === null);
       assert.ok(!node.textContent.includes(rechazo().motivo));
       await click(node, /Completar Consulta/);
       assert.ok(node.querySelector('[role="dialog"]'), 'successful read restores normal existing workflow');
     }
+    noContradiction(node);
+    assert.equal(reads, 2, 'no extra automatic reads');
     assert.equal(calls.filter(call => call.method !== 'GET').length, 1, 'no new mutation endpoints');
+  });
+}
+
+test('S5 reclose: switching consultation while POST is pending does not re-read the previous one', async t => {
+  const s = lease(t); const post = deferred(); let readsA = 0;
+  const calls = scripted(t, call => {
+    if (call.method === 'POST') return post.promise;
+    if (call.url === endpoint(B)) return json(compatible(false, B));
+    assert.equal(call.url, endpoint(A)); readsA++; return json(consulta());
+  });
+  const page = await view(t, DetalleConsultaPage, s.services, { initialConsultaId: A });
+  await click(notice(page.node), /corregir[\s\S]*(?:servicios|cerrar)/i);
+  await change(page.node, '[aria-label="Cantidad de Servicio corregido ficticio"]', '2');
+  await click(page.node.querySelector('[role="dialog"]'), /Confirmar y Sellar/);
+  await page.render({ initialConsultaId: B });
+  await act(async () => post.resolve(json(completed())));
+  assert.equal(readsA, 1, 'late acknowledgement must not re-read or reactivate the previous consultation');
+  // A late POST overwriting the view is a pre-existing hook behavior outside this change.
+  assert.ok(page.node.querySelector('[role="alert"]') === null);
+  assert.equal(calls.filter(call => call.method === 'POST').length, 1);
+});
+
+test('S5 reclose: retired session ignores a late acknowledgement without re-reading', async t => {
+  const s = lease(t); const post = deferred(); let reads = 0;
+  scripted(t, call => {
+    if (call.method === 'POST') return post.promise;
+    reads++; return json(consulta());
+  });
+  const page = await view(t, DetalleConsultaPage, s.services, { initialConsultaId: A });
+  await click(notice(page.node), /corregir[\s\S]*(?:servicios|cerrar)/i);
+  await change(page.node, '[aria-label="Cantidad de Servicio corregido ficticio"]', '2');
+  await click(page.node.querySelector('[role="dialog"]'), /Confirmar y Sellar/);
+  s.mounted.unmount();
+  await act(async () => post.resolve(json(completed())));
+  assert.equal(reads, 1);
+});
+
+const GENERIC = 'El ERP rechazó la facturación de esta consulta.';
+for (const surface of ['card', 'page']) test(`S5 ${surface}: unknown motivoCodigo shows generic Spanish text plus received reason`, async t => {
+  const reason = rechazo('CODIGO_FUTURO_DESCONOCIDO', 'Motivo nuevo ficticio de MS2');
+  const s = lease(t); const calls = scripted(t, () => json(consulta(reason)));
+  const { node } = await view(t, surface === 'card' ? ConsultaCard : DetalleConsultaPage, s.services,
+    surface === 'card' ? { consulta: consulta(reason) } : { initialConsultaId: A });
+  const alert = notice(node, reason);
+  assert.ok(alert.textContent.includes(GENERIC), 'generic explanation for unknown codes');
+  readableDate(alert);
+  noMutations(calls);
+});
+
+test('S5 known codes do not fall back to the generic explanation', async t => {
+  const s = lease(t); scripted(t, () => json(consulta()));
+  const { node } = await view(t, ConsultaCard, s.services, { consulta: consulta() });
+  assert.ok(!notice(node).textContent.includes(GENERIC));
+});
+
+for (const [label, value] of [['malformed', 'no-es-una-fecha'], ['empty', ''], ['null', null], ['absent', undefined], ['number', 1770127506000]]) {
+  for (const surface of ['card', 'page']) test(`S5 ${surface}: ${label} rechazadaEn omits the date without Invalid Date`, async t => {
+    const reason = { ...rechazo('SERVICIO_INACTIVO', 'Motivo con fecha inválida ficticia'), rechazadaEn: value };
+    if (value === undefined) delete reason.rechazadaEn;
+    const s = lease(t); scripted(t, () => json(consulta(reason)));
+    const { node } = await view(t, surface === 'card' ? ConsultaCard : DetalleConsultaPage, s.services,
+      surface === 'card' ? { consulta: consulta(reason) } : { initialConsultaId: A });
+    const alert = notice(node, reason);
+    // Compare a boolean: a failing assert.equal on a JSDOM node makes node:assert inspect the whole DOM and hang.
+    assert.ok(alert.querySelector('time') === null, 'invalid rechazadaEn must not render a <time> element');
+    assert.doesNotMatch(alert.textContent, /Invalid Date|NaN|1970|Fecha del rechazo/);
+    assert.match(alert.textContent, /servicio[\s\S]*inactivo/i);
   });
 }
 
@@ -269,8 +351,8 @@ test('S5 scope: switching consultation IDs cannot show previous rejection while 
   await act(async () => wait.resolve(json(compatible(false, B))));
   assert.ok(!pendingText.includes(rechazo().motivo));
   assert.ok(!page.node.textContent.includes(rechazo().motivo));
-  assert.match(page.node.textContent, new RegExp(B));
-  assert.equal(page.node.querySelector('[role="alert"]'), null); noMutations(calls);
+  // A late POST overwriting the view is a pre-existing hook behavior outside this change.
+  assert.ok(page.node.querySelector('[role="alert"]') === null); noMutations(calls);
 });
 
 for (const outcome of ['success', 'error']) test(`S5 retired scope: late GET ${outcome} cannot publish rejection into another consultation`, async t => {
@@ -288,7 +370,7 @@ for (const outcome of ['success', 'error']) test(`S5 retired scope: late GET ${o
   assert.equal(prior.node.textContent, before);
   assert.match(next.node.textContent, new RegExp(B));
   assert.ok(!next.node.textContent.includes(rechazo().motivo));
-  assert.equal(next.node.querySelector('[role="alert"]'), null); noMutations(calls);
+  assert.ok(next.node.querySelector('[role="alert"]') === null); noMutations(calls);
 });
 
 test('S5 failed reclose keeps rejection and existing validation response without a second mutation', async t => {
@@ -345,7 +427,7 @@ for (const missing of [false, true]) test(`PRESERVE modal ${missing ? 'absent' :
     isOpen: true, consulta: compatible(missing), catalogo,
     onClose() { closes++; }, onConfirmar: async payload => { payloads.push(payload); return completed(); },
   });
-  assert.equal(node.querySelector('[role="alert"]'), null);
+  assert.ok(node.querySelector('[role="alert"]') === null);
   assert.match(node.textContent, /Confirmación de Cierre Irreversible/);
   await change(node, '[aria-label="Cantidad de Servicio corregido ficticio"]', '1.5');
   assert.equal(button(node, /Confirmar y Sellar/).disabled, true);

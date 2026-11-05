@@ -9,6 +9,12 @@ const explicaciones = {
   PAYLOAD_INVALIDO: 'Los datos enviados para facturación son inválidos.',
   REINTENTOS_AGOTADOS: 'Los reintentos de facturación están agotados.',
 };
+const explicacionGenerica = 'El ERP rechazó la facturación de esta consulta.';
+
+// Only a parseable ISO string is shown; anything else omits the date entirely.
+function fechaValida(valor) {
+  return typeof valor === 'string' && valor.trim() !== '' && !Number.isNaN(Date.parse(valor));
+}
 
 /** Server-owned compensation: display text only, never perform a rollback. */
 export function RechazoFacturacionNotice({ rechazo, onCorregir, disabled = false }) {
@@ -17,13 +23,15 @@ export function RechazoFacturacionNotice({ rechazo, onCorregir, disabled = false
     <div className="problem-alert warning" role="alert">
       <div style={{ flex: 1 }}>
         <h4 className="problem-alert-title">Facturación rechazada: revise y vuelva a cerrar</h4>
-        <p>{explicaciones[rechazo.motivoCodigo]}</p>
+        <p>{Object.hasOwn(explicaciones, rechazo.motivoCodigo) ? explicaciones[rechazo.motivoCodigo] : explicacionGenerica}</p>
         <p>{rechazo.motivo}</p>
-        <p>
-          Fecha del rechazo: <time dateTime={rechazo.rechazadaEn}>
-            {new Date(rechazo.rechazadaEn).toLocaleString()}
-          </time>
-        </p>
+        {fechaValida(rechazo.rechazadaEn) && (
+          <p>
+            Fecha del rechazo: <time dateTime={rechazo.rechazadaEn}>
+              {new Date(rechazo.rechazadaEn).toLocaleString()}
+            </time>
+          </p>
+        )}
         <p>La consulta volvió a estar en curso. Sus datos clínicos se conservan.</p>
         <Button type="button" onClick={onCorregir} disabled={disabled}>
           Corregir servicios y volver a cerrar

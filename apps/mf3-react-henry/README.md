@@ -127,17 +127,20 @@ accesible con la explicación del código, el `motivo` recibido y la fecha
 `rechazadaEn` (ISO en `<time>`, también visible). El texto del servidor se muestra
 como texto React, nunca como HTML. Se contemplan `PACIENTE_INEXISTENTE`,
 `ODONTOLOGO_INEXISTENTE`, `SERVICIO_INEXISTENTE`, `SERVICIO_INACTIVO`,
-`MONTO_INVALIDO`, `PAYLOAD_INVALIDO` y `REINTENTOS_AGOTADOS`.
+`MONTO_INVALIDO`, `PAYLOAD_INVALIDO` y `REINTENTOS_AGOTADOS`. Un código desconocido
+muestra «El ERP rechazó la facturación de esta consulta.» más el `motivo`; una
+`rechazadaEn` ausente o inválida omite la fecha.
 
 1. En el listado, **Corregir servicios y volver a cerrar** abre el detalle.
 2. En el detalle, la misma acción abre el modal de cierre existente. Corrija los
    servicios/cantidades y confirme: se conserva el POST `/consultas-odontologicas/:id/completar`
    con `versionEsperada` y `serviciosFacturables`, sin nuevos endpoints.
-3. Use **Cargar Ficha** para releer MS2. Solo un GET exitoso vigente con rechazo
-   null o ausente retira el aviso; un GET con rechazo lo conserva o actualiza.
-   Durante carga, errores, cierre del modal o respuesta del POST, el aviso permanece.
-   Si la lectura falla o la consulta ya figura completada, relea la ficha antes de
-   intentar otra corrección.
+3. Tras un POST exitoso el detalle relee automáticamente esa consulta en MS2 (salvo
+   que la sesión se haya retirado o se haya cargado otra consulta mientras tanto).
+   Solo un GET exitoso vigente con rechazo null o ausente retira el aviso; un GET
+   con rechazo lo conserva o actualiza. Durante carga, errores, cierre del modal o
+   respuesta del POST, el aviso permanece. Si la relectura falla se muestra el error
+   existente y el aviso sigue; use **Cargar Ficha** para volver a intentarlo.
 
 El aviso no es descartable. Cambiar/limpiar la consulta no confirma ni modifica
 el rechazo de otra ficha; las lecturas fuera de orden o de una sesión retirada

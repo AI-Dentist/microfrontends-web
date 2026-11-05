@@ -117,7 +117,15 @@ export function DetalleConsultaPage({
 
   const handleConfirmarCompletar = async ({ versionEsperada, serviciosFacturables }) => {
     if (!selectedConsulta?.id) return null;
-    return completarConsulta(selectedConsulta.id, { versionEsperada, serviciosFacturables });
+    const id = selectedConsulta.id;
+    const generation = readGeneration.current;
+    const response = await completarConsulta(id, { versionEsperada, serviciosFacturables });
+    // Only MS2's re-read decides whether the billing rejection is gone. Skip it when
+    // the session retired or another read (new consultation) started meanwhile.
+    if (response && isActive() && generation === readGeneration.current) {
+      void cargarConsulta(id);
+    }
+    return response;
   };
 
   const handleConfirmarCancelar = async ({ versionEsperada, motivoCancelacion }) => {
