@@ -137,3 +137,13 @@ for (const lead of [1, 60]) {
 test('clock tolerance: rejects ID auth_time at now+61', async () => {
   await assert.rejects(verify({ ...id(), auth_time: 1061 }), /OIDC token validation failed/);
 });
+
+for (const [label, now] of [
+  ['numeric string', '1000'], ['undefined', undefined], ['null', null],
+  ['fraction', 1000.5], ['NaN', NaN], ['infinity', Infinity],
+  ['unsafe integer', Number.MAX_SAFE_INTEGER + 1], ['boolean', true],
+]) {
+  test(`minor adjustments: OIDC clock ${label} is invalid`, async () => {
+    await assert.rejects(verify(id(), access(), { now }), /OIDC token validation failed/);
+  });
+}

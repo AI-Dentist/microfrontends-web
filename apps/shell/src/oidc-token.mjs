@@ -66,6 +66,7 @@ async function verified(token, { oidc, jwks, crypto, now }) {
 
 /** The caller must obtain jwks ONLY through trustedMetadata's jwks_uri. */
 export async function verifyTokenSet(tokens, options) {
+  if (!Number.isSafeInteger(options.now)) invalid();
   const { oidc, nonce, refresh = false, previous } = options;
   if (!record(tokens) || tokens.token_type?.toLowerCase() !== 'bearer' || !nonempty(tokens.access_token)) invalid();
   if (tokens.refresh_token !== undefined && !nonempty(tokens.refresh_token)) invalid();

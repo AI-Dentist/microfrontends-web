@@ -67,7 +67,9 @@ API access. Domain user/doctor/cashier IDs must never be guessed from JWT subjec
   **synchronous** `getAccessToken(): string | null`. Snapshots contain status, subject
   and roles, never token material. `refresh()` shares the exact pending Promise.
 - `trustedMetadata(oidc, metadata)` validates discovery. `verifyTokenSet(tokens, options)`
-  requires JWKS from that trusted URL; it is not a discovery trust shortcut. Its
+  requires JWKS from that trusted URL and a safe-integer `options.now` in Unix seconds;
+  nonnumeric, fractional or unsafe clocks fail validation without coercion. It is not
+  a discovery trust shortcut. Its
   credential-bearing return value is internal to the session, never a UI snapshot.
 - `AuthService` connects session signals, login/logout UI and callback navigation.
   `platform.ts` retains the existing synchronous getter; it never yields a Promise.
