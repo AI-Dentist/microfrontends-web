@@ -185,6 +185,19 @@ trimmed only to reject an empty value and is sent exactly as typed. Backend erro
 inactive target, reassignment) are shown as plain text, unchanged. Onboard doctors with the
 existing paired doctor provisioner, not this user-only link.
 
+**Atomic user provisioning.** In *Seguridad* the ADMIN-only **Nuevo usuario** form creates an ERP user
+and links its Keycloak identity with a single call, `crearUsuarioConIdentidad(input: { usuario,
+keycloakSubject, odontologoId? })`, so no ERP user is left without identity. One Idempotency-Key per
+intention is kept across double clicks and retries of the same payload and rotates when any field is
+edited. A failure leaves no user in the list and keeps the form and key for an explicit retry. The
+known identity conflict has a fixed Spanish explanation; other errors show a fixed generic message,
+never raw backend content. Password and subject remain in memory only and the provisioning form and
+intent fingerprint are cleared on success, principal change, ADMIN role loss, runtime retirement or
+component destruction. Late results cannot update another session. A request already sent cannot be
+recalled. An exact replay returns the existing user, which is listed once. The doctor is optional and
+must be an existing active one. Linking an **existing** user (no creation) still uses
+`vincularIdentidadUsuario` above.
+
 **QR simulation.** `simularConfirmacionQrDev` is a development simulator. In a hosted scope the
 button is not rendered and the handler refuses to run, so no fake provider confirmation can be
 produced. Generating and polling use the real API; real provider activation is out of scope.

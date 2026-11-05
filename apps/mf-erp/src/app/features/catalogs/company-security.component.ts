@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Apollo } from 'apollo-angular';
@@ -10,11 +10,14 @@ import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
-import { LogAuditoria, UsuarioSistema } from '../../core/graphql/models';
-import { OWNER_CONTEXT_KEY } from '../../core/graphql/graphql.provider';
-import { ACTUALIZAR_CONFIGURACION_EMPRESA, VINCULAR_IDENTIDAD_USUARIO } from '../../core/graphql/mutations.graphql';
+import { CrearUsuarioConIdentidadInput, LogAuditoria, Odontologo, UsuarioSistema } from '../../core/graphql/models';
+import { IDEMPOTENCY_CONTEXT_KEY, OWNER_CONTEXT_KEY } from '../../core/graphql/graphql.provider';
+import {
+  ACTUALIZAR_CONFIGURACION_EMPRESA, CREAR_USUARIO_CON_IDENTIDAD, VINCULAR_IDENTIDAD_USUARIO,
+} from '../../core/graphql/mutations.graphql';
 import {
   LISTAR_AUDIT_LOGS,
+  LISTAR_ODONTOLOGOS,
   LISTAR_USUARIOS,
   OBTENER_CONFIGURACION_EMPRESA,
 } from '../../core/graphql/queries.graphql';
@@ -22,10 +25,12 @@ import { AuthContextService } from '../../core/auth/auth-context.service';
 import { ERP_RUNTIME } from '../../core/runtime/erp-runtime-context';
 import { cachedCatalog } from '../../core/offline/catalog-cache';
 import { NetworkStatusService } from '../../core/offline/network-status.service';
+import { IdempotentAction } from '../../core/offline/idempotent-action';
 import { CLINIC_ROLE_OPTIONS, upsertById } from './catalog-list';
 import { ACTUALIZAR_USUARIO, ActualizarUsuarioInput } from './catalogs.graphql';
 
 const AUDIT_LOG_LIMIT = 50;
+const IDENTITY_CONFLICT = 'BAD_REQUEST: La identidad de usuario ya está vinculada';
 
 /** Datos de la Clínica form, Usuarios (role and active state) and read-only Logs de auditoría table. */
 @Component({
@@ -103,6 +108,54 @@ const AUDIT_LOG_LIMIT = 50;
         </p-table>
       </div>
 
+      <div class="rounded-lg border border-slate-200 bg-white p-4" data-testid="new-user-form">
+        <h2 class="text-xl font-semibold text-slate-800">Nuevo usuario</h2>
+        <p class="mb-3 text-sm text-slate-500">
+          Crea el usuario ERP y vincula su identidad de Keycloak en una sola operación. Si falla, no se crea ningún usuario.
+        </p>
+        <form class="grid max-w-3xl grid-cols-2 gap-3" (ngSubmit)="createUser()">
+          <label class="flex flex-col gap-1 text-sm">
+            Usuario *
+            <input pInputText data-testid="new-user-username" name="newUsername" autocomplete="off"
+              [ngModel]="newUsername()" (ngModelChange)="newUsername.set($event)" [disabled]="creating()" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            Email *
+            <input pInputText type="email" data-testid="new-user-email" name="newEmail" autocomplete="off"
+              [ngModel]="newEmail()" (ngModelChange)="newEmail.set($event)" [disabled]="creating()" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            Nombre completo *
+            <input pInputText data-testid="new-user-nombre" name="newNombre" autocomplete="off"
+              [ngModel]="newNombre()" (ngModelChange)="newNombre.set($event)" [disabled]="creating()" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            Contraseña *
+            <input pInputText type="password" data-testid="new-user-password" name="newPassword" autocomplete="new-password"
+              [ngModel]="newPassword()" (ngModelChange)="newPassword.set($event)" [disabled]="creating()" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            Rol *
+            <p-select data-testid="new-user-rol" name="newRol" size="small" [options]="roleOptions" optionLabel="label" optionValue="value"
+              [ngModel]="newRol()" (ngModelChange)="newRol.set($event)" [disabled]="creating()" appendTo="body" aria-label="Rol del nuevo usuario" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm">
+            Odontólogo existente (opcional)
+            <p-select data-testid="new-user-odontologo" name="newOdontologo" size="small" [options]="doctorOptions()" optionLabel="label" optionValue="id"
+              [showClear]="true" [ngModel]="newOdontologoId()" (ngModelChange)="newOdontologoId.set($event)" [disabled]="creating()" appendTo="body"
+              aria-label="Odontólogo existente" />
+          </label>
+          <label class="col-span-2 flex flex-col gap-1 text-sm">
+            Subject de Keycloak *
+            <input pInputText data-testid="new-user-subject" name="newSubject" autocomplete="off" spellcheck="false"
+              [ngModel]="newSubject()" (ngModelChange)="newSubject.set($event)" [disabled]="creating()" />
+          </label>
+          <div class="col-span-2 flex justify-end">
+            <p-button label="Crear usuario" type="submit" size="small" [loading]="creating()" [disabled]="!canCreate()" />
+          </div>
+        </form>
+      </div>
+
       <div class="rounded-lg border border-slate-200 bg-white p-4">
         <h2 class="text-xl font-semibold text-slate-800">Vincular identidad</h2>
         <p class="mb-3 text-sm text-slate-500">
@@ -170,6 +223,25 @@ export class CompanySecurity implements OnInit {
   readonly linkUserId = signal<string | null>(null);
   readonly linkSubject = signal('');
   readonly linking = signal(false);
+  readonly doctors = signal<Odontologo[]>([]);
+  readonly doctorOptions = computed(() =>
+    this.doctors().map((d) => ({ id: d.id, label: `${d.nombres} ${d.apellidos}` })));
+  readonly newUsername = signal('');
+  readonly newEmail = signal('');
+  readonly newNombre = signal('');
+  readonly newPassword = signal('');
+  readonly newRol = signal<string | null>(null);
+  readonly newOdontologoId = signal<string | null>(null);
+  readonly newSubject = signal('');
+  readonly creating = signal(false);
+  /** One Idempotency-Key per user intention: kept on retries of the same payload, rotated when it is edited. */
+  private readonly createAction = new IdempotentAction();
+  private readonly runtimeRetired = signal(this.runtime.retired);
+  private createGeneration = 0;
+  private destroyed = false;
+  readonly canCreate = computed(() =>
+    !this.runtimeRetired() && !!this.auth.principalKey() && this.isAdmin() && this.online() && !this.creating() && !!this.newUsername() && !!this.newEmail() &&
+    !!this.newNombre() && !!this.newPassword() && !!this.newRol() && this.newSubject().trim().length > 0);
   /** The subject is opaque: trimming is only used to reject an empty value, never to alter what is sent. */
   readonly canLink = computed(() =>
     this.isAdmin() && this.online() && !this.linking() && !!this.linkUserId() && this.linkSubject().trim().length > 0);
@@ -183,6 +255,41 @@ export class CompanySecurity implements OnInit {
     emailContacto: ['', Validators.email],
   });
 
+  constructor() {
+    let principal = this.auth.principalKey();
+    let admin = this.isAdmin();
+    effect(() => {
+      const currentPrincipal = this.auth.principalKey();
+      const currentAdmin = this.isAdmin();
+      if (currentPrincipal !== principal || (admin && !currentAdmin)) {
+        untracked(() => this.invalidateCreate());
+      }
+      principal = currentPrincipal;
+      admin = currentAdmin;
+    });
+    const unsubscribe = this.runtime.onRetire(() => {
+      this.runtimeRetired.set(true);
+      this.invalidateCreate();
+    });
+    inject(DestroyRef).onDestroy(() => {
+      this.destroyed = true;
+      unsubscribe();
+      this.invalidateCreate();
+    });
+  }
+
+  private clearCreateForm(): void {
+    this.newUsername.set(''); this.newEmail.set(''); this.newNombre.set(''); this.newPassword.set('');
+    this.newRol.set(null); this.newOdontologoId.set(null); this.newSubject.set('');
+    this.createAction.reset();
+  }
+
+  private invalidateCreate(): void {
+    this.createGeneration++;
+    this.clearCreateForm();
+    this.creating.set(false);
+  }
+
   ngOnInit(): void {
     void this.loadAll();
   }
@@ -195,10 +302,12 @@ export class CompanySecurity implements OnInit {
     const access = { online: this.network.isOnline(), identity, mode: this.runtime.cacheMode };
     // Rejection must leave no previous session's protected rows visible.
     this.users.set([]); this.logs.set([]); this.form.reset(); this.currencySymbol.set('');
-    const [company, users, logs] = await Promise.allSettled([
+    this.doctors.set([]);
+    const [company, users, logs, doctors] = await Promise.allSettled([
       cachedCatalog('empresa', () => firstValueFrom(this.apollo.query({ query: OBTENER_CONFIGURACION_EMPRESA, variables: {}, fetchPolicy: 'network-only' })), access),
       admin ? cachedCatalog('usuarios', () => firstValueFrom(this.apollo.query({ query: LISTAR_USUARIOS, variables: {}, fetchPolicy: 'network-only' })), access) : Promise.resolve(null),
       admin ? cachedCatalog('logs', () => firstValueFrom(this.apollo.query({ query: LISTAR_AUDIT_LOGS, variables: { limite: AUDIT_LOG_LIMIT }, fetchPolicy: 'network-only' })), access) : Promise.resolve(null),
+      admin ? firstValueFrom(this.apollo.query({ query: LISTAR_ODONTOLOGOS, variables: { soloActivos: true }, fetchPolicy: 'network-only' })) : Promise.resolve(null),
     ]);
     this.fromCache.set([company, users, logs].some((result) => result.status === 'fulfilled' && result.value?.fromCache));
     if (company.status === 'fulfilled' && company.value.data.data?.obtenerConfiguracionEmpresa) {
@@ -218,7 +327,8 @@ export class CompanySecurity implements OnInit {
     if (this.auth.principalKey() !== identity) { this.form.reset(); this.currencySymbol.set(''); this.loading.set(false); return; }
     if (this.isAdmin() && users.status === 'fulfilled') this.users.set([...(users.value?.data.data?.listarUsuarios ?? [])]);
     if (this.isAdmin() && logs.status === 'fulfilled') this.logs.set([...(logs.value?.data.data?.listarAuditLogs ?? [])]);
-    if ([company, users, logs].some((r) => r.status === 'rejected')) {
+    if (this.isAdmin() && doctors.status === 'fulfilled') this.doctors.set([...(doctors.value?.data?.listarOdontologos ?? [])]);
+    if ([company, users, logs, doctors].some((r) => r.status === 'rejected')) {
       this.messages.add({ severity: 'warn', summary: 'Algunos datos no se pudieron cargar', detail: 'Verifique su conexión e intente de nuevo.' });
     }
     this.loading.set(false);
@@ -285,6 +395,54 @@ export class CompanySecurity implements OnInit {
       });
     } finally {
       this.linking.set(false);
+    }
+  }
+
+  async createUser(): Promise<void> {
+    if (this.creating() || this.runtime.retired || this.destroyed) return;
+    try { this.auth.refresh(); } catch { return; }
+    if (!this.canCreate()) return;
+    const odontologoId = this.newOdontologoId();
+    const input: CrearUsuarioConIdentidadInput = {
+      usuario: {
+        username: this.newUsername(), email: this.newEmail(), nombreCompleto: this.newNombre(),
+        password: this.newPassword(), rolCodigo: this.newRol()!,
+      },
+      keycloakSubject: this.newSubject(),
+      ...(odontologoId ? { odontologoId } : {}),
+    };
+    const owner = this.auth.principalKey();
+    const generation = ++this.createGeneration;
+    const current = () => !this.destroyed && !this.runtime.retired && this.createGeneration === generation &&
+      this.auth.principalKey() === owner && !!owner && this.isAdmin();
+    this.creating.set(true);
+    try {
+      const result = await firstValueFrom(this.apollo.mutate({
+        mutation: CREAR_USUARIO_CON_IDENTIDAD, variables: { input },
+        context: { [IDEMPOTENCY_CONTEXT_KEY]: this.createAction.keyFor(input), [OWNER_CONTEXT_KEY]: owner },
+      }));
+      if (!current()) return;
+      this.auth.refresh();
+      if (!current()) return;
+      const created = result.data?.crearUsuarioConIdentidad;
+      if (!created) throw new Error('El backend no confirmó la creación del usuario');
+      // An exact replay returns the existing user: upsert keeps it listed once.
+      this.users.update((rows) => upsertById(rows, created as UsuarioSistema));
+      this.clearCreateForm();
+      this.messages.add({ severity: 'success', summary: 'Usuario creado', detail: created.username });
+    } catch (error) {
+      if (!current()) return;
+      try { this.auth.refresh(); } catch { return; }
+      if (!current()) return;
+      // Never expose arbitrary backend content. Retain the form and key for an explicit retry.
+      this.messages.add({
+        severity: 'error',
+        summary: 'No se pudo crear el usuario',
+        detail: error instanceof Error && error.message === IDENTITY_CONFLICT
+          ? IDENTITY_CONFLICT : 'No se pudo crear el usuario. Intente de nuevo.',
+      });
+    } finally {
+      if (current()) this.creating.set(false);
     }
   }
 
