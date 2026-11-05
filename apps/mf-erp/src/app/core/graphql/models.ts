@@ -263,6 +263,12 @@ export interface CrearUsuarioInput {
   nombreCompleto: string;
   password: string;
 }
+/** ADMIN atomic provisioning: ERP user + Keycloak identity (+ optional existing doctor) in one transaction. */
+export interface CrearUsuarioConIdentidadInput {
+  usuario: CrearUsuarioInput;
+  keycloakSubject: string;
+  odontologoId?: UUID | null;
+}
 /** The subject is opaque: send it exactly as typed (the backend validates it). */
 export interface VincularIdentidadUsuarioInput {
   usuarioId: UUID;

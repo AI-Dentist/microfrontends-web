@@ -78,6 +78,7 @@ type Mutation {
   crearPaciente(input: CrearPacienteInput!): Paciente!
   crearServicioOdontologico(input: CrearServicioInput!): ServicioOdontologico!
   crearUsuario(input: CrearUsuarioInput!): Usuario!
+  crearUsuarioConIdentidad(input: CrearUsuarioConIdentidadInput!): Usuario!
   eliminarConsultorio(id: UUID!): Boolean!
   eliminarEspecialidad(id: UUID!): Boolean!
   eliminarOdontologo(id: UUID!): Boolean!
@@ -102,6 +103,7 @@ input CrearOrdenCobroInput { descuentoBs: BigDecimal = 0 items: [OrdenCobroItemI
 input CrearPacienteInput { apellidos: String! ciNit: String! direccion: String email: String fechaNacimiento: Date genero: String nombres: String! telefonoWhatsapp: String! }
 input CrearServicioInput { codigo: String! descripcion: String especialidadId: UUID nombre: String! precioBaseBs: BigDecimal! }
 input CrearUsuarioInput { email: String! nombreCompleto: String! password: String! rolCodigo: String! username: String! }
+input CrearUsuarioConIdentidadInput { keycloakSubject: String! odontologoId: UUID usuario: CrearUsuarioInput! }
 input EmpresaConfigInput { direccion: String! emailContacto: String nit: String! nombreComercial: String! razonSocial: String! telefonoContacto: String! }
 input OrdenCobroItemInput { cantidad: Int! piezaDental: String servicioId: UUID! }
 input VincularIdentidadUsuarioInput { keycloakSubject: String! usuarioId: UUID! }

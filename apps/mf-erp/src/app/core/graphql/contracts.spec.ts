@@ -68,6 +68,41 @@ describe('approved MS1 wire contract', () => {
     }
   });
 
+  it('serves the ADMIN atomic crearUsuarioConIdentidad mutation with its exact input', () => {
+    const create = schema.getMutationType()!.getFields()['crearUsuarioConIdentidad'];
+    expect(create).toBeDefined();
+    expect(create!.args.map((arg) => [arg.name, String(arg.type)])).toEqual([['input', 'CrearUsuarioConIdentidadInput!']]);
+    expect(String(create!.type)).toBe('Usuario!');
+    const fieldsOf = (name: string) => Object.entries((schema.getType(name) as any)?.getFields() ?? {})
+      .map(([field, def]: [string, any]) => [field, String(def.type)]).sort();
+    expect(fieldsOf('CrearUsuarioConIdentidadInput')).toEqual([
+      ['keycloakSubject', 'String!'], ['odontologoId', 'UUID'], ['usuario', 'CrearUsuarioInput!'],
+    ]);
+    expect(fieldsOf('CrearUsuarioInput')).toEqual([
+      ['email', 'String!'], ['nombreCompleto', 'String!'], ['password', 'String!'], ['rolCodigo', 'String!'], ['username', 'String!'],
+    ]);
+    // The legacy non-atomic mutations stay served.
+    expect(schema.getMutationType()!.getFields()).toHaveProperty('crearUsuario');
+    expect(schema.getMutationType()!.getFields()).toHaveProperty('vincularIdentidadUsuario');
+  });
+
+  it('exports CREAR_USUARIO_CON_IDENTIDAD calling the atomic mutation and selecting the Usuario fields', () => {
+    expect(mutations).toHaveProperty('CREAR_USUARIO_CON_IDENTIDAD');
+    const document = (mutations as any).CREAR_USUARIO_CON_IDENTIDAD as DocumentNode;
+    expect(validate(schema, document).map((error) => error.message)).toEqual([]);
+    const printed = print(document);
+    expect(printed).toContain('mutation CrearUsuarioConIdentidad($input: CrearUsuarioConIdentidadInput!)');
+    expect(printed).toContain('crearUsuarioConIdentidad(input: $input)');
+    for (const field of ['id', 'username', 'email', 'nombreCompleto', 'activo', 'rol']) {
+      expect(printed).toMatch(new RegExp(`\\b${field}\\b`));
+    }
+  });
+
+  it('keeps the atomic user creation out of the offline replay registry', () => {
+    expect(Object.keys(mutations.OFFLINE_REPLAYABLE_MUTATIONS)).not.toContain('CrearUsuarioConIdentidad');
+    expect(Object.keys(mutations.OFFLINE_REPLAYABLE_MUTATIONS)).not.toContain('CrearUsuario');
+  });
+
   it('uses the unified agent contract and retires the standalone report query', () => {
     expect(queries).not.toHaveProperty('GENERAR_REPORTE_INTELIGENTE');
     expect(schema.getQueryType()?.getFields()).not.toHaveProperty('generarReporteInteligente');

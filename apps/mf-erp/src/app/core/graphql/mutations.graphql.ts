@@ -4,7 +4,7 @@ import type {
   AgenteInteraccionResponse, ActualizarOdontologoInput, ActualizarPacienteInput, ActualizarServicioInput,
   CobrarEfectivoInput, ConfigurarPlanPagosInput, Consultorio, CrearConsultorioInput,
   CrearEspecialidadArgs, CrearOdontologoInput, CrearOrdenCobroInput, CrearPacienteInput,
-  CrearServicioInput, CrearUsuarioInput, EmpresaConfig, EmpresaConfigInput, Especialidad,
+  CrearServicioInput, CrearUsuarioConIdentidadInput, CrearUsuarioInput, EmpresaConfig, EmpresaConfigInput, Especialidad,
   GenerarQrPagoFacilArgs, MovimientoCaja, Odontologo, OrdenCobro, Paciente, Recibo,
   RegistrarEgresoInput, ServicioOdontologico, TransaccionQr, Usuario, UUID, VincularIdentidadUsuarioInput,
 } from './models';
@@ -82,6 +82,15 @@ export const ACTUALIZAR_CONFIGURACION_EMPRESA = gql<
 export const CREAR_USUARIO = gql<{ crearUsuario: Usuario }, { input: CrearUsuarioInput }>`
   mutation CrearUsuario($input: CrearUsuarioInput!) {
     crearUsuario(input: $input) { ${USUARIO_FIELDS} }
+  }
+`;
+
+/** ADMIN only: creates the ERP user and links the Keycloak identity (and optional doctor) atomically. */
+export const CREAR_USUARIO_CON_IDENTIDAD = gql<
+  { crearUsuarioConIdentidad: Usuario }, { input: CrearUsuarioConIdentidadInput }
+>`
+  mutation CrearUsuarioConIdentidad($input: CrearUsuarioConIdentidadInput!) {
+    crearUsuarioConIdentidad(input: $input) { ${USUARIO_FIELDS} }
   }
 `;
 
