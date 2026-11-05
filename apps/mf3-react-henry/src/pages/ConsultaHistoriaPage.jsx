@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef } from 'react';
+import { useClinicalServices, useClinicalState as useState } from '../context/ClinicalServices.jsx';
+import { useDevAuth } from '../hooks/useDevAuth.js';
+import { PacienteSelector, usePacienteCanonico } from '../components/PacienteSelector.jsx';
 import { useHistoriaClinica } from '../hooks/useHistoriaClinica.js';
 import { Card } from '../components/common/Card.jsx';
 import { Input } from '../components/common/Input.jsx';
@@ -25,12 +28,37 @@ export function ConsultaHistoriaPage({
 }) {
   const [tipoBusqueda, setTipoBusqueda] = useState('ID'); // 'ID' | 'PACIENTE'
   const [queryValue, setQueryValue] = useState('');
-  const { data, loading, error, buscarPorId, buscarPorPaciente, limpiar } =
-    useHistoriaClinica();
+  const { isRemote } = useDevAuth();
+  const selection = usePacienteCanonico();
+  const service = useClinicalServices();
+  const history = useHistoriaClinica();
+  const { buscarPorId, buscarPorPaciente, limpiar } = history;
+  const [remoteResult, setRemoteResult] = useState({ data: null, error: null, loading: false });
+  const request = useRef(0);
+  const hostedPatient = isRemote && tipoBusqueda === 'PACIENTE';
+  const { data, loading, error } = hostedPatient ? remoteResult : history;
+  useEffect(() => {
+    request.current++;
+    setRemoteResult({ data: null, error: null, loading: false });
+  }, [selection.paciente, tipoBusqueda, setRemoteResult]);
+  useEffect(() => () => { request.current++; }, []);
 
-  const handleSearch = (e) => {
+  const handleSearch = async (e) => {
     if (e) e.preventDefault();
-    if (tipoBusqueda === 'ID') {
+    if (hostedPatient) {
+      const version = ++request.current;
+      let selected;
+      setRemoteResult({ data: null, error: null, loading: true });
+      try {
+        selected = await selection.validar();
+        const result = await service.getByPacienteId(selected.id);
+        if (selected.isCurrent() && version === request.current) setRemoteResult({ data: result, error: null, loading: false });
+      } catch (err) {
+        if (err.name !== 'AbortError' && version === request.current && (!selected || selected.isCurrent())) {
+          setRemoteResult({ data: null, error: err.title ? err : { title: 'Paciente requerido', detail: err.detail || err.message }, loading: false });
+        }
+      }
+    } else if (tipoBusqueda === 'ID') {
       void buscarPorId(queryValue);
     } else {
       void buscarPorPaciente(queryValue);
@@ -48,6 +76,9 @@ export function ConsultaHistoriaPage({
   };
 
   const handleReset = () => {
+    request.current++;
+    selection.limpiar();
+    setRemoteResult({ data: null, error: null, loading: false });
     setQueryValue('');
     limpiar();
   };
@@ -66,7 +97,7 @@ export function ConsultaHistoriaPage({
                 name="tipoBusqueda"
                 value="ID"
                 checked={tipoBusqueda === 'ID'}
-                onChange={() => setTipoBusqueda('ID')}
+                onChange={() => { if (isRemote) handleReset(); setTipoBusqueda('ID'); }}
               />
               Por ID de Historia Clínica (ej. <code>hc_...</code>)
             </label>
@@ -77,15 +108,15 @@ export function ConsultaHistoriaPage({
                 name="tipoBusqueda"
                 value="PACIENTE"
                 checked={tipoBusqueda === 'PACIENTE'}
-                onChange={() => setTipoBusqueda('PACIENTE')}
+                onChange={() => { if (isRemote) handleReset(); setTipoBusqueda('PACIENTE'); }}
               />
-              Por Identificador del Paciente (ej. <code>pac_...</code>)
+              {isRemote ? 'Por paciente del catálogo ERP' : <>Por Identificador del Paciente (ej. <code>pac_...</code>)</>}
             </label>
           </div>
         </div>
 
         <form onSubmit={handleSearch} className="search-bar-container">
-          <Input
+          {hostedPatient ? <PacienteSelector selection={selection} /> : <Input
             value={queryValue}
             onChange={(e) => setQueryValue(e.target.value)}
             placeholder={
@@ -94,13 +125,13 @@ export function ConsultaHistoriaPage({
                 : 'Ingrese el ID de paciente en MS1 (ej. pac_e2e_05f25861)'
             }
             aria-label="Criterio de búsqueda"
-          />
+          />}
 
-          <Button type="submit" loading={loading} disabled={!queryValue.trim()}>
+          <Button type="submit" loading={loading} disabled={hostedPatient ? !selection.paciente : !queryValue.trim()}>
             Buscar Expediente
           </Button>
 
-          {(data || error || queryValue) && (
+          {(data || error || queryValue || selection.paciente) && (
             <Button variant="secondary" onClick={handleReset} disabled={loading}>
               Limpiar
             </Button>
@@ -108,7 +139,7 @@ export function ConsultaHistoriaPage({
         </form>
 
         {/* Chips sugeridos de prueba */}
-        <div className="quick-chips-container">
+        {!isRemote && <div className="quick-chips-container">
           <span>Identificadores sintéticos de prueba:</span>
           {SUGGESTED_CHIPS.map((chip, idx) => (
             <button
@@ -120,7 +151,7 @@ export function ConsultaHistoriaPage({
               {chip.label}
             </button>
           ))}
-        </div>
+        </div>}
       </Card>
 
       {/* Manejo de estados: Carga */}

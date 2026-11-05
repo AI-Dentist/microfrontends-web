@@ -1,5 +1,6 @@
 import { useClinicalServices, useClinicalState as useState } from '../context/ClinicalServices.jsx';
 import { useDevAuth } from '../hooks/useDevAuth.js';
+import { PacienteSelector, usePacienteCanonico } from '../components/PacienteSelector.jsx';
 import { Card } from '../components/common/Card.jsx';
 import { Input } from '../components/common/Input.jsx';
 import { Button } from '../components/common/Button.jsx';
@@ -11,6 +12,7 @@ import { validateAntecedentes, serializeAntecedentes } from '../components/histo
 export function CrearHistoriaPage({ onVerHistoria }) {
   const { token, currentIdentity, isRemote } = useDevAuth();
   const historiasClinicasService = useClinicalServices();
+  const selection = usePacienteCanonico();
 
   const [pacienteId, setPacienteId] = useState('');
   // Hosted: MS2 assigns the authenticated doctor when the field is omitted.
@@ -58,7 +60,7 @@ export function CrearHistoriaPage({ onVerHistoria }) {
     setError(null);
     setValidationErrors([]);
 
-    if (!pacienteId || !pacienteId.trim()) {
+    if (!isRemote && (!pacienteId || !pacienteId.trim())) {
       setValidationErrors(['El identificador del paciente (pacienteId) es obligatorio.']);
       return;
     }
@@ -79,17 +81,23 @@ export function CrearHistoriaPage({ onVerHistoria }) {
       antecedentes: serializeAntecedentes(antecedentes),
     };
 
+    let selected;
     try {
+      selected = isRemote ? await selection.validar() : null;
+      if (selected) payload.pacienteId = selected.id;
       const response = await historiasClinicasService.create(payload, token);
-      setCreatedHistoria(response);
+      if (!selected || selected.isCurrent()) setCreatedHistoria(response);
     } catch (err) {
-      setError(err);
+      if (err.name !== 'AbortError' && (!selected || selected.isCurrent())) {
+        setError(err.title ? err : { title: 'Paciente requerido', detail: err.detail || err.message });
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleResetForm = () => {
+    selection.limpiar();
     setPacienteId('');
     setCreatedHistoria(null);
     setError(null);
@@ -196,14 +204,14 @@ export function CrearHistoriaPage({ onVerHistoria }) {
                 marginBottom: '20px',
               }}
             >
-              <Input
+              {isRemote ? <PacienteSelector selection={selection} /> : <Input
                 label="Identificador del Paciente en MS1 *"
                 id="pacienteId"
                 value={pacienteId}
                 disabled={loading}
                 onChange={(e) => setPacienteId(e.target.value)}
                 placeholder="ej. a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
-              />
+              />}
 
               {!isRemote && <Input
                 label="Odontólogo Responsable Clínico"

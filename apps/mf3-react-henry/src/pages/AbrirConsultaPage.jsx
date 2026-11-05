@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import { useClinicalServices, useClinicalState as useState } from '../context/ClinicalServices.jsx';
+import { PacienteSelector, usePacienteCanonico } from '../components/PacienteSelector.jsx';
 import { useDevAuth } from '../hooks/useDevAuth.js';
 import { useCitasAgenda } from '../hooks/useCitasAgenda.js';
 import { buildAperturaPayload } from './apertura-payload.js';
@@ -57,6 +59,10 @@ export function AbrirConsultaPage({
 }) {
   const { operadorId, isRemote } = useDevAuth();
   const { loading, error, abrirConsulta, resetError } = useConsultasOdontologicas();
+  const selection = usePacienteCanonico();
+  const historiasService = useClinicalServices();
+  const formRevision = useRef(0);
+  const submitting = useRef(false);
   const agenda = useCitasAgenda();
   const { configured: agendaConfigurada, cargar: cargarCitas } = agenda;
 
@@ -85,6 +91,9 @@ export function AbrirConsultaPage({
   }, [isRemote, tieneCita, agendaConfigurada, cargarCitas]);
 
   const handleElegirCita = (id) => {
+    formRevision.current++;
+    selection.limpiar();
+    setPacienteId('');
     setCitaId(id);
     const elegida = agenda.citas.find((cita) => cita.id === id);
     if (elegida && elegida.pacienteId) setPacienteId(elegida.pacienteId);
@@ -98,7 +107,7 @@ export function AbrirConsultaPage({
       setValidationError('El ID de la historia clínica es obligatorio.');
       return;
     }
-    if (!pacienteId.trim()) {
+    if ((!isRemote || tieneCita) && !pacienteId.trim()) {
       setValidationError('El ID del paciente es obligatorio.');
       return;
     }
@@ -113,21 +122,42 @@ export function AbrirConsultaPage({
       return;
     }
 
-    const payload = buildAperturaPayload({
-      historiaClinicaId,
-      pacienteId,
-      motivoConsulta,
-      citaId: tieneCita ? citaId : '',
-      fechaAtencion,
-      anamnesis: incluirAnamnesis ? { descripcion: anamnesisDescripcion, tiempoEvolucion, escalaDolorEVA } : null,
-    });
-
-    const resultado = await abrirConsulta(payload);
-    if (resultado && resultado.id) {
-      if (onConsultaCreada) {
-        onConsultaCreada(resultado.id, resultado.historiaClinicaId);
+    if (submitting.current || !selection.isActive()) return;
+    submitting.current = true;
+    const revision = formRevision.current;
+    let selected;
+    try {
+      if (isRemote) {
+        selected = await selection.validar(tieneCita ? pacienteId : undefined);
+        const historia = await historiasService.getById(historiaClinicaId.trim());
+        if (!selected.isCurrent() || revision !== formRevision.current) return;
+        if (!historia || historia.pacienteId !== selected.id) {
+          setValidationError('PacienteNoCoincide: la historia clínica pertenece a otro paciente.');
+          return;
+        }
+        if (tieneCita && !agenda.citas.some(cita => cita.id === citaId && cita.pacienteId === selected.id)) {
+          setValidationError('PacienteNoCoincide: la cita pertenece a otro paciente.');
+          return;
+        }
       }
-    }
+      const payload = buildAperturaPayload({
+        historiaClinicaId,
+        pacienteId: selected?.id || pacienteId,
+        motivoConsulta,
+        citaId: tieneCita ? citaId : '',
+        fechaAtencion,
+        anamnesis: incluirAnamnesis ? { descripcion: anamnesisDescripcion, tiempoEvolucion, escalaDolorEVA } : null,
+      });
+
+      const resultado = await abrirConsulta(payload);
+      if (resultado?.id && selection.isActive() && (!selected || selected.isCurrent()) && revision === formRevision.current) {
+        onConsultaCreada?.(resultado.id, resultado.historiaClinicaId);
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError' && (!selected || selected.isCurrent()) && revision === formRevision.current) {
+        setValidationError(err.detail || err.message);
+      }
+    } finally { submitting.current = false; }
   };
 
   return (
@@ -143,7 +173,7 @@ export function AbrirConsultaPage({
             <Alert
               title="Datos incompletos"
               detail={validationError}
-              status={400}
+              status={validationError.startsWith('PacienteNoCoincide') ? 422 : 400}
               onClose={() => setValidationError('')}
             />
           </div>
@@ -171,14 +201,14 @@ export function AbrirConsultaPage({
               <Input
                 id="hcIdInput"
                 value={historiaClinicaId}
-                onChange={(e) => setHistoriaClinicaId(e.target.value)}
+                onChange={(e) => { formRevision.current++; setHistoriaClinicaId(e.target.value); }}
                 placeholder="ej. hc_8af2ae02-5a6a-4bb0-8da1-1c9e23cff07a"
                 disabled={loading}
                 required
               />
             </div>
 
-            <div>
+            {isRemote ? (tieneCita ? <div>Paciente de la cita: {pacienteId || 'Seleccione una cita de la agenda.'}</div> : <PacienteSelector selection={selection} />) : <div>
               <label htmlFor="pacIdInput" style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>
                 Identificador del Paciente (MS1) <span style={{ color: 'var(--danger)' }}>*</span>
               </label>
@@ -190,7 +220,7 @@ export function AbrirConsultaPage({
                 disabled={loading || (isRemote && tieneCita && Boolean(citaId))}
                 required
               />
-            </div>
+            </div>}
           </div>
 
           {/* Profesional y Fecha */}
@@ -246,7 +276,12 @@ export function AbrirConsultaPage({
                 type="checkbox"
                 id="tieneCitaCheck"
                 checked={tieneCita}
-                onChange={(e) => setTieneCita(e.target.checked)}
+                onChange={(e) => {
+                  formRevision.current++;
+                  selection.limpiar();
+                  if (isRemote) { setPacienteId(''); setCitaId(''); }
+                  setTieneCita(e.target.checked);
+                }}
                 disabled={loading}
                 style={{ width: '16px', height: '16px', cursor: 'pointer' }}
               />
