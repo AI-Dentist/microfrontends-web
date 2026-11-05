@@ -107,8 +107,8 @@
         <h3 class="section-title">Stock de Insumos Odontológicos</h3>
         <div class="card form-card">
           <h3>Registrar movimiento de stock</h3>
-          <MovimientoForm :stock="stock" :busy="enviando"
-            @registrar="mov => ejecutar(s => s.registrarMovimiento(mov), 'Movimiento registrado.')" />
+          <MovimientoForm :key="stockFormVersion" :stock="stock" :busy="enviando || stockBusy"
+            @registrar="registrarMovimiento" />
           <p v-if="mensajeExito" class="success-msg">{{ mensajeExito }}</p>
         </div>
         <table class="data-table">
@@ -144,7 +144,7 @@
 
 <script setup>
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue';
-import { createMs3Service, createIntent, describeError, hasRole, listFrom, toBackendDateTime } from './api/ms3Api.js';
+import { createMs3Service, createIntent, describeError, hasRole, listFrom, Ms3CapabilityError, toBackendDateTime } from './api/ms3Api.js';
 import { createErpCatalogService } from './api/erpCatalogApi.js';
 import { tabForContext, navigateTab } from './lifecycle.js';
 import CitaForm from './components/CitaForm.vue';
@@ -190,6 +190,13 @@ const mensajeExito = ref('');
 const formVersion = ref(0);
 // One idempotency key per appointment-creation intent; retries of the same payload reuse it.
 const citaIntent = createIntent();
+const stockFormVersion = ref(0);
+const stockBusy = ref(false);
+// A form (including its unresolved intent) belongs to exactly one service.
+watch(ms3Service, () => {
+  stockFormVersion.value++;
+  stockBusy.value = false;
+}, { flush: 'sync' });
 
 // Hosted views show the ERP label; unknown IDs fall back to the raw ID.
 const nombre = (catalogo, id) => catalogos.value[catalogo].find(item => item.id === id)?.label ?? id;
@@ -279,6 +286,62 @@ async function ejecutar(accion, mensajePorDefecto) {
     return false;
   } finally {
     if (active) enviando.value = false;
+  }
+}
+
+// Stock alone rechecks the live capability after every await. A token refresh
+// behind the same getter is valid; a missing/throwing token retires this scope.
+function stockScopeLive(service) {
+  if (!active || service !== ms3Service.value || service.retired) return false;
+  if (hosted.value) {
+    let token;
+    try { token = props.context.getAccessToken(); } catch { /* fail closed */ }
+    if (typeof token !== 'string' || !token) {
+      service.retire();
+      return false;
+    }
+  }
+  return true;
+}
+
+async function registrarMovimiento(payload, submission) {
+  const service = ms3Service.value;
+  if (stockBusy.value || enviando.value) return;
+  if (!stockScopeLive(service)) {
+    if (active && service === ms3Service.value) {
+      error.value = describeError(new Ms3CapabilityError());
+      submission.settle();
+    }
+    return;
+  }
+  stockBusy.value = true;
+  error.value = null;
+  mensajeExito.value = '';
+  let acknowledged = false;
+  try {
+    const respuesta = await service.registrarMovimiento(payload, {
+      idempotencyKey: submission.idempotencyKey,
+    });
+    if (!stockScopeLive(service)) return;
+    // Commit the acknowledgement before GET: a failed refresh is not a failed
+    // movement and must never leave the completed write available for retry.
+    acknowledged = true;
+    submission.complete();
+    mensajeExito.value = respuesta?.mensaje || 'Movimiento registrado.';
+    const datos = await leerDatos(service);
+    if (stockScopeLive(service)) aplicar(datos);
+  } catch (e) {
+    if (stockScopeLive(service)) {
+      error.value = acknowledged
+        ? `Movimiento registrado; no se pudo actualizar los datos: ${describeError(e)}`
+        : describeError(e);
+    }
+  } finally {
+    // Old scopes must not clear a new scope's busy state or mutate its form.
+    if (stockScopeLive(service)) {
+      stockBusy.value = false;
+      submission.settle();
+    }
   }
 }
 

@@ -80,9 +80,9 @@ names `stock_actual`, `stock_minimo`, `unidad_medida`, `alerta_reposicion`.
   read-only. Standalone has no token and always shows the form.
 - Stock movements are explicit (`POST stock/movimientos`) with the backend
   types `ENTRADA_COMPRA`, `SALIDA_PROCEDIMIENTO` and `AJUSTE` (plus
-  `direccion` `INCREMENTO`/`DECREMENTO` for `AJUSTE`). The movement endpoint has
-  no idempotency key, so the submit button is disabled while a request is in
-  flight; check the kardex before re-submitting after a network failure.
+  `direccion` `INCREMENTO`/`DECREMENTO` for `AJUSTE`). The form captures one
+  optional `Idempotency-Key` per confirmed intent and locks submission and
+  draft controls while in flight. See the manual-stock contract below.
 
 ### Hosted vs standalone
 
@@ -107,6 +107,37 @@ appointment instead of a duplicate (`idempotente: true`, HTTP 200). Editing the
 payload or finishing the intent (successful create) starts a new intent with a
 new key.
 
+#### Manual stock movements
+
+The form generates a key at explicit confirmation, not per HTTP request. Only
+`Idempotency-Key` is sent (never the `X-` alias). MS3 binds it to the authenticated
+actor and payload hash: the same key and payload replay the original HTTP 201,
+including its ID/date, without another stock delta. A different payload with the
+same key returns 409 `IDEMPOTENCY_CONFLICT` without writing.
+
+After a lost response, 503 `STOCK_WRITE_UNAVAILABLE`, or 409, no retry runs
+automatically. An explicit unchanged retry keeps the same key and captured
+payload. Editing any field (even then undoing it) starts a new intent. An
+acknowledged POST completes the intent and resets the draft **before** readback;
+a GET failure is shown as a refresh error alongside the acknowledgement. The
+next explicit movement gets a new key, not a retry of the successful write.
+
+Intents are ephemeral: nothing is persisted, queued or replayed on reconnect.
+The mounted form owns its intent within the current MS3 service. Backend/getter
+replacement, logout detected at submission or completion, tab remount and
+unmount discard that ownership; a live token refresh behind the same getter
+preserves it. Stock checks the live capability again before publishing results,
+errors or readback. An already-issued write cannot be recalled: changing scope
+or editing after an uncertain result may leave a committed old movement, so
+reconcile the kardex before deliberately creating a replacement movement. The
+frontend does not infer an actor from JWT claims.
+
+The public `registrarMovimiento(payload, { idempotencyKey })` accepts an optional
+caller-supplied key and never generates one. Its legacy one-argument call keeps
+the exact keyless body/headers, including anonymous standalone defaults. The
+standalone form uses the same explicit-intent UI without inventing authentication.
+Appointment creation and completion retain their separate contracts above.
+
 ### Errors
 
 Backend error bodies carry `error`/`message`, `code` and sometimes `errors`
@@ -117,15 +148,17 @@ Backend error bodies carry `error`/`message`, `code` and sometimes `errors`
 `HTTP_422`), and `Request failed (HTTP n, CODE): ...` otherwise, for example
 403 `FORBIDDEN_ROLE` or 401 `UNAUTHORIZED`. An unreadable body falls back to
 the status. After a failed write the form keeps its values and idempotency
-intent.
+intent (except an already acknowledged stock POST, whose draft is completed
+before a refresh failure).
 
 ## Checks
 
 `node --test test/*.test.mjs` covers public API requests, standalone defaults,
 hosted fail-closed capabilities and retirement for MS3 and the ERP catalogs,
 MS3 response shapes and error codes, idempotency intents, instance lifecycle
-and navigation. `test/app-wiring.test.mjs` builds the remote bundle into a
-temporary directory and mounts it in jsdom (borrowed from `apps/mf-erp`'s dev
-tooling; the test skips if it is unavailable) with a scripted fetch.
+and navigation. `test/app-wiring.test.mjs` and `test/stock-intent.test.mjs`
+compile the shipped Vue SFCs in memory and mount them in jsdom (borrowed from
+`apps/mf-erp`'s dev tooling) with scripted fetch; neither writes build output.
+The app-wiring test retains its existing skip when jsdom is unavailable.
 Run `npm run build` and `npm run build:remote` too. The host integration owns
 real-browser standalone/Shadow DOM mount-update-unmount verification.

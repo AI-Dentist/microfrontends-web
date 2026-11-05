@@ -1,14 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { build } from 'vite';
 
-// Mounts the real shipped remote bundle (App.vue + components) in jsdom with a
-// scripted fetch. jsdom is borrowed read-only from the mf-erp dev tooling, not a dependency of this app.
+// Compiles and mounts the shipped SFCs in memory with scripted fetch. No build,
+// disk output or server; jsdom is borrowed read-only from mf-erp dev tooling.
 const appDir = resolve(import.meta.dirname, '..');
 let JSDOM;
 try { ({ JSDOM } = createRequire(resolve(appDir, '../mf-erp/package.json'))('jsdom')); } catch { /* skipped below */ }
@@ -25,23 +23,43 @@ const catalogs = {
   listarPacientes: [{ id: 'pa-uuid', nombres: 'Luis', apellidos: 'Gil', ciNit: '123' }],
 };
 
-let bundleDir;
+const require = createRequire(resolve(appDir, 'package.json'));
+const { parse, compileScript } = require('@vue/compiler-sfc');
+const modules = new Map();
+const vueModule = `data:text/javascript;base64,${Buffer.from(readFileSync(
+  require.resolve('vue/dist/vue.runtime.esm-browser.js'), 'utf8')).toString('base64')}`;
+function sourceModule(filename) {
+  if (modules.has(filename)) return modules.get(filename);
+  let source = readFileSync(filename, 'utf8');
+  if (filename.endsWith('.vue')) {
+    const { descriptor, errors } = parse(source, { filename });
+    assert.deepEqual(errors, [], `parse ${filename}`);
+    source = compileScript(descriptor, { id: filename, inlineTemplate: true }).content;
+  }
+  source = source.replace(/\bfrom\s+(['"])([^'"]+)\1/g, (match, quote, specifier) => {
+    const target = specifier === 'vue' ? vueModule
+      : specifier.endsWith('.vue') ? sourceModule(resolve(dirname(filename), specifier))
+        : specifier.startsWith('.') ? pathToFileURL(resolve(dirname(filename), specifier)).href : specifier;
+    return `from ${quote}${target}${quote}`;
+  });
+  const url = `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
+  modules.set(filename, url);
+  return url;
+}
 let remote;
 let dom;
+const globals = ['window', 'document', 'Document', 'Node', 'Element', 'HTMLElement', 'Event', 'MutationObserver', 'SVGElement'];
 test.before(async () => {
   if (!JSDOM) return;
   dom = new JSDOM('<!doctype html><body></body>', { pretendToBeVisual: true });
-  for (const key of ['window', 'document', 'Node', 'Element', 'HTMLElement', 'Event', 'MutationObserver', 'SVGElement']) {
+  for (const key of globals) {
     Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true, writable: true });
   }
-  bundleDir = mkdtempSync(join(tmpdir(), 'mf2-wiring-'));
-  await build({ root: appDir, configFile: resolve(appDir, 'vite.remote.config.js'), logLevel: 'silent',
-    build: { outDir: bundleDir, emptyOutDir: true } });
-  remote = await import(pathToFileURL(join(bundleDir, 'remote.js')).href);
+  remote = await import(sourceModule(resolve(appDir, 'src/remote.js')));
 });
 test.after(() => {
-  if (bundleDir) rmSync(bundleDir, { recursive: true, force: true });
-  for (const key of ['window', 'document', 'Node', 'Element', 'HTMLElement', 'Event', 'MutationObserver', 'SVGElement']) delete globalThis[key];
+  dom?.window.close();
+  for (const key of globals) delete globalThis[key];
 });
 
 function host(t, { path = '/clinical/citas', roles = ['ADMIN'], serviceBaseUrls = { erp: ERP }, citaReplies = [], citas = [] } = {}) {
