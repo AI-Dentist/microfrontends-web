@@ -1,5 +1,7 @@
 // Only native RS256 verification. No token-header URL is ever fetched.
 const knownRoles = new Set(['ADMIN', 'CAJERO', 'ODONTOLOGO', 'RECEPCIONISTA']);
+// Permit a small issuer clock lead, never an extension of token expiry.
+const CLOCK_TOLERANCE_SECONDS = 60;
 const invalid = () => { throw Error('OIDC token validation failed'); };
 const nonempty = value => typeof value === 'string' && value.length > 0;
 const record = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -57,8 +59,8 @@ async function verified(token, { oidc, jwks, crypto, now }) {
     if (!valid) invalid();
   } catch { invalid(); }
   const claims = json(parts[1]);
-  if (claims.iss !== oidc.issuer || !nonempty(claims.sub) || !Number.isSafeInteger(claims.exp) || claims.exp <= now || !Number.isSafeInteger(claims.iat) || claims.iat > now || claims.iat >= claims.exp) invalid();
-  if (claims.nbf !== undefined && (!Number.isSafeInteger(claims.nbf) || claims.nbf > now)) invalid();
+  if (claims.iss !== oidc.issuer || !nonempty(claims.sub) || !Number.isSafeInteger(claims.exp) || claims.exp <= now || !Number.isSafeInteger(claims.iat) || claims.iat > now + CLOCK_TOLERANCE_SECONDS || claims.iat >= claims.exp) invalid();
+  if (claims.nbf !== undefined && (!Number.isSafeInteger(claims.nbf) || claims.nbf > now + CLOCK_TOLERANCE_SECONDS)) invalid();
   return claims;
 }
 
@@ -81,7 +83,7 @@ export async function verifyTokenSet(tokens, options) {
       const originalAudiences = audiences(previous.idClaims.aud);
       if (clientAudiences.length !== originalAudiences.length || !clientAudiences.every(a => originalAudiences.includes(a))) invalid();
     }
-    if (id.auth_time !== undefined && (!Number.isSafeInteger(id.auth_time) || id.auth_time > options.now)) invalid();
+    if (id.auth_time !== undefined && (!Number.isSafeInteger(id.auth_time) || id.auth_time > options.now + CLOCK_TOLERANCE_SECONDS)) invalid();
   } else {
     // Core 12.2: refresh may omit ID token; initial login never may.
     if (!refresh || !previous) invalid();

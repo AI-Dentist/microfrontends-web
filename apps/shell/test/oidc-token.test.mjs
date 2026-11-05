@@ -32,8 +32,8 @@ for (const [name, mutate] of [
   ['ID expiry boundary', i => { i.exp = 1000; }],
   ['access expiry boundary', (_, a) => { a.exp = 1000; }],
   ['invalid expiry', i => { i.exp = '2000'; }],
-  ['future issued at', i => { i.iat = 1001; }],
-  ['future nbf', (_, a) => { a.nbf = 1001; }],
+  ['future issued at beyond clock tolerance', i => { i.iat = 1061; }],
+  ['future nbf beyond clock tolerance', (_, a) => { a.nbf = 1061; }],
   ['ID audience', i => { i.aud = 'other'; }],
   ['multi audience requires azp', i => { i.aud = ['mf-erp', 'other']; }],
   ['ID azp mismatch', i => { i.azp = 'other'; }],
@@ -98,4 +98,42 @@ test('metadata pins exact issuer and every endpoint to configured issuer origin'
     }
   }
   assert.throws(() => trustedMetadata(oidc, { ...metadata, issuer: oidc.issuer + '/' }));
+});
+
+// Real RS256 signatures exercise the public verifier; the permitted clock lead
+// never extends token expiry or changes the authenticated subject and roles.
+for (const token of ['ID', 'access']) {
+  for (const claim of ['iat', 'nbf']) {
+    for (const lead of [1, 60]) {
+      test(`clock tolerance: accepts ${token} ${claim} at now+${lead}`, async () => {
+        const i = id(), a = access();
+        (token === 'ID' ? i : a)[claim] = 1000 + lead;
+        const result = await verify(i, a);
+        assert.equal(result.subject, base.sub);
+        assert.equal(result.expiresAt, base.exp * 1000);
+        assert.deepEqual(result.roles, ['ODONTOLOGO', 'RECEPCIONISTA']);
+      });
+    }
+    test(`clock tolerance: rejects ${token} ${claim} at now+61`, async () => {
+      const i = id(), a = access();
+      (token === 'ID' ? i : a)[claim] = 1061;
+      await assert.rejects(verify(i, a), /OIDC token validation failed/);
+    });
+  }
+  test(`clock tolerance: rejects expired ${token} without expiry leeway`, async () => {
+    const i = id(), a = access();
+    (token === 'ID' ? i : a).exp = 999;
+    await assert.rejects(verify(i, a), /OIDC token validation failed/);
+  });
+}
+for (const lead of [1, 60]) {
+  test(`clock tolerance: accepts ID auth_time at now+${lead}`, async () => {
+    const result = await verify({ ...id(), auth_time: 1000 + lead });
+    assert.equal(result.subject, base.sub);
+    assert.equal(result.idClaims.auth_time, 1000 + lead);
+    assert.equal(result.expiresAt, base.exp * 1000);
+  });
+}
+test('clock tolerance: rejects ID auth_time at now+61', async () => {
+  await assert.rejects(verify({ ...id(), auth_time: 1061 }), /OIDC token validation failed/);
 });
