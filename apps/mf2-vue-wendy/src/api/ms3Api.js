@@ -136,7 +136,7 @@ export function createMs3Service({ apiBaseUrl, getAccessToken, hosted = false } 
     completarCita: (id, { insumos, motivo } = {}) => send('PATCH', `citas/${segment(id)}/completar`, {
       ...(insumos?.length ? { insumos } : {}), ...(motivo ? { motivo } : {}) }),
     crearHorario: horario => send('POST', 'horarios', horario),
-    registrarMovimiento(movimiento) {
+    registrarMovimiento(movimiento, { idempotencyKey } = {}) {
       const { tipo_movimiento: tipo, cantidad, motivo } = movimiento;
       const message = !MOVEMENT_TYPES.includes(tipo) ? `tipo_movimiento must be one of ${MOVEMENT_TYPES.join(', ')}`
         : !Number.isInteger(cantidad) || cantidad < 1 ? 'cantidad must be an integer of at least 1'
@@ -144,7 +144,8 @@ export function createMs3Service({ apiBaseUrl, getAccessToken, hosted = false } 
       if (message) {
         return Promise.reject(new Ms3ApiError({ status: 422, code: 'INVALID_MOVEMENT', message }));
       }
-      return send('POST', 'stock/movimientos', movimiento);
+      return send('POST', 'stock/movimientos', movimiento,
+        idempotencyKey === undefined ? {} : { 'Idempotency-Key': idempotencyKey });
     },
   };
 }

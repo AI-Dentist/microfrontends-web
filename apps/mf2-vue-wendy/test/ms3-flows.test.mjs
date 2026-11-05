@@ -184,6 +184,39 @@ test('query suffix is preserved on new endpoints', async (t) => {
   assert.deepEqual(urls, [`${BASE}/citas/c-1/cancelar?tenant=a%2Fb`, `${BASE}/stock/movimientos?tenant=a%2Fb`]);
 });
 
+test('manual movement optional key sends only the canonical header and preserves the exact request', async (t) => {
+  const movement = { insumo_id: 'fixture-i', tipo_movimiento: 'AJUSTE', cantidad: 2,
+    motivo: 'Conteo ficticio', direccion: 'DECREMENTO' };
+  const envelope = { success: true, data: { id: 'fixture-m', fecha: '2030-01-02 09:00:00', ...movement } };
+  const { service, calls } = hosted(t, () => reply(201, envelope));
+  assert.deepEqual(await service.registrarMovimiento(movement, { idempotencyKey: 'fixture-intent' }), envelope);
+  assert.deepEqual(calls, [{ url: `${BASE}/stock/movimientos`, method: 'POST', body: movement,
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'fixture-intent', Authorization: 'Bearer tok' } }]);
+  assert.equal(calls[0].headers['X-Idempotency-Key'], undefined, 'never send both aliases');
+});
+
+test('legacy one-argument manual movement keeps the exact body and headers without a key', async (t) => {
+  const movement = { insumo_id: 'fixture-i', tipo_movimiento: 'ENTRADA_COMPRA', cantidad: 2, motivo: 'Conteo ficticio' };
+  const envelope = { success: true, data: { id: 'fixture-legacy', ...movement } };
+  const { service, calls } = hosted(t, () => reply(201, envelope));
+  assert.deepEqual(await service.registrarMovimiento(movement), envelope);
+  assert.deepEqual(calls, [{ url: `${BASE}/stock/movimientos`, method: 'POST', body: movement,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' } }]);
+});
+
+test('standalone default movement stays anonymous and keyless for the legacy call', async (t) => {
+  const calls = [];
+  const movement = { insumo_id: 'fixture-i', tipo_movimiento: 'SALIDA_PROCEDIMIENTO', cantidad: 1, motivo: 'Uso ficticio' };
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls.push({ url, method: options.method, headers: options.headers, body: JSON.parse(options.body) });
+    return reply(201, { success: true, data: { id: 'fixture-standalone', ...movement } });
+  });
+  const result = await api.ms3Service.registrarMovimiento(movement);
+  assert.equal(result.data.id, 'fixture-standalone');
+  assert.deepEqual(calls, [{ url: 'http://localhost:8001/api/agendamiento/stock/movimientos', method: 'POST',
+    headers: { 'Content-Type': 'application/json' }, body: movement }]);
+});
+
 test('datetime-local values become the MS3 date-time format', () => {
   assert.equal(api.toBackendDateTime('2030-01-02T09:30'), '2030-01-02 09:30:00');
   assert.equal(api.toBackendDateTime('2030-01-02T09:30:15'), '2030-01-02 09:30:15');
