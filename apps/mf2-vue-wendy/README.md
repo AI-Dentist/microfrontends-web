@@ -135,10 +135,16 @@ frontend does not infer an actor from JWT claims.
 The public `registrarMovimiento(payload, { idempotencyKey })` accepts an optional
 caller-supplied key and never generates one. `undefined`, `null` and an empty string
 omit the header; other non-string values reject locally with `INVALID_IDEMPOTENCY_KEY`
-before HTTP. Its legacy one-argument call keeps
+before HTTP. Nonempty whitespace-only strings also reject locally with that code;
+valid keys are not trimmed or rewritten. Its legacy one-argument call keeps
 the exact keyless body/headers, including anonymous standalone defaults. The
 standalone form uses the same explicit-intent UI without inventing authentication.
 Appointment creation and completion retain their separate contracts above.
+During a stock POST, appointment and schedule controls are disabled; a handler
+guard also rejects programmatic submissions without HTTP. Completion, errors and
+revocation release the current stock lock. Revocation displays the capability
+error without publishing stale results or refreshing; a replaced/unmounted scope
+cannot release a newer scope's lock.
 
 ### Errors
 

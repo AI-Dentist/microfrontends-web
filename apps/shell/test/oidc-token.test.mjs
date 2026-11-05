@@ -147,3 +147,14 @@ for (const [label, now] of [
     await assert.rejects(verify(id(), access(), { now }), /OIDC token validation failed/);
   });
 }
+
+for (const [label, now] of [['BigInt', 1000n], ['array', [1000]], ['Number object', new Number(1000)]]) {
+  test(`follow-up: OIDC rejects ${label} clocks`, async () => {
+    await assert.rejects(verify(id(), access(), { now }), /OIDC token validation failed/);
+  });
+}
+test('follow-up: OIDC rejects an absent clock', async () => {
+  const tokens = { id_token: await sign(id()), access_token: await sign(access()), token_type: 'Bearer' };
+  await assert.rejects(verifyTokenSet(tokens, { oidc, jwks: { keys: [jwk] }, crypto,
+    nonce: 'expected-nonce' }), /OIDC token validation failed/);
+});

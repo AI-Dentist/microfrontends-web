@@ -148,6 +148,10 @@ export function createMs3Service({ apiBaseUrl, getAccessToken, hosted = false } 
         return Promise.reject(new Ms3ApiError({ status: 422, code: 'INVALID_IDEMPOTENCY_KEY',
           message: 'idempotencyKey must be a string' }));
       }
+      if (typeof idempotencyKey === 'string' && idempotencyKey !== '' && !idempotencyKey.trim()) {
+        return Promise.reject(new Ms3ApiError({ status: 422, code: 'INVALID_IDEMPOTENCY_KEY',
+          message: 'idempotencyKey must not be whitespace-only' }));
+      }
       return send('POST', 'stock/movimientos', movimiento,
         idempotencyKey == null || idempotencyKey === '' ? {} : { 'Idempotency-Key': idempotencyKey });
     },

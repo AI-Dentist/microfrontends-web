@@ -240,6 +240,28 @@ for (const [label, idempotencyKey] of [['zero', 0], ['number', 7], ['boolean', f
   });
 }
 
+for (const [label, idempotencyKey] of [
+  ['String object', new String('fixture-key')], ['BigInt', 1n], ['Symbol', Symbol('fixture-key')],
+]) {
+  test(`follow-up: stock rejects ${label} keys before HTTP`, async t => {
+    const { service, calls } = hosted(t);
+    await assert.rejects(service.registrarMovimiento({ insumo_id: 'fixture-i', tipo_movimiento: 'ENTRADA_COMPRA',
+      cantidad: 1, motivo: 'Conteo ficticio' }, { idempotencyKey }), { code: 'INVALID_IDEMPOTENCY_KEY', status: 422 });
+    assert.deepEqual(calls, []);
+  });
+}
+test('follow-up: stock rejects a whitespace-only key before HTTP', async t => {
+  const { service, calls } = hosted(t);
+  await assert.rejects(service.registrarMovimiento({ insumo_id: 'fixture-i', tipo_movimiento: 'ENTRADA_COMPRA',
+    cantidad: 1, motivo: 'Conteo ficticio' }, { idempotencyKey: ' ' }), error => {
+    assert.equal(error.code, 'INVALID_IDEMPOTENCY_KEY');
+    assert.equal(error.status, 422);
+    assert.match(error.message, /whitespace/);
+    return true;
+  });
+  assert.deepEqual(calls, []);
+});
+
 test('datetime-local values become the MS3 date-time format', () => {
   assert.equal(api.toBackendDateTime('2030-01-02T09:30'), '2030-01-02 09:30:00');
   assert.equal(api.toBackendDateTime('2030-01-02T09:30:15'), '2030-01-02 09:30:15');

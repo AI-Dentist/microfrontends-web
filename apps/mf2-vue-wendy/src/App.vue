@@ -67,7 +67,7 @@
         <h3 class="section-title">Disponibilidad de Odontólogos</h3>
         <div v-if="puedeEditarHorarios" class="card form-card">
           <h3>Crear horario (solo ADMIN)</h3>
-          <HorarioForm :hosted="hosted" :catalogos="catalogos" :catalog-error="catalogError" :busy="enviando"
+          <HorarioForm :hosted="hosted" :catalogos="catalogos" :catalog-error="catalogError" :busy="enviando || stockBusy"
             @crear="horario => ejecutar(s => s.crearHorario(horario), 'Horario creado.')" />
           <p v-if="mensajeExito" class="success-msg">{{ mensajeExito }}</p>
         </div>
@@ -270,6 +270,7 @@ async function buscarPacientes(termino) {
 // Runs one explicit user action against the current service, then re-reads the
 // server state. A failure keeps the form (and its idempotency intent) for a retry.
 async function ejecutar(accion, mensajePorDefecto) {
+  if (stockBusy.value) return false;
   const service = ms3Service.value;
   enviando.value = true;
   error.value = null;
@@ -337,10 +338,13 @@ async function registrarMovimiento(payload, submission) {
         : describeError(e);
     }
   } finally {
-    // Old scopes must not clear a new scope's busy state or mutate its form.
-    if (stockScopeLive(service)) {
+    // A revoked current scope must release its own lock without publishing
+    // stale data. A replaced/unmounted scope must never release a newer lock.
+    if (active && service === ms3Service.value) {
+      const live = stockScopeLive(service);
       stockBusy.value = false;
       submission.settle();
+      if (!live) error.value = describeError(new Ms3CapabilityError());
     }
   }
 }

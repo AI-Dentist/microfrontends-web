@@ -68,10 +68,12 @@ test.after(() => {
   }
 });
 
-async function mountStock(t, responses = [], { citas = [], erp = false } = {}) {
+async function mountStock(t, responses = [], { citas = [], erp = false, admin = false, allowOtherWrites = false } = {}) {
   const calls = [];
   const queue = [...responses];
-  let token = 'synthetic-token-a';
+  // Synthetic role hint only; this fixture does not prove JWT authentication.
+  let token = admin ? `synthetic.${Buffer.from(JSON.stringify({ realm_access: { roles: ['ADMIN'] } })).toString('base64url')}.synthetic`
+    : 'synthetic-token-a';
   let readFailure = false;
   const getAccessToken = () => token;
   t.mock.method(globalThis, 'fetch', async (url, options = {}) => {
@@ -83,6 +85,10 @@ async function mountStock(t, responses = [], { citas = [], erp = false } = {}) {
     calls.push(call);
     assert.ok(url.startsWith(BASE + '/') || url.startsWith(NEXT + '/'), 'only fictitious MS3 is called');
     if (options.method === 'POST') {
+      if (!url.endsWith('/stock/movimientos')) {
+        assert.ok(allowOtherWrites && [`${BASE}/citas`, `${BASE}/horarios`].includes(url), 'only explicit fixture commands');
+        return reply(201, { success: true, data: { id: 'fixture-other-action' } });
+      }
       assert.ok(url.endsWith('/stock/movimientos'), 'no implicit appointment or other write');
       const next = queue.shift();
       return next ? await next(call) : success();
@@ -323,6 +329,86 @@ test('unmount and remount cannot borrow an unresolved intent', async t => {
   assert.notEqual(key(second.posts()[0]), key(first.posts()[0]));
 });
 
+const fixtureCitas = [{ id: 'fixture-cita', estado: 'PROGRAMADA', fecha_hora: '2030-01-02 09:00:00',
+  paciente_id: 'fixture-paciente', odontologo_id: 'fixture-doctor', consultorio_id: 'fixture-room' }];
+
+async function inFlightStock(t, outcome = success) {
+  const pending = deferred();
+  const view = await mountStock(t, [async () => { await pending.promise; return outcome(); }],
+    { citas: fixtureCitas, erp: true, admin: true, allowOtherWrites: true });
+  t.after(() => pending.resolve());
+  await fill(view);
+  submit(view);
+  await settle();
+  assert.equal(view.posts().length, 1);
+  return { view, release: () => pending.resolve() };
+}
+function appointmentButtons(view) {
+  const actions = [...view.container.querySelectorAll('.acciones > button')];
+  assert.equal(actions.length, 4);
+  const create = view.container.querySelector('form button[type=submit]');
+  assert.ok(create);
+  return [...actions, create];
+}
+
+test('follow-up: revocation during stock releases appointment locks and shows capability error', async t => {
+  const { view, release } = await inFlightStock(t);
+  await view.update({ path: '/clinical/citas' });
+  for (const button of appointmentButtons(view)) assert.equal(button.disabled, true);
+  const before = view.calls.length;
+  view.setToken(null);
+  release();
+  await settle();
+  assert.match(view.container.querySelector('.error')?.textContent || '', /MS3 host capability unavailable/);
+  for (const button of appointmentButtons(view)) assert.equal(button.disabled, false);
+  assert.equal(view.calls.length, before, 'revoked completion never refreshes');
+  assert.doesNotMatch(view.container.textContent, /Movimiento registrado/);
+});
+for (const page of ['citas', 'horarios']) {
+  test(`follow-up: programmatic ${page} submit cannot race stock`, async t => {
+    const { view, release } = await inFlightStock(t);
+    await view.update({ path: `/clinical/${page}` });
+    const form = view.container.querySelector('form');
+    assert.ok(form);
+    form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    assert.equal(view.posts().length, 1, 'only the explicit stock POST is dispatched');
+    assert.equal(view.calls.filter(call => call.method !== 'GET').length, 1);
+    release();
+    await settle();
+  });
+}
+test('follow-up: schedule creation is disabled during stock and enabled after completion', async t => {
+  const { view, release } = await inFlightStock(t);
+  await view.update({ path: '/clinical/horarios' });
+  const button = view.container.querySelector('form button[type=submit]');
+  assert.ok(button);
+  assert.equal(button.disabled, true);
+  release();
+  await settle();
+  assert.equal(button.disabled, false);
+});
+for (const [label, outcome, message] of [
+  ['503', unavailable, /STOCK_WRITE_UNAVAILABLE/],
+  ['network', () => { throw new Error('fixture movement offline'); }, /fixture movement offline/],
+  ['409', () => reply(409, { code: 'IDEMPOTENCY_CONFLICT', error: 'Fixture conflict' }), /IDEMPOTENCY_CONFLICT/],
+  ['readback', success, /Movimiento registrado; no se pudo actualizar/],
+]) {
+  test(`follow-up: appointment and schedule locks release after ${label}`, async t => {
+    const { view, release } = await inFlightStock(t, outcome);
+    if (label === 'readback') view.failReadback();
+    await view.update({ path: '/clinical/citas' });
+    for (const button of appointmentButtons(view)) assert.equal(button.disabled, true);
+    release();
+    await settle();
+    for (const button of appointmentButtons(view)) assert.equal(button.disabled, false);
+    assert.match(view.container.querySelector('.error')?.textContent || '', message);
+    await view.update({ path: '/clinical/horarios' });
+    assert.equal(view.container.querySelector('form button[type=submit]').disabled, false);
+    assert.equal(view.posts().length, 1, 'no automatic retry after an outcome');
+  });
+}
+
 test('minor adjustments: appointment actions stay disabled throughout a stock POST', async t => {
   const pending = deferred();
   const view = await mountStock(t, [() => pending.promise], { erp: true, citas: [{
@@ -402,7 +488,10 @@ for (const replacement of ['unmount', 'backend', 'getter', 'logout']) {
     await settle();
     assert.equal(view.posts().length, 1);
     assert.equal(view.calls.length, callsBeforeRelease, 'stale success never refreshes');
-    assert.equal(view.container.textContent, visibleBeforeRelease, 'stale success/error is inert');
+    if (replacement === 'logout') {
+      assert.match(view.container.querySelector('.error')?.textContent || '', /MS3 host capability unavailable/);
+      assert.equal(view.container.querySelector('button[type=submit]').disabled, false);
+    } else assert.equal(view.container.textContent, visibleBeforeRelease, 'stale success/error is inert');
     assert.doesNotMatch(view.container.textContent, /Movimiento registrado/);
   });
 }
