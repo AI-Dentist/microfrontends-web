@@ -419,6 +419,7 @@ export class CompanySecurity implements OnInit {
     try {
       const result = await firstValueFrom(this.apollo.mutate({
         mutation: CREAR_USUARIO_CON_IDENTIDAD, variables: { input },
+        fetchPolicy: 'no-cache',
         context: { [IDEMPOTENCY_CONTEXT_KEY]: this.createAction.keyFor(input), [OWNER_CONTEXT_KEY]: owner },
       }));
       if (!current()) return;

@@ -186,6 +186,15 @@ describe('ADMIN atomic user provisioning (Nuevo usuario)', () => {
     expect(Object.keys(options.variables.input).filter((k) => k !== 'odontologoId').sort()).toEqual(['keycloakSubject', 'usuario']);
   });
 
+  it('keeps provisioning credentials out of Apollo cache with no-cache', async () => {
+    const s = await setup(['ADMIN'], ok);
+    await fill(s);
+    await click(s);
+    expect(s.mutate).toHaveBeenCalledOnce();
+    expect(opName(s, 0)).toBe('CrearUsuarioConIdentidad');
+    expect(s.mutate.mock.calls[0][0].fetchPolicy).toBe('no-cache');
+  });
+
   it('sends the chosen existing doctor as odontologoId', async () => {
     const s = await setup(['ADMIN'], ok);
     await fill(s, { odontologo: DOCTOR, rol: 'ODONTOLOGO' });
