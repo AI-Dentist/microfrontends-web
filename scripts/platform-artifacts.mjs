@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { realpath, writeFile } from 'node:fs/promises';
 import { validateConfig } from '../apps/shell/src/runtime-config.mjs';
+import { validatePublicInventory, runtimeAdapter } from './erp-public-inventory.mjs';
 
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export const artifacts = {
@@ -42,7 +43,7 @@ export async function serve(directory, { prefix = '/', spa = false, override = (
 }
 
 // Generates only public build output; it never fetches APIs or remote assets.
-export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, erpBaseUrl, config }) {
+export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, erpBaseUrl, config, inventory }) {
   const require = createRequire(resolve(root, 'apps/shell/package.json'));
   const ts = require('typescript');
   const buildRequire = createRequire(await realpath(require.resolve('@angular/build/package.json')));
@@ -69,6 +70,10 @@ export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, er
     { base: shellBase, dir: await realpath(resolve(shellDir)), imports: new Map() },
     { base: erpBase, dir: await realpath(resolve(erpDir)), imports: new Map() },
   ];
+  const inventoryState = inventory === undefined ? null : await validatePublicInventory(inventory, [
+    { root: 'shell', baseUrl: shellBase.href, directory: contexts[0].dir },
+    { root: 'erp', baseUrl: erpBase.href, directory: contexts[1].dir },
+  ]);
   const assets = new Map(), queue = [];
   function enqueue(reference, parent, context, bare = false) {
     if (typeof reference === 'string' && reference.startsWith('data:')) return;
@@ -85,13 +90,21 @@ export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, er
     if (!owner || url.username || url.password || url.search || url.hash || /(?:^|\/)(?:api|graphql|auth|token|private)(?:\/|$)/iu.test(url.pathname) || /(?:^|\/)platform-config\.json$/iu.test(url.pathname) || /\.map$/iu.test(url.pathname)) throw Error(`Forbidden public reference in ${parent}`);
     const relative = decodeURIComponent(url.pathname.slice(owner.base.pathname.length));
     if (!relative || relative.split('/').some(part => !part || part === '.' || part === '..')) throw Error(`Invalid asset path ${url.href}`);
+    if (inventoryState && !inventoryState.declared.has(url.href)) throw Error('Undeclared inventory target');
     if (!assets.has(url.href)) { assets.set(url.href, null); queue.push({ url, owner, relative }); }
   }
+  if (inventoryState) for (const url of inventoryState.declared.keys()) enqueue(url, url, contexts[0]);
   // Federation records are roots even when the host loads them dynamically.
   for (const context of contexts) {
-    const entryPath = await realpath(resolve(context.dir, 'remoteEntry.json'));
-    if (!entryPath.startsWith(context.dir + sep)) throw Error('Federation entry escapes build root');
-    const federation = JSON.parse(await readFile(entryPath, 'utf8'));
+    const entryUrl = new URL('remoteEntry.json', context.base).href;
+    let entryBytes = inventoryState?.verifiedBytes.get(entryUrl);
+    if (inventoryState && !entryBytes) throw Error('Undeclared inventory target');
+    if (!inventoryState) {
+      const entryPath = await realpath(resolve(context.dir, 'remoteEntry.json'));
+      if (!entryPath.startsWith(context.dir + sep)) throw Error('Federation entry escapes build root');
+      entryBytes = await readFile(entryPath);
+    }
+    const federation = JSON.parse(entryBytes.toString('utf8'));
     if (federation.$version !== 'v4' || !Array.isArray(federation.shared) || !Array.isArray(federation.exposes)) throw Error('Unsupported federation metadata');
     enqueue('remoteEntry.json', context.base.href, context);
     for (const shared of federation.shared) {
@@ -115,9 +128,14 @@ export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, er
   }
   while (queue.length) {
     const { url, owner, relative } = queue.shift();
-    const file = await realpath(resolve(owner.dir, relative));
-    if (!file.startsWith(owner.dir + sep) || !(await stat(file)).isFile()) throw Error(`Asset escapes build root: ${url.href}`);
-    const bytes = await readFile(file), text = bytes.toString('utf8');
+    let bytes = inventoryState?.verifiedBytes.get(url.href);
+    if (inventoryState && !bytes) throw Error('Undeclared inventory target');
+    if (!inventoryState) {
+      const file = await realpath(resolve(owner.dir, relative));
+      if (!file.startsWith(owner.dir + sep) || !(await stat(file)).isFile()) throw Error(`Asset escapes build root: ${url.href}`);
+      bytes = await readFile(file);
+    }
+    const text = bytes.toString('utf8');
     const extension = extname(relative).toLowerCase();
     const kind = extension.slice(1) || 'asset';
     assets.set(url.href, { url: url.href, sha256: hash(bytes), kind });
@@ -125,13 +143,57 @@ export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, er
     function javascript(code) {
       const source = ts.createSourceFile(relative, code, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
       if (source.parseDiagnostics.length) throw Error(`Invalid JavaScript: ${url.href}`);
+      function admittedComputed(call) {
+        if (!inventoryState || extension === '.html') return false;
+        const key = `${url.href}\n${hash(call.getText(source))}`;
+        if (!inventoryState.sites.has(key)) {
+          if ([...inventoryState.sites.keys()].some(site => site.startsWith(`${url.href}\n`))) throw Error('Inventory loader expression mismatch');
+          return false;
+        }
+        // A publisher-declared native options-provider factory default. This
+        // identifies its fallback site, not an active runtime guard.
+        const arrow = call.parent;
+        const property = arrow?.parent;
+        const object = property?.parent;
+        const arg = call.arguments[0];
+        const factoryReturn = object?.parent;
+        const factory = ts.isParenthesizedExpression(factoryReturn) ? factoryReturn.parent : factoryReturn;
+        const fields = ts.isObjectLiteralExpression(object) ? new Set(object.properties.filter(ts.isPropertyAssignment).map(p => p.name.getText(source))) : new Set();
+        const nativeFactory = ts.isArrowFunction(arrow) && arrow.body === call && arrow.parameters.length === 1 && ts.isIdentifier(arrow.parameters[0].name)
+          && ts.isPropertyAssignment(property) && property.name.getText(source) === 'loadModuleFn'
+          && fields.has('setImportMapFn') && fields.has('reloadBrowserFn')
+          && (ts.isArrowFunction(factory) || ts.isReturnStatement(factory))
+          && ts.isCallExpression(arg) && ts.isPropertyAccessExpression(arg.expression) && arg.expression.name.text === 'createScriptURL'
+          && arg.arguments.length === 1 && ts.isIdentifier(arg.arguments[0]) && arg.arguments[0].text === arrow.parameters[0].name.text;
+        if (nativeFactory) { inventoryState.sites.delete(key); return true; }
+        // Supported synthetic contract: a fallback arrow assigned to a local,
+        // selected through options.loadModuleFn ?? fallback in the same factory.
+        // This is a candidate declaration, not proof of active runtime binding.
+        const variable = arrow?.parent;
+        if (!ts.isArrowFunction(arrow) || arrow.body !== call || !ts.isVariableDeclaration(variable) || !ts.isIdentifier(variable.name)) return false;
+        let fn = variable.parent;
+        while (fn && !ts.isFunctionLike(fn)) fn = fn.parent;
+        if (!fn || !fn.body) return false;
+        const optionNames = new Set(fn.parameters.filter(p => ts.isIdentifier(p.name)).map(p => p.name.text));
+        let selected = false;
+        function scan(node) {
+          if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken && ts.isPropertyAccessExpression(node.left) && ts.isIdentifier(node.left.expression) && optionNames.has(node.left.expression.text) && node.left.name.text === 'loadModuleFn' && ts.isIdentifier(node.right) && node.right.text === variable.name.text && ts.isPropertyAssignment(node.parent) && node.parent.name.getText(source) === 'loadModuleFn' && ts.isReturnStatement(node.parent.parent.parent)) selected = true;
+          ts.forEachChild(node, scan);
+        }
+        scan(fn.body);
+        if (!selected) return false;
+        inventoryState.sites.delete(key);
+        return true;
+      }
       function moduleRef(node) {
         if (!node || !ts.isStringLiteralLike(node)) throw Error(`Unresolved computed import in ${url.href}`);
         enqueue(node.text, url.href, owner, true);
       }
       function visit(node) {
         if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier) moduleRef(node.moduleSpecifier);
-        if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) moduleRef(node.arguments[0]);
+        if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && (!node.arguments[0] || !ts.isStringLiteralLike(node.arguments[0]))) {
+          if (!admittedComputed(node)) throw Error(`Unresolved computed import in ${url.href}`);
+        } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) moduleRef(node.arguments[0]);
         if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'URL' && node.arguments?.[1]?.getText(source) === 'import.meta.url') {
           if (!ts.isStringLiteralLike(node.arguments[0])) throw Error(`Unresolved computed asset URL in ${url.href}`);
           add(node.arguments[0].text);
@@ -196,8 +258,10 @@ export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, er
     }
   }
   const sorted = [...assets.values()].sort((a, b) => a.url < b.url ? -1 : a.url > b.url ? 1 : 0);
-  const payload = { schemaVersion: 1, publicBootConfig, assets: sorted };
-  return { schemaVersion: 1, version: hash(JSON.stringify(payload)), publicBootConfig, assets: sorted };
+  if (inventoryState?.sites.size) throw Error('Unconsumed inventory loader site');
+  const runtimePolicy = inventoryState ? { adapter: runtimeAdapter, targets: sorted.filter(asset => /\.(?:m?js)$/u.test(new URL(asset.url).pathname)).map(asset => asset.url) } : undefined;
+  const payload = { schemaVersion: 1, publicBootConfig, assets: sorted, ...(runtimePolicy ? { runtimePolicy } : {}) };
+  return { schemaVersion: 1, version: hash(JSON.stringify(payload)), publicBootConfig, assets: sorted, ...(runtimePolicy ? { runtimePolicy } : {}) };
 }
 
 export async function startPlatform() {
@@ -225,20 +289,22 @@ export async function startPlatform() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href && process.argv.length > 2) {
-  const usage = 'Usage: node scripts/platform-artifacts.mjs --shell-dir DIR --erp-dir DIR --shell-base-url URL --erp-base-url URL --config FILE --output FILE';
+  const usage = 'Usage: node scripts/platform-artifacts.mjs --shell-dir DIR --erp-dir DIR --shell-base-url URL --erp-base-url URL --config FILE --output FILE [--inventory FILE]';
   try {
     const args = process.argv.slice(2);
     if (args.length === 1 && args[0] === '--help') console.log(usage);
     else {
       const names = ['--shell-dir', '--erp-dir', '--shell-base-url', '--erp-base-url', '--config', '--output'];
-      if (args.length !== names.length * 2) throw Error('Expected explicit public release inputs');
+      if (args.length !== names.length * 2 && args.length !== (names.length + 1) * 2) throw Error('Expected explicit public release inputs');
       const values = {};
       for (let i = 0; i < args.length; i += 2) {
-        if (!names.includes(args[i]) || values[args[i]] || !args[i + 1] || args[i + 1].startsWith('--')) throw Error('Invalid public release arguments');
+        if (![...names, '--inventory'].includes(args[i]) || values[args[i]] || !args[i + 1] || args[i + 1].startsWith('--')) throw Error('Invalid public release arguments');
         values[args[i]] = args[i + 1];
       }
+      if (names.some(name => !values[name])) throw Error('Expected explicit public release inputs');
       const config = JSON.parse(await readFile(values['--config'], 'utf8'));
-      const result = await generatePublicRelease({ shellDir: values['--shell-dir'], erpDir: values['--erp-dir'], shellBaseUrl: values['--shell-base-url'], erpBaseUrl: values['--erp-base-url'], config });
+      const inventory = values['--inventory'] ? JSON.parse(await readFile(values['--inventory'], 'utf8')) : undefined;
+      const result = await generatePublicRelease({ shellDir: values['--shell-dir'], erpDir: values['--erp-dir'], shellBaseUrl: values['--shell-base-url'], erpBaseUrl: values['--erp-base-url'], config, inventory });
       await writeFile(values['--output'], `${JSON.stringify(result, null, 2)}\n`, { flag: 'wx' });
     }
   } catch (error) {
