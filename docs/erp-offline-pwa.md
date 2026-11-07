@@ -219,3 +219,8 @@ From the completed backend reviews; nothing here is delivered by T3.
 
 T4 forms/cache/sync remain not started; backend independent proof is still
 unapproved.
+
+Service-worker contract in one sentence: query-bearing requests (including the
+`?update=1` release probe) are always network-only and never read cache, and a
+failed manifest fetch preserves the last complete generation instead of deleting
+it.
