@@ -59,6 +59,8 @@ const reviewed = {
     'd646d60d6808c32a0a9b01d078f2f5b412e9a969f275b4563e7f7a43b7bde298',
     '60c21b872da393f9e6c0087a5aaef2f12b5a273c6f3caa70e96c907ad13db1b4'] },
   e1f90709d486cdb65a502f532ab2a944cf8a723465c67ef55786ebeadac6e778: {root:'shell',adapter:'configured-module-remotes-v1',expressions:['ec0649c24ca93a4e8c82784d28ecfd1fd58e765ed3e5295c2f85bb1b9b5b5bbf']},
+  // T3 offline entry: same audited module-page loader body, new emitted chunk.
+  eb6ba47c379b2a7f95051924674a09441bcb1a133498760673f25b7df39eda07: {root:'shell',adapter:'configured-module-remotes-v1',expressions:['ec0649c24ca93a4e8c82784d28ecfd1fd58e765ed3e5295c2f85bb1b9b5b5bbf']},
   f529a1be17c97404a932dd90ec27e6e46900904116ae8106bfab9d890cf00fb7: {root:'erp',adapter:'owned-ort-wasm-paths-v1',expressions:['4bbdec37cc76f91eda7a44be508fc2222145d558a547e0ed7a6ac55ee671736c']},
 };
 export function reviewedLoaderContract(site) {

@@ -166,6 +166,29 @@ export function bootstrap(config: PlatformConfigV1) {
       })()).finally(() => status.loading.set(false));
     } }] },
     ...['operations', 'clinical'].map(id => ({ path: id, component: AuthenticatedWorkspace, canMatch: [authenticated], canActivateChild: [authenticated], children: [{ path: '**', component: ModulePage, data: { remoteId: id } }] })),
+    // Offline-only workspace: public route, no hosted capability, no revived lease.
+    // Local ciphertext can be unlocked with its PIN; everything else still needs sign-in.
+    { path: 'offline/erp', loadChildren: () => {
+      const status = inject(NavigationStatus); status.loading.set(true); status.failedUrl.set(null);
+      return bounded((async () => {
+        const module = await loadRemoteModule({ remoteEntry: erp.entry, exposedModule: './OfflineRoutes' });
+        await erpStyles();
+        if (typeof module.createOfflineRoutes !== 'function') throw Error('Invalid offline routes');
+        const issuer = config.oidc?.issuer ?? null;
+        const children = module.createOfflineRoutes({
+          endpoint: erp.apiBaseUrl,
+          // Activation only uses a live session; the signed grant never becomes API auth.
+          getOnlineContext: () => {
+            const snapshot = authSession.snapshot();
+            const token = authSession.getAccessToken();
+            if (!issuer || snapshot.status !== 'authenticated' || !snapshot.subject || !token) return null;
+            return { token, identityIssuer: issuer, identitySubject: snapshot.subject, epoch: authSession.snapshot().subject };
+          },
+        });
+        if (!Array.isArray(children)) throw Error('Invalid offline routes');
+        return [...children, { path: '**', component: Missing }];
+      })()).finally(() => status.loading.set(false));
+    } },
     { path: '**', component: Missing },
   ];
   return bootstrapApplication(Shell, { providers: [

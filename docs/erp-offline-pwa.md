@@ -163,10 +163,35 @@ synthetic controls: PBKDF2-SHA256 (600k) wrapping a random 256-bit DEK, unique
 AES-GCM IVs and AAD binding schema/workspace scope. Wrong PIN, tampered or relocated
 ciphertext, different online actor, expiry/clock-rollback and storage faults all fail
 closed without writes; logout/principal change clears keys while retaining already
-encrypted pending bytes. The IndexedDB adapter, Angular offline entry and real-browser
-proof remain in progress. Offline unlock cannot prove the actor without a live online
+encrypted pending bytes.  Offline unlock cannot prove the actor without a live online
 identity, and XSS, hostile devices, clock tampering and offline PIN brute force stay
 client risks that this vault does not eliminate. No
 existing hosted/standalone providers or legacy stores are changed by this library.
 Backend final sync verification remains unapproved; no private-sync production
 approval follows from the public PWA or these synthetic grant controls.
+
+## T3 offline-only entry (integration landing)
+
+ERP now exposes `./OfflineRoutes` next to `./Routes`; the shell mounts it at the
+public `/offline/erp` route without a hosted capability, auth guard revival or
+business API. Activation only borrows a live authenticated session to request the
+signed activation document; with no session the page can only unlock a workspace
+that already exists on this device.
+
+Storage uses a new IndexedDB database (`erp-offline-vault-v1`) with a `vaults`
+store of opaque ciphertext and a `meta` store holding only a non-secret device
+locator (workspace/device UUID and scope digest). Local retirement clears the
+locator but keeps ciphertext for the original owner. Legacy Dexie stores and
+standalone behavior are untouched.
+
+Because the shell's compiled bootstrap chunk changed, the publisher's audited
+runtime profile needed a second recorded implementation. Generation first failed
+closed on the new emitted chunk; the identical reviewed module-page loader body
+was then admitted under its new module digest while the previous profile stays
+recorded and unknown/tampered modules, expressions or roots still return no
+contract. This is a pinned source/dataflow record, not inventory-supplied authority.
+
+Still pending: real-browser unlock/reload/lock proof with synthetic state, an
+applicable full current suite/build record for these sources, and the independent
+T3 risk verification. Offline unlock without a live online identity cannot
+cryptographically re-verify the actor.

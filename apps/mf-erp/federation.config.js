@@ -15,6 +15,8 @@ export default withNativeFederation({
 
   exposes: {
     './Routes': './src/app/erp.routes.ts',
+    // Offline-only private workspace entry; no hosted providers or API capability.
+    './OfflineRoutes': './src/app/offline-entry.routes.ts',
   },
 
   shared: {

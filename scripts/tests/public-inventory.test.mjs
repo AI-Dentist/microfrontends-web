@@ -294,3 +294,18 @@ test('inventory rejects a declared symlink escaping its root', async t => {
   o.inventory.roots[1].files.push({ path: 'escape.js', sha256: hash(files.shell['extra.js']), mime: 'text/javascript' });
   sign(o.inventory); await rejectsUnchanged(o);
 });
+
+test('reviewed runtime profiles admit only their audited emitted implementations', async () => {
+  const {reviewedLoaderContract} = await import('../erp-public-inventory.mjs');
+  const oldBuild = {root:'shell', moduleSha256:'e1f90709d486cdb65a502f532ab2a944cf8a723465c67ef55786ebeadac6e778', expressionSha256:'ec0649c24ca93a4e8c82784d28ecfd1fd58e765ed3e5295c2f85bb1b9b5b5bbf'};
+  const t3Build = {...oldBuild, moduleSha256:'eb6ba47c379b2a7f95051924674a09441bcb1a133498760673f25b7df39eda07'};
+  assert.equal(reviewedLoaderContract(oldBuild), 'configured-module-remotes-v1');
+  assert.equal(reviewedLoaderContract(t3Build), 'configured-module-remotes-v1');
+  // The generator separately rejects a declaration that names a different adapter
+  // than the audited profile; this helper only identifies the audited implementation.
+  for (const altered of [
+    {...t3Build, moduleSha256:'0'.repeat(64)},
+    {...t3Build, expressionSha256:'1'.repeat(64)},
+    {...t3Build, root:'erp'},
+  ]) assert.equal(reviewedLoaderContract(altered), null);
+});
