@@ -1,101 +1,129 @@
-# ERP public release manifest (in progress)
+# Hosted ERP public offline boot
 
-This generator does not install a service worker, make the application offline-ready,
-cache responses, or authorize offline operations. Do not deploy it as an offline
-release until the real build graph and the later service-worker verification pass.
+T2 caches **public build resources only**. It does not authenticate a user, grant
+offline permissions, cache API responses, or enable financial operations offline.
+The future PIN/vault/workspace and synchronization remain separate work.
 
-After producing shell and ERP browser builds and preparing a validated **public**
-platform configuration, the additive command is:
+## Build and publish
+
+1. Build shell and ERP from the intended source. Preserve their federation v4
+   metadata, shared modules, chunks, styles and referenced public resources.
+2. For this ERP's owned ONNX worker, call `publishOwnedOrtRuntime(erpBrowserDir)`
+   from `scripts/erp-public-inventory.mjs` after the ERP build. This copies the
+   matching **already installed** SDK's two MJS/two WASM files and root asyncify
+   fallback. It checks output ownership and compiled SDK version; it installs
+   nothing and does not activate AI or download a model.
+3. Supply a validated public platform configuration and an explicit same-build
+   publisher inventory. Never include credentials, identities or private data.
+4. Generate a new release file, then publish its exact assets and manifest together.
 
 ```text
-node scripts/platform-artifacts.mjs --shell-dir <shell-browser-dir> --erp-dir <erp-browser-dir> --shell-base-url <shell-url/> --erp-base-url <erp-url/> --config <public-config.json> --output <new-erp-public-release.json>
+node scripts/platform-artifacts.mjs --shell-dir <shell-browser-dir> --erp-dir <erp-browser-dir> --shell-base-url <shell-url/> --erp-base-url <erp-url/> --config <public-config.json> --output <new-erp-public-release.json> [--inventory <inventory.json>]
 ```
 
-All arguments are required. The output must not already exist. Deploy the generated
-file as `/erp-public-release.json` on the shell origin alongside the exact build
-assets it describes. Base URLs are explicit HTTPS URLs, or HTTP loopback URLs for
-development. ERP cross-origin asset responses must permit the shell origin via
-CORS; do not use opaque responses. A release must be generated again when public
-configuration or any asset changes. To generate a conditional candidate with an
-explicit publisher declaration, add `--inventory <inventory.json>`. Invalid
-inventories fail before the output file is created.
+All six main inputs are required; output must not already exist. Deploy that file
+as `/erp-public-release.json` on the shell origin. Angular copies the worker,
+webmanifest and icons from `apps/shell/public/`. Include `erp-sw.js` explicitly in
+the publisher inventory. Keep old immutable assets available during rollout.
 
-The JSON contract is `{schemaVersion: 1, version, publicBootConfig, assets}`.
-`version` is lowercase SHA-256 of UTF-8 JSON for the object containing, in order,
-`schemaVersion`, `publicBootConfig`, and URL-sorted `assets`. Each asset is
-`{url, sha256, kind}`, with an absolute URL, lowercase SHA-256 of its bytes, and
-lowercase filename extension (without the dot) as kind. The snapshot is produced
-by the existing strict runtime validator; unknown fields and URL queries are
-rejected. It retains the three remote configurations for normal validation, but
-only shell and ERP resources belong to the asset graph. Do not put credentials or
-private data in build assets or configuration.
+Use HTTPS in production or HTTP loopback for development. ERP asset responses
+must allow the shell origin through CORS and have the correct MIME type. Opaque,
+redirected, failed, missing or digest-mismatched responses cannot publish a cache.
+The webmanifest starts at `/erp`; no private ERP operation becomes available just
+because the public shell can open there.
 
-Federation v4 shared entries and exposed files are roots. HTML references, JS
-literal imports and import-meta asset URLs, CSS imports/URLs, and webmanifest icons
-are traversed; unresolved computed imports and unsafe or missing references fail.
-This is not yet proof of completeness for every emitter or HTML/CSS syntax.
-Legacy PrimeIcons `.eot?#iefix` and `.svg?#primeicons` references are normalized
-only to their HTTP asset URLs; their empty query and client-side selector are not
-sent to the server. Nonempty queries and JS fragments remain rejected. CSS
-references are analyzed with the cached Angular build's Lightning CSS parser;
-discovered references must pass the same public asset checks. The real cached graph still fails on a
-computed import in shell `chunk-KM4DOMOI.js`, the native federation runtime loader.
-Neither a same-named helper nor its hash proves that all possible target URLs are
-covered. Do not bypass this rejection or deploy a release as offline-ready.
+## Inventory and diagnostic API
 
-## Publisher inventory candidate API
+`inspectPublicReleaseDraft(options)` emits
+`{kind:'publisher-draft', assets, computedSites, issues}` without a version or
+readiness. The CLI equivalent takes the five build/config inputs, no output:
 
-`createPublicInventory({attestation: 'publisher-public-complete-v1', roots,
-loaderSites})` from `scripts/erp-public-inventory.mjs` accepts explicit shell and
-ERP root records `{root, baseUrl, directory, files}`. `files` is the exact list
-of public relative paths from the same controlled build, supplied by the publisher
-from compiler metadata or a reviewed artifact set. It is not inferred by scanning
-extensions. The returned declaration hashes every file and binds both roots and
-loader sites into `buildId`. It is an ownership declaration, not a security proof
-against a malicious publisher. Do not include private configuration or data.
+```text
+node scripts/platform-artifacts.mjs --inspect-draft --shell-dir <dir> --erp-dir <dir> --shell-base-url <url/> --erp-base-url <url/> --config <public-config.json>
+```
 
-Pass the declaration as `inventory` to `generatePublicRelease`. The output is a
-candidate: `runtimePolicy` names the required adapter and sorted public JS target
-URLs. Its version also binds that policy. It has no `runtimeReady` field; completing
-resource caching is separate from proving the active client guard. Without an
-inventory, strict literal-only behavior is unchanged. The current candidate only
-recognizes the test fixture's options-selected fallback and native options-provider
-factory shape. Digests and syntax do not establish active runtime coverage. All
-sites must be consumed and all graph edges must belong to the declaration. The
-generator parses the same verified bytes it hashed; this is not a claim of an
-atomic filesystem snapshot or security against a malicious publisher.
+This is a static graph diagnostic, **not** an attestation or an extension scan.
+Resolve every issue and classify every actual computed site. Explicitly add any
+owned resources that static traversal cannot discover.
 
-Other computed imports in the cached build remain unsupported, including module
-remotes and shim implementation sites. No complete actual-build candidate, SW or
-bootstrap integration, production build, real-browser offline proof, or independent
-security/delivery approval is provided.
+`createPublicInventory({attestation:'publisher-public-complete-v1', roots,
+loaderSites})` takes exactly two roots `{root,baseUrl,directory,files}` for shell
+and ERP. The publisher supplies exact public relative paths from the same build.
+Each loader site names its root/path, module and expression SHA-256, and supported
+adapter. The returned inventory binds verified file content and sites to `buildId`.
+Pass it as `inventory` to `generatePublicRelease(options)` or through `--inventory`.
+Verified bytes are reused for parsing and hashing. This is not an atomic filesystem
+snapshot or a security claim against a malicious publisher.
 
-## Active client boundary (runtime unit)
+Without an inventory, strict literal-only generation still rejects computed imports.
+Literal JS/import-meta URLs, federation roots, HTML, CSS imports/URLs and manifest
+icons must resolve within the declared public roots. Only the standard empty-query
+PrimeIcons EOT/SVG selectors are normalized; nonempty queries remain forbidden.
+Raw platform configuration, arbitrary JSON, API paths and private metadata fields
+are excluded. Public compiled `graphql.*.js` and `primeng_config.*.js` are code,
+not GraphQL responses or private configuration files.
 
-The shell now optionally registers a version-pinned worker and validates its
-MessageChannel status against the current controller, script URL and public
-configuration. No manifest means the previous normal online startup remains.
-The official native federation callback delegates the original importShim only
-for exact verified targets. The official shim fetch hook is installed before
-initialization with shim mode and native passthrough disabled. Other configured
-module roots remain online-only, never native ERP targets or cached business data.
-Controller changes and delegated import failures latch readiness false.
+## Bounded runtime contracts
 
-`window.erpPublicRuntime` is a volatile public-resource `{ready,version}`
-diagnostic, not an authentication grant. The atomic worker, publisher's additional
-reviewed runtime contracts, and final acceptance documentation land in the next
-scoped units; this intermediate commit alone does not deliver offline boot.
+The conditional candidate carries `runtimePolicy` with adapter
+`native-federation-load-module-v1`, sorted exact JS target URLs, and the required
+`contracts` when additional implementations are involved:
 
-## Atomic public worker (worker unit)
+- **Native federation:** the official `initFederation` options hook guards the
+  active loader and delegates the original `importShim`, not raw `import()`.
+- **`es-module-shims-fetch-v1`:** the reviewed 2.8.4 emitted implementation has
+  seven recorded computed sites. Its official fetch hook checks targets before
+  transport; `shimMode:true` and `nativePassthrough:false` prevent bypass.
+- **`configured-module-remotes-v1`:** the reviewed module-page lookup uses validated
+  platform configuration. Other configured modules retain their online-only public
+  JS/CSS roots, without entering the ERP cache or widening the native loader set.
+- **`owned-ort-wasm-paths-v1`:** the reviewed owned worker initializer fixes the
+  two `onnx/` variants, one thread and no proxy. Its message API cannot supply
+  module paths. All five owned resources are declared; raw SDK MJS bytes must
+  match the cached SDK before browser-unreachable Node imports are classified.
 
-`erp-sw.js?release=<version>` stages only successful public responses with matching
-MIME/CORS and SHA-256. The completion marker is last; failed candidates cannot
-delete an earlier complete generation. Same-version reuse checks fresh metadata
-and published worker bytes before replacing the implementation. Status audits
-exact cache membership. No skipWaiting/clients.claim: close existing controlled
-clients before a complete waiting update activates.
+Reviewed module/expression fingerprints identify these particular implementations;
+**they are not exemptions or readiness by themselves**. Unknown implementations,
+wrong roles/contracts, unconsumed declarations and missing targets fail generation.
+A changed emitted implementation requires a new source/dataflow audit, not a
+publisher-authored hash whitelist. `ownedOrtPublicAssetPaths()` is just the explicit
+resource list, not proof that an arbitrary worker is confined.
 
-API/auth/authorization/query/non-GET requests remain network-only. The public
-config snapshot is available only on network failure, never HTTP/validation failure.
-The manifest and public icons support installation; none authorize offline ERP
-operations. Actual-build publisher integration and final evidence are the next unit.
+The schema is `{schemaVersion:1,version,publicBootConfig,assets,runtimePolicy?}`.
+Assets are URL-sorted `{url,sha256,kind}` records. `version` hashes UTF-8 JSON with
+fields in order: `schemaVersion`, `publicBootConfig`, `assets`, then `runtimePolicy`
+when present. There is deliberately no `runtimeReady` declaration.
+
+## Worker lifecycle and client boundary
+
+The shell probes `/erp-public-release.json?update=1` without caching it and registers
+`/erp-sw.js?release=<version>` at scope `/`. No `skipWaiting` or `clients.claim`:
+close existing controlled clients before a complete waiting update activates.
+
+The worker validates metadata and its published source, verifies each response,
+and writes the completion marker **last**. A failed new generation deletes only
+its incomplete candidate. Same-version maintenance checks fresh metadata/source
+before reuse and never destroys a prior complete generation on failure. Cached
+resource responses remain digest-checked; status audits exact cache membership.
+
+API/auth/GraphQL endpoints, authorization-bearing requests, non-GET requests and
+queries remain network-only. Public platform configuration is network-first;
+only a network exception permits its validated public snapshot. HTTP or validation
+errors are not masked as offline success. Navigations can use the pinned public
+shell, never an authenticated snapshot.
+
+`ERP_PUBLIC_STATUS` through a MessageChannel reports resource version/completion,
+asset records, public configuration and policy. Client validation additionally binds
+the exact current controller and script URL. `window.erpPublicRuntime` is a volatile
+`{ready,version}` diagnostic after supported active guards are installed. Controller
+changes and delegated import failures invalidate readiness. It is **not** an API
+credential, permission, identity, activation record or future vault authorization.
+Existing hosted expiry/retirement, standalone behavior and legacy databases remain
+unchanged. Public CacheStorage is not a place for PINs, tokens or business records.
+
+## Acceptance status
+
+Current-source builds, final293 Node checks and actual-browser8 checks passed;
+independent risks2/5 inspection found no severe candidate-caused findings.
+The next scoped acceptance unit preserves the runnable browser harness, exact
+evidence and excluded/unavailable checks. No production deployment is claimed.

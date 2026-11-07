@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { realpath, writeFile } from 'node:fs/promises';
 import { validateConfig } from '../apps/shell/src/runtime-config.mjs';
-import { validatePublicInventory, runtimeAdapter } from './erp-public-inventory.mjs';
+import { validatePublicInventory, runtimeAdapter, reviewedLoaderContract, ownedOrtPublicAssetPaths } from './erp-public-inventory.mjs';
 
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export const artifacts = {
@@ -43,7 +43,12 @@ export async function serve(directory, { prefix = '/', spa = false, override = (
 }
 
 // Generates only public build output; it never fetches APIs or remote assets.
-export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, erpBaseUrl, config, inventory }) {
+export async function generatePublicRelease(options) { return collectPublicGraph(options, false); }
+
+// Diagnostic only: it is neither an inventory nor an offline-ready release.
+export async function inspectPublicReleaseDraft(options) { return collectPublicGraph({ ...options, inventory: undefined }, true); }
+
+async function collectPublicGraph({ shellDir, erpDir, shellBaseUrl, erpBaseUrl, config, inventory }, draft) {
   const require = createRequire(resolve(root, 'apps/shell/package.json'));
   const ts = require('typescript');
   const buildRequire = createRequire(await realpath(require.resolve('@angular/build/package.json')));
@@ -74,7 +79,11 @@ export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, er
     { root: 'shell', baseUrl: shellBase.href, directory: contexts[0].dir },
     { root: 'erp', baseUrl: erpBase.href, directory: contexts[1].dir },
   ]);
-  const assets = new Map(), queue = [];
+  const assets = new Map(), queue = [], computedSites = [], issues = [];
+  const bindingContracts = new Set(inventory?.loaderSites.map(site => site.adapter) ?? []);
+  if (bindingContracts.has('owned-ort-wasm-paths-v1')) {
+    for (const path of ownedOrtPublicAssetPaths()) if (!inventoryState.declared.has(new URL(path, erpBase).href)) throw Error('Missing owned worker runtime target');
+  }
   function enqueue(reference, parent, context, bare = false) {
     if (typeof reference === 'string' && reference.startsWith('data:')) return;
     if (typeof reference !== 'string' || !reference || /[\\\\%?#\s]/u.test(reference)) throw Error(`Invalid public reference in ${parent}`);
@@ -131,11 +140,16 @@ export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, er
     let bytes = inventoryState?.verifiedBytes.get(url.href);
     if (inventoryState && !bytes) throw Error('Undeclared inventory target');
     if (!inventoryState) {
-      const file = await realpath(resolve(owner.dir, relative));
+      let file;
+      try { file = await realpath(resolve(owner.dir, relative)); }
+      catch (error) {
+        if (draft && error.code === 'ENOENT') { issues.push({ url: url.href, code: 'missing-asset' }); assets.delete(url.href); continue; }
+        throw error;
+      }
       if (!file.startsWith(owner.dir + sep) || !(await stat(file)).isFile()) throw Error(`Asset escapes build root: ${url.href}`);
       bytes = await readFile(file);
     }
-    const text = bytes.toString('utf8');
+    const text = /\.(?:m?js|html|css|json|webmanifest)$/iu.test(relative) ? bytes.toString('utf8') : '';
     const extension = extname(relative).toLowerCase();
     const kind = extension.slice(1) || 'asset';
     assets.set(url.href, { url: url.href, sha256: hash(bytes), kind });
@@ -143,6 +157,18 @@ export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, er
     function javascript(code) {
       const source = ts.createSourceFile(relative, code, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
       if (source.parseDiagnostics.length) throw Error(`Invalid JavaScript: ${url.href}`);
+      function nativeFactoryShape(call) {
+        const arrow = call.parent, property = arrow?.parent, object = property?.parent, arg = call.arguments[0];
+        if (!arrow || !property || !object || !arg || !ts.isArrowFunction(arrow) || !ts.isPropertyAssignment(property) || !ts.isObjectLiteralExpression(object)) return false;
+        const factoryReturn = object.parent;
+        const factory = ts.isParenthesizedExpression(factoryReturn) ? factoryReturn.parent : factoryReturn;
+        const fields = new Set(object.properties.filter(ts.isPropertyAssignment).map(p => p.name.getText(source)));
+        return arrow.body === call && arrow.parameters.length === 1 && ts.isIdentifier(arrow.parameters[0].name)
+          && property.name.getText(source) === 'loadModuleFn' && fields.has('setImportMapFn') && fields.has('reloadBrowserFn')
+          && (ts.isArrowFunction(factory) || ts.isReturnStatement(factory))
+          && ts.isCallExpression(arg) && ts.isPropertyAccessExpression(arg.expression) && arg.expression.name.text === 'createScriptURL'
+          && arg.arguments.length === 1 && ts.isIdentifier(arg.arguments[0]) && arg.arguments[0].text === arrow.parameters[0].name.text;
+      }
       function admittedComputed(call) {
         if (!inventoryState || extension === '.html') return false;
         const key = `${url.href}\n${hash(call.getText(source))}`;
@@ -150,22 +176,18 @@ export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, er
           if ([...inventoryState.sites.keys()].some(site => site.startsWith(`${url.href}\n`))) throw Error('Inventory loader expression mismatch');
           return false;
         }
+        const site = inventoryState.sites.get(key);
+        const reviewed = reviewedLoaderContract(site);
+        if (reviewed) {
+          if (site.adapter !== reviewed || site.path.includes('/')) throw Error('Reviewed runtime contract mismatch');
+          inventoryState.sites.delete(key);
+          return true;
+        }
+        if (site.adapter !== runtimeAdapter) return false;
         // A publisher-declared native options-provider factory default. This
         // identifies its fallback site, not an active runtime guard.
         const arrow = call.parent;
-        const property = arrow?.parent;
-        const object = property?.parent;
-        const arg = call.arguments[0];
-        const factoryReturn = object?.parent;
-        const factory = ts.isParenthesizedExpression(factoryReturn) ? factoryReturn.parent : factoryReturn;
-        const fields = ts.isObjectLiteralExpression(object) ? new Set(object.properties.filter(ts.isPropertyAssignment).map(p => p.name.getText(source))) : new Set();
-        const nativeFactory = ts.isArrowFunction(arrow) && arrow.body === call && arrow.parameters.length === 1 && ts.isIdentifier(arrow.parameters[0].name)
-          && ts.isPropertyAssignment(property) && property.name.getText(source) === 'loadModuleFn'
-          && fields.has('setImportMapFn') && fields.has('reloadBrowserFn')
-          && (ts.isArrowFunction(factory) || ts.isReturnStatement(factory))
-          && ts.isCallExpression(arg) && ts.isPropertyAccessExpression(arg.expression) && arg.expression.name.text === 'createScriptURL'
-          && arg.arguments.length === 1 && ts.isIdentifier(arg.arguments[0]) && arg.arguments[0].text === arrow.parameters[0].name.text;
-        if (nativeFactory) { inventoryState.sites.delete(key); return true; }
+        if (nativeFactoryShape(call)) { inventoryState.sites.delete(key); return true; }
         // Supported synthetic contract: a fallback arrow assigned to a local,
         // selected through options.loadModuleFn ?? fallback in the same factory.
         // This is a candidate declaration, not proof of active runtime binding.
@@ -187,16 +209,27 @@ export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, er
       }
       function moduleRef(node) {
         if (!node || !ts.isStringLiteralLike(node)) throw Error(`Unresolved computed import in ${url.href}`);
+        // Canonical cached Emscripten browser artifacts contain Node-only paths.
+        // Their process.versions.node guard is false in supported browser workers.
+        if (inventoryState?.browserSdk.has(url.href) && ['module', 'worker_threads'].includes(node.text)) return;
         enqueue(node.text, url.href, owner, true);
       }
       function visit(node) {
         if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier) moduleRef(node.moduleSpecifier);
         if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && (!node.arguments[0] || !ts.isStringLiteralLike(node.arguments[0]))) {
-          if (!admittedComputed(node)) throw Error(`Unresolved computed import in ${url.href}`);
+          if (draft) {
+            const expression = node.getText(source);
+            const context = node.parent?.parent?.getText(source) ?? expression;
+            const pendingContract = nativeFactoryShape(node) ? 'native-federation-load-module-v1' : expression === 'import(this.remote.entry)' ? 'configured-module-remotes-v1' : 'unclassified';
+            computedSites.push({ url: url.href, moduleSha256: hash(bytes), expression, expressionSha256: hash(expression), context: context.slice(0, 1000), pendingContract });
+          } else if (!admittedComputed(node)) throw Error(`Unresolved computed import in ${url.href}`);
         } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) moduleRef(node.arguments[0]);
         if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'URL' && node.arguments?.[1]?.getText(source) === 'import.meta.url') {
-          if (!ts.isStringLiteralLike(node.arguments[0])) throw Error(`Unresolved computed asset URL in ${url.href}`);
-          add(node.arguments[0].text);
+          if (!ts.isStringLiteralLike(node.arguments[0])) {
+            if (!draft) throw Error(`Unresolved computed asset URL in ${url.href}`);
+            const expression = node.getText(source);
+            computedSites.push({ url: url.href, moduleSha256: hash(bytes), expression, expressionSha256: hash(expression), context: expression, pendingContract: 'unclassified-asset-url' });
+          } else add(node.arguments[0].text);
         }
         ts.forEachChild(node, visit);
       }
@@ -227,8 +260,10 @@ export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, er
           const type = (attrs.type ?? '').trim().toLowerCase();
           const code = (node.childNodes ?? []).map(child => child.value ?? '').join('');
           if (attrs.src) {
-            if (type && type !== 'module' && !/^(?:text|application)\/(?:java|ecma)script$/u.test(type)) throw Error(`Unsupported script type in ${url.href}`);
+            if (type && type !== 'module' && !((draft || bindingContracts.has('es-module-shims-fetch-v1')) && type === 'module-shim') && !/^(?:text|application)\/(?:java|ecma)script$/u.test(type)) throw Error(`Unsupported script type in ${url.href}`);
             add(attrs.src);
+          } else if ((draft || bindingContracts.has('es-module-shims-fetch-v1')) && type === 'esms-options') {
+            JSON.parse(code);
           } else if (type === 'importmap') {
             const map = JSON.parse(code);
             if (!map || typeof map !== 'object' || Array.isArray(map) || Object.keys(map).some(key => key !== 'imports') || !map.imports || typeof map.imports !== 'object' || Array.isArray(map.imports)) throw Error(`Unsupported import map in ${url.href}`);
@@ -258,8 +293,10 @@ export async function generatePublicRelease({ shellDir, erpDir, shellBaseUrl, er
     }
   }
   const sorted = [...assets.values()].sort((a, b) => a.url < b.url ? -1 : a.url > b.url ? 1 : 0);
+  if (draft) return { kind: 'publisher-draft', assets: sorted, computedSites, issues };
   if (inventoryState?.sites.size) throw Error('Unconsumed inventory loader site');
-  const runtimePolicy = inventoryState ? { adapter: runtimeAdapter, targets: sorted.filter(asset => /\.(?:m?js)$/u.test(new URL(asset.url).pathname)).map(asset => asset.url) } : undefined;
+  const extraContracts = [...bindingContracts].filter(value => value !== runtimeAdapter);
+  const runtimePolicy = inventoryState ? { adapter: runtimeAdapter, targets: sorted.filter(asset => /\.(?:m?js)$/u.test(new URL(asset.url).pathname)).map(asset => asset.url), ...(extraContracts.length ? { contracts: [...bindingContracts].sort() } : {}) } : undefined;
   const payload = { schemaVersion: 1, publicBootConfig, assets: sorted, ...(runtimePolicy ? { runtimePolicy } : {}) };
   return { schemaVersion: 1, version: hash(JSON.stringify(payload)), publicBootConfig, assets: sorted, ...(runtimePolicy ? { runtimePolicy } : {}) };
 }
@@ -289,11 +326,21 @@ export async function startPlatform() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href && process.argv.length > 2) {
-  const usage = 'Usage: node scripts/platform-artifacts.mjs --shell-dir DIR --erp-dir DIR --shell-base-url URL --erp-base-url URL --config FILE --output FILE [--inventory FILE]';
+  const usage = 'Usage: node scripts/platform-artifacts.mjs --shell-dir DIR --erp-dir DIR --shell-base-url URL --erp-base-url URL --config FILE --output FILE [--inventory FILE] | --inspect-draft --shell-dir DIR --erp-dir DIR --shell-base-url URL --erp-base-url URL --config FILE';
   try {
     const args = process.argv.slice(2);
     if (args.length === 1 && args[0] === '--help') console.log(usage);
-    else {
+    else if (args[0] === '--inspect-draft') {
+      const names = ['--shell-dir', '--erp-dir', '--shell-base-url', '--erp-base-url', '--config'];
+      const values = {};
+      if (args.length !== 1 + names.length * 2) throw Error('Expected explicit draft inputs');
+      for (let i = 1; i < args.length; i += 2) {
+        if (!names.includes(args[i]) || values[args[i]] || !args[i + 1] || args[i + 1].startsWith('--')) throw Error('Invalid draft arguments');
+        values[args[i]] = args[i + 1];
+      }
+      const config = JSON.parse(await readFile(values['--config'], 'utf8'));
+      console.log(JSON.stringify(await inspectPublicReleaseDraft({ shellDir: values['--shell-dir'], erpDir: values['--erp-dir'], shellBaseUrl: values['--shell-base-url'], erpBaseUrl: values['--erp-base-url'], config }), null, 2));
+    } else {
       const names = ['--shell-dir', '--erp-dir', '--shell-base-url', '--erp-base-url', '--config', '--output'];
       if (args.length !== names.length * 2 && args.length !== (names.length + 1) * 2) throw Error('Expected explicit public release inputs');
       const values = {};

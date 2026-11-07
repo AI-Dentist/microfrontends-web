@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { generatePublicRelease } from '../platform-artifacts.mjs';
+import * as platform from '../platform-artifacts.mjs';
 import { createPublicInventory } from '../erp-public-inventory.mjs';
+import * as inventoryApi from '../erp-public-inventory.mjs';
 
 // Publisher declaration is not a security boundary against its publisher.
 // This fixture models the supported init option; it does not prove production
@@ -128,6 +130,112 @@ test('CLI accepts inventory candidate and rejects invalid inventory before outpu
   o.inventory.attestation = 'invalid'; sign(o.inventory); await writeFile(inventoryPath, JSON.stringify(o.inventory));
   const rejected = run(); assert.equal(rejected.status, 1); assert.equal(rejected.stdout, ''); assert.match(rejected.stderr, /inventory attestation/i);
   await assert.rejects(() => readFile(badOutput), { code: 'ENOENT' });
+});
+
+test('owned ORT publisher targets are the exact four runtime paths and root fallback', () => {
+  const paths = inventoryApi.ownedOrtPublicAssetPaths();
+  assert.deepEqual(paths, [
+    'onnx/ort-wasm-simd-threaded.mjs', 'onnx/ort-wasm-simd-threaded.wasm',
+    'onnx/ort-wasm-simd-threaded.asyncify.mjs', 'onnx/ort-wasm-simd-threaded.asyncify.wasm',
+    'ort-wasm-simd-threaded.asyncify.wasm',
+  ]);
+  paths.pop();
+  assert.equal(inventoryApi.ownedOrtPublicAssetPaths().length, 5);
+});
+
+test('publisher inventory accepts only valid WebAssembly bytes for public wasm', async t => {
+  const o = await fixture(t);
+  const wasm = join(o.erpDir, 'runtime.wasm');
+  await writeFile(wasm, Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]));
+  const roots = o.inventory.roots.map(root => ({ root: root.root, baseUrl: root.baseUrl, directory: root.root === 'shell' ? o.shellDir : o.erpDir, files: root.files.map(file => file.path) }));
+  roots[1].files.push('runtime.wasm');
+  const create = () => createPublicInventory({ roots, loaderSites: o.inventory.loaderSites, attestation: 'publisher-public-complete-v1' });
+  const inventory = await create();
+  assert.equal(inventory.roots[1].files.find(file => file.path === 'runtime.wasm').mime, 'application/wasm');
+  await writeFile(wasm, '<html>not wasm</html>');
+  await assert.rejects(create, /MIME content mismatch/);
+});
+
+test('publisher draft reports computed sites without making a candidate', async t => {
+  const o = await fixture(t);
+  const draft = await platform.inspectPublicReleaseDraft(o);
+  assert.equal(draft.kind, 'publisher-draft');
+  assert.equal(Object.hasOwn(draft, 'version'), false);
+  assert.equal(Object.hasOwn(draft, 'runtimeReady'), false);
+  assert.ok(draft.assets.some(asset => asset.url === shellBaseUrl + 'runtime.js'));
+  assert.equal(draft.computedSites.length, 1);
+  assert.equal(draft.computedSites[0].expression, expression);
+  assert.equal(draft.computedSites[0].expressionSha256, hash(expression));
+  await assert.rejects(() => generatePublicRelease({ ...o, inventory: undefined }), /computed import/i);
+});
+
+test('publisher draft traverses es-module-shims HTML without changing strict mode', async t => {
+  const o = await fixture(t);
+  await writeFile(join(o.shellDir, 'index.html'), '<script type="esms-options">{"shimMode":true}</script><script type="module-shim" src="main.js"></script>');
+  const draft = await platform.inspectPublicReleaseDraft(o);
+  assert.ok(draft.assets.some(asset => asset.url === shellBaseUrl + 'main.js'));
+  await assert.rejects(() => generatePublicRelease({ ...o, inventory: undefined }), /Unsupported script type/);
+});
+
+test('publisher draft CLI prints a draft without writing release output', async t => {
+  const o = await fixture(t), configPath = join(o.base, 'config.json');
+  await writeFile(configPath, JSON.stringify(o.config));
+  const before = await snapshot(o.base);
+  const run = spawnSync(process.execPath, ['scripts/platform-artifacts.mjs', '--inspect-draft', '--shell-dir', o.shellDir, '--erp-dir', o.erpDir, '--shell-base-url', shellBaseUrl, '--erp-base-url', erpBaseUrl, '--config', configPath], { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr); assert.equal(run.stderr, '');
+  const result = JSON.parse(run.stdout);
+  assert.equal(result.kind, 'publisher-draft'); assert.equal(Object.hasOwn(result, 'version'), false);
+  assert.deepEqual(await snapshot(o.base), before);
+});
+
+test('publisher draft labels structural native and configured-remote sites only as pending', async t => {
+  const o = await fixture(t);
+  const native = 'import(policy(name).createScriptURL(target))';
+  await writeFile(join(o.shellDir, 'runtime.js'), `export const provider = name => ({ loadModuleFn: target => ${native}, setImportMapFn: m => m, reloadBrowserFn: () => {} });`);
+  await writeFile(join(o.shellDir, 'main.js'), 'import "./runtime.js"; export const load = () => import(this.remote.entry);');
+  const draft = await platform.inspectPublicReleaseDraft(o);
+  assert.equal(draft.computedSites.find(s => s.expression === native).pendingContract, 'native-federation-load-module-v1');
+  assert.equal(draft.computedSites.find(s => s.expression === 'import(this.remote.entry)').pendingContract, 'configured-module-remotes-v1');
+  assert.equal(Object.hasOwn(draft, 'runtimePolicy'), false);
+});
+
+test('publisher draft records a missing graph edge and remains incomplete', async t => {
+  const o = await fixture(t);
+  await writeFile(join(o.erpDir, 'routes.js'), 'import "./missing.js";');
+  const draft = await platform.inspectPublicReleaseDraft(o);
+  assert.ok(draft.issues.some(issue => issue.url === erpBaseUrl + 'missing.js' && issue.code === 'missing-asset'));
+  assert.equal(Object.hasOwn(draft, 'version'), false);
+  await assert.rejects(() => generatePublicRelease({ ...o, inventory: undefined }));
+});
+
+test('publisher permits public compiled component configuration code', async t => {
+  const o = await fixture(t), contents = 'export const componentConfig = {};';
+  await writeFile(join(o.erpDir, 'primeng_config.ABC123.js'), contents);
+  o.inventory.roots[1].files.push({path:'primeng_config.ABC123.js',sha256:hash(contents),mime:'text/javascript'});sign(o.inventory);
+  assert.ok((await generatePublicRelease(o)).assets.some(a=>a.url.endsWith('/primeng_config.ABC123.js')));
+});
+
+test('publisher accepts the standard public SVG font doctype', async t => {
+  const o = await fixture(t), contents = '<?xml version="1.0"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg xmlns="http://www.w3.org/2000/svg"/>';
+  await writeFile(join(o.erpDir, 'font.svg'), contents);
+  o.inventory.roots[1].files.push({path:'font.svg',sha256:hash(contents),mime:'image/svg+xml'});sign(o.inventory);
+  assert.ok((await generatePublicRelease(o)).assets.some(a=>a.url.endsWith('/font.svg')));
+});
+
+test('publisher permits public compiled GraphQL code but not API paths', async t => {
+  const o = await fixture(t), contents = 'export const publicCode = true;';
+  await writeFile(join(o.erpDir, 'graphql.ABC123.js'), contents);
+  o.inventory.roots[1].files.push({path:'graphql.ABC123.js',sha256:hash(contents),mime:'text/javascript'});sign(o.inventory);
+  assert.ok((await generatePublicRelease(o)).assets.some(a=>a.url.endsWith('/graphql.ABC123.js')));
+});
+
+test('publisher rejects private fields embedded in federation JSON', async t => {
+  const o = await fixture(t), path = join(o.shellDir, 'remoteEntry.json');
+  const contents = JSON.stringify({ $version: 'v4', name: 'shell', shared: [], exposes: [], accessToken: 'SYNTHETIC' });
+  await writeFile(path, contents);
+  o.inventory.roots[0].files.find(f => f.path === 'remoteEntry.json').sha256 = hash(contents);
+  sign(o.inventory);
+  await assert.rejects(() => generatePublicRelease(o), /metadata|privacy|field/iu);
 });
 
 test('strict baseline rejects computed imports without inventory', async t => {
