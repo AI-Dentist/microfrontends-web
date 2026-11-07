@@ -47,7 +47,7 @@ type Workspace = {
       }
       @if (state().status === 'unlocked') {
         <p>Capacidades locales: {{ state().capabilities.join(', ') || 'ninguna' }}</p>
-        <p>Las operaciones pendientes se registran solo en este dispositivo; nada se confirma en el servidor desde esta pantalla.</p>
+        <p>Esta pantalla solo desbloquea el espacio local cifrado. Todavía no registra operaciones pendientes ni confirma nada en el servidor.</p>
         <button type="button" (click)="lock()">Bloquear</button>
         <button type="button" (click)="retire()">Cerrar jornada offline</button>
       }
@@ -87,7 +87,17 @@ export class OfflineWorkspacePage {
     if (status === 'locked') return 'Jornada offline bloqueada.';
     return 'Jornada offline no habilitada.';
   }
-  ngAfterViewInit() { void this.engine().then(async workspace => this.state.set(await workspace.status())).catch(() => this.message.set('No se pudo abrir el almacenamiento local.')); }
+  private timer?: ReturnType<typeof setInterval>;
+  private unsubscribe?: () => void;
+  ngAfterViewInit() {
+    void this.engine().then(async workspace => {
+      this.state.set(await workspace.status());
+      this.unsubscribe = workspace.subscribe(next => this.state.set(next));
+      // Re-evaluate state periodically so an unlocked screen locks at the deadline.
+      this.timer = setInterval(() => { void workspace.status().then(next => this.state.set(next)).catch(() => {}); }, 15000);
+    }).catch(() => this.message.set('No se pudo abrir el almacenamiento local.'));
+  }
+  ngOnDestroy() { if (this.timer) clearInterval(this.timer); this.unsubscribe?.(); }
   private async run(action: (workspace: Workspace) => Promise<State>) {
     this.busy.set(true); this.message.set(''); this.online.set(this.config.getOnlineContext() !== null);
     try { this.state.set(await action(await this.engine())); }
@@ -136,6 +146,8 @@ function message(error: unknown) {
   if (code === 'OFFLINE_PIN_INVALID') return 'El PIN debe tener exactamente 6 dígitos.';
   if (code === 'OFFLINE_ACTIVATION_REQUIRED') return 'Habilitar la jornada requiere una sesión online activa.';
   if (code === 'OFFLINE_UNCONFIGURED') return 'Este dispositivo no tiene una jornada habilitada.';
+  if (code === 'OFFLINE_RETIRED') return 'La jornada se cerró; vuelva a autenticarse para recuperarla.';
+  if (code === 'OFFLINE_UNLOCK_BACKOFF') return 'Demasiados intentos fallidos; espere antes de reintentar.';
   if (code === 'OFFLINE_STORAGE_FAILED') return 'El almacenamiento local no está disponible; no se guardó nada.';
   if (code === 'OFFLINE_LOCKED') return 'La jornada se bloqueó por vencimiento o por un reloj incoherente.';
   return 'No se pudo completar la operación con el PIN indicado.';

@@ -29,8 +29,9 @@ export class OfflineWorkspace {
   async status() {
     const meta = await this.#device();
     if (!meta?.scopeId) return Object.freeze({status: 'unconfigured', capabilities: Object.freeze([]), actorVerified: false});
+    if (meta.retired && !this.#vault) return Object.freeze({status: 'retired', capabilities: Object.freeze([]), actorVerified: false});
     if (this.#vault) return Object.freeze({...this.#vault.state(), ...(this.#identity() ? {actorVerified: true} : {actorVerified: false})});
-    return Object.freeze({status: 'locked', capabilities: Object.freeze([]), actorVerified: false, requiresPin: true});
+    return Object.freeze({status: 'locked', capabilities: Object.freeze([]), actorVerified: false, requiresPin: true, expiresAtMs: this.#vault?.expiresAtMs ?? null});
   }
   subscribe(listener) { this.#listeners.add(listener); return () => this.#listeners.delete(listener); }
   /** Explicit online activation. Requires a live authenticated host session. */
@@ -45,19 +46,53 @@ export class OfflineWorkspace {
       deviceId: device.deviceId, durationSeconds, nowMs: () => this.#clock.wall(), fetcher: this.#fetcher,
     });
     const scopeId = await workspaceScopeId(provisioned.binding);
-    await writeDeviceMeta(this.#indexedDB, {workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId});
-    this.#meta = {...device, scopeId};
     const vault = new OfflineVault({store: createIndexedStore(this.#indexedDB, scopeId), scopeId, clock: this.#clock, getIdentity: () => this.#identity()});
-    await vault.activate(provisioned, pin);
+    try { await vault.activate(provisioned, pin); }
+    catch (error) {
+      // A failed activation must not leave a locator pointing at a shell nobody can open.
+      await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false });
+      this.#meta = null; this.#vault = null;
+      throw error;
+    }
+    await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId, retired: false });
+    this.#meta = {...device, scopeId, retired: false};
     this.#vault = vault;
     const state = await this.status(); this.#emit(state); return state;
   }
   async unlock(pin) {
     const meta = await this.#device();
     if (!meta?.scopeId) throw coded('OFFLINE_UNCONFIGURED');
+    if (meta.retired) throw coded('OFFLINE_RETIRED');
     const vault = new OfflineVault({store: createIndexedStore(this.#indexedDB, meta.scopeId), scopeId: meta.scopeId, clock: this.#clock, getIdentity: () => this.#identity()});
     await vault.unlock(pin);
     this.#vault = vault;
+    const state = await this.status(); this.#emit(state); return state;
+  }
+  /** Re-links a retained record after the original owner authenticates again online. */
+  async reactivate(pin, { durationSeconds = 28800 } = {}) {
+    const online = this.#getOnlineContext();
+    if (!online) throw coded('OFFLINE_ACTIVATION_REQUIRED');
+    const device = await this.#device();
+    if (!device?.scopeId || !device.retired) throw coded('OFFLINE_UNCONFIGURED');
+    const provisioned = await activateOnlineGrant({
+      endpoint: this.#endpoint, getOnlineContext: this.#getOnlineContext, workspaceId: device.workspaceId,
+      deviceId: device.deviceId, durationSeconds, nowMs: () => this.#clock.wall(), fetcher: this.#fetcher,
+    });
+    const scopeId = await workspaceScopeId(provisioned.binding);
+    if (scopeId !== device.scopeId) throw coded('OFFLINE_GRANT_INVALID');
+    const vault = new OfflineVault({ store: createIndexedStore(this.#indexedDB, scopeId), scopeId, clock: this.#clock, getIdentity: () => this.#identity() });
+    await vault.relink(provisioned, pin);
+    await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId, retired: false });
+    this.#meta = { ...device, retired: false };
+    this.#vault = vault;
+    const state = await this.status(); this.#emit(state); return state;
+  }
+  /** Explicit destructive action: destroys the encrypted record. */
+  async purge() {
+    const meta = await this.#device();
+    if (meta?.scopeId) await new OfflineVault({ store: createIndexedStore(this.#indexedDB, meta.scopeId), scopeId: meta.scopeId, clock: this.#clock, getIdentity: () => this.#identity() }).purge();
+    await writeDeviceMeta(this.#indexedDB, { workspaceId: meta?.workspaceId ?? null, deviceId: meta?.deviceId ?? null, scopeId: null, retired: false });
+    this.#meta = null; this.#vault = null;
     const state = await this.status(); this.#emit(state); return state;
   }
   lock() { const state = this.#vault?.lock() ?? {status: 'locked', capabilities: []}; this.#emit(state); return state; }
@@ -65,7 +100,7 @@ export class OfflineWorkspace {
     const state = this.#vault ? await this.#vault.retire() : {status: 'locked', capabilities: []};
     // Clear the locator so the encrypted record is not silently reused; ciphertext stays.
     await writeDeviceMeta(this.#indexedDB, {workspaceId: this.#meta?.workspaceId ?? null, deviceId: this.#meta?.deviceId ?? null, scopeId: null});
-    this.#meta = null; this.#vault = null; this.#emit(state); return state;
+    this.#meta = this.#meta ? { ...this.#meta, retired: true } : null; this.#vault = null; this.#emit(state); return state;
   }
 }
 export function createOfflineWorkspace(options) {

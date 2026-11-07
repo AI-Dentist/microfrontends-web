@@ -18,6 +18,7 @@ class Idb{
   open(){const self=this;const request={result:null,error:null,onsuccess:null,onerror:null,onupgradeneeded:null};
     queueMicrotask(()=>{request.result={objectStoreNames:{contains:n=>self.stores.has(n)},createObjectStore:n=>self.#s(n),close(){},transaction(names,mode){const stores=names.map(n=>self.#s(n));const tx={error:null,oncomplete:null,onerror:null,onabort:null,objectStore(i){const m=stores[typeof i==='number'?i:names.indexOf(i)];
     const req=value=>({result:undefined,error:null,onsuccess:null,onerror:null,
+      delete:k=>{if(self.fault||mode!=='readwrite'){tx.error=Error('synthetic');queueMicrotask(()=>tx.onerror?.());return;}m.delete(k);queueMicrotask(()=>tx.oncomplete?.());},
       get:k=>{const request={result:undefined,onsuccess:null,onerror:null};queueMicrotask(()=>{if(self.fault){request.error=Error('synthetic');tx.onerror?.(request);return;}request.result=m.get(k);request.onsuccess?.();});return request;},
       put:v=>{if(self.fault||mode!=='readwrite'){tx.error=Error('synthetic');queueMicrotask(()=>tx.onerror?.());return;}m.set(v.id??v.scopeId,structuredClone(v));queueMicrotask(()=>tx.oncomplete?.());},
       add:v=>{if(self.fault||mode!=='readwrite'){tx.error=Error('synthetic');queueMicrotask(()=>tx.onerror?.());return;}m.set(v.id??v.scopeId,structuredClone(v));queueMicrotask(()=>tx.oncomplete?.());}});
@@ -47,9 +48,9 @@ test('a different online owner cannot unlock and a storage fault never reports s
   await assert.rejects(()=>h.workspace.unlock(pin),{code:'OFFLINE_UNLOCK_FAILED'});
   h.setOnline(null);h.idb.fault=true;await assert.rejects(()=>h.workspace.unlock(pin),{code:'OFFLINE_STORAGE_FAILED'});
 });
-test('retirement keeps encrypted ciphertext but clears the locator so a silent reuse cannot occur',async()=>{
+test('retirement keeps the locator marked retired so plain unlock cannot silently reuse it',async()=>{
   const h=host();await h.workspace.activate(pin,{workspaceId:claims.workspaceId,deviceId:claims.deviceId});await h.workspace.retire();
-  assert.equal((await h.workspace.status()).status,'unconfigured');await assert.rejects(()=>h.workspace.unlock(pin),{code:'OFFLINE_UNCONFIGURED'});
+  assert.equal((await h.workspace.status()).status,'retired');await assert.rejects(()=>h.workspace.unlock(pin),{code:'OFFLINE_RETIRED'});
 });
 
 test('a wrong PIN attempt followed by the correct PIN unlocks again', async () => {
@@ -61,4 +62,33 @@ test('a wrong PIN attempt followed by the correct PIN unlocks again', async () =
   const reloaded=new OfflineWorkspace({indexedDB:h.idb,clock:{wall:()=>h.clock.value,mono:()=>h.clock.mono},getOnlineContext:()=>null,endpoint:'https://shell.example/api/erp/graphql'});
   await assert.rejects(()=>reloaded.unlock('000000'),{code:'OFFLINE_UNLOCK_FAILED'});
   assert.equal((await reloaded.unlock(pin)).status,'unlocked');
+});
+
+test('retirement keeps the encrypted record recoverable by re-authenticating the owner', async () => {
+  const h = host();
+  await h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId });
+  const pending = 'opaque-pending-bytes';
+  h.idb.stores.get('vaults').set('pending', pending);
+  await h.workspace.retire();
+  assert.equal((await h.workspace.status()).status, 'retired');
+  // Same owner re-authenticates online: a NEW activation must re-link the retained record.
+  assert.equal((await h.workspace.reactivate(pin)).status, 'unlocked');
+  const reloaded = new OfflineWorkspace({ indexedDB: h.idb, clock: { wall: () => h.clock.value, mono: () => 0 }, getOnlineContext: () => null, endpoint: 'https://shell.example/api/erp/graphql' });
+  assert.equal((await reloaded.unlock(pin)).status, 'unlocked');
+  assert.equal(h.idb.stores.get('vaults').get('pending'), pending);
+});
+
+test('purge destroys the ciphertext only on an explicit user action', async () => {
+  const h = host();
+  await h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId });
+  await h.workspace.retire();
+  await h.workspace.purge();
+  assert.equal((await h.workspace.status()).status, 'unconfigured');
+  assert.equal(h.idb.stores.get('vaults').size, 0);
+});
+
+test('a failed activation leaves no locator and no locked shell', async () => {
+  const h = host();
+  await assert.rejects(() => h.workspace.activate('12345', { workspaceId: claims.workspaceId, deviceId: claims.deviceId }));
+  assert.equal((await h.workspace.status()).status, 'unconfigured');
 });

@@ -24,7 +24,9 @@ test('correct PIN unlocks a fresh instance; stored material has no plaintext ide
   const f=await fixture();await f.v.activate(f.a,pin);assert.equal(f.v.state().status,'unlocked');f.v.lock();assert.equal(f.v.state().status,'locked');
   const restored=new api.OfflineVault(f.options);await restored.unlock(pin);assert.equal(restored.state().status,'unlocked');
   const raw=JSON.stringify(f.store.exportEncrypted());for(const secret of [pin,claims.identitySubject,claims.erpUserId,f.a.credential])assert.ok(!raw.includes(secret));
-  assert.notEqual(f.store.envelope.wrap.iv,f.store.envelope.context.iv);assert.equal(new Set(f.store.envelope.usedIVs).size,f.store.envelope.usedIVs.length);
+  // Fresh random 96-bit IV per write under a retained salt: wrap and context must differ.
+  assert.notEqual(f.store.envelope.wrap.iv,f.store.envelope.context.iv);
+  assert.equal(atob(f.store.envelope.wrap.iv).length,12);assert.equal(atob(f.store.envelope.context.iv).length,12);
 });
 test('fractional device clocks are normalised instead of failing storage',async()=>{
   const a=await activation(),scopeId=await api.workspaceScopeId(a.binding),store=new CipherStore();
@@ -56,7 +58,7 @@ test('exclusive expiry, rollback and monotonic inconsistency clear the live work
 test('logout and principal change retire locally while retaining existing encrypted pending bytes',async()=>{
   for(const event of ['logout','principalChanged']){const f=await fixture();await f.v.activate(f.a,pin);const bytes=Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('base64');f.store.records.set('opaque-pending',bytes);
     await f.v[event]();assert.equal(f.v.state().status,'locked');assert.equal(f.store.records.get('opaque-pending'),bytes);
-    const restored=new api.OfflineVault(f.options);await assert.rejects(()=>restored.unlock(pin),{code:'OFFLINE_UNLOCK_FAILED'});assert.equal(f.store.records.get('opaque-pending'),bytes);
+    const restored=new api.OfflineVault(f.options);await assert.rejects(()=>restored.unlock(pin),{code:'OFFLINE_RETIRED'});assert.equal(f.store.records.get('opaque-pending'),bytes);
   }
 });
 test('storage failure cannot report activation or unlocking success',async()=>{
@@ -65,4 +67,24 @@ test('storage failure cannot report activation or unlocking success',async()=>{
 });
 test('unlock after a persisted clock rollback does not change encrypted state',async()=>{
   const f=await fixture();await f.v.activate(f.a,pin);f.v.lock();f.setWall(base);const before=f.store.exportEncrypted();await assert.rejects(()=>f.v.unlock(pin),{code:'OFFLINE_UNLOCK_FAILED'});assert.deepEqual(f.store.exportEncrypted(),before);
+});
+
+test('unlock survives a real document restart where mono resets near zero', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  // Document 1: elapsed mono grows while wall advances.
+  const doc1 = new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 1000, mono: () => 5000 }, getIdentity: identity });
+  await doc1.activate(a, pin);
+  doc1.lock();
+  // Document 2: performance.now() restarted near zero, wall advanced 2s.
+  const doc2 = new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 3000, mono: () => 12 }, getIdentity: identity });
+  assert.equal((await doc2.unlock(pin)).status, 'unlocked');
+});
+
+test('a wall rollback still fails closed after a document restart', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  await (new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 5000, mono: () => 100 }, getIdentity: identity })).activate(a, pin);
+  const restored = new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 1000, mono: () => 5 }, getIdentity: identity });
+  await assert.rejects(() => restored.unlock(pin), { code: 'OFFLINE_UNLOCK_FAILED' });
 });

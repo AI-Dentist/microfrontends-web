@@ -86,6 +86,56 @@ export function createIndexedStore(indexedDB, scopeId) {
         });
       } finally { db.close(); }
     },
+    async relink(keyId, revision, context) {
+      const db = await open(indexedDB);
+      try {
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(['vaults'], 'readwrite');
+          const store = tx.objectStore('vaults');
+          let next;
+          tx.oncomplete = () => resolve(next);
+          tx.onerror = () => reject(tx.error ?? Error('indexeddb-error'));
+          tx.onabort = () => reject(tx.error ?? Error('indexeddb-abort'));
+          const current = store.get(scopeId);
+          current.onsuccess = () => {
+            const record = current.result;
+            if (!record || record.keyId !== keyId || record.revision !== revision || !record.retired) { tx.abort(); return; }
+            next = revision + 1;
+            store.put({ ...record, retired: false, context: structuredClone(context), revision: next });
+          };
+        });
+      } finally { db.close(); }
+    },
+    async penalize(keyId, delta) {
+      const db = await open(indexedDB);
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(['vaults'], 'readwrite');
+          const store = tx.objectStore('vaults');
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error ?? Error('indexeddb-error'));
+          const current = store.get(scopeId);
+          current.onsuccess = () => {
+            const record = current.result;
+            if (!record || record.keyId !== keyId) return;
+            const fails = (record.clock?.fails ?? 0) + 1;
+            const wait = Math.min(1000 * 2 ** (fails - 1), 300000);
+            store.put({ ...record, clock: { ...record.clock, fails, nextAttemptAt: Date.now() + wait, waitMs: wait } });
+          };
+        });
+      } finally { db.close(); }
+    },
+    async destroy() {
+      const db = await open(indexedDB);
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(['vaults'], 'readwrite');
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error ?? Error('indexeddb-error'));
+          tx.objectStore('vaults').delete(scopeId);
+        });
+      } finally { db.close(); }
+    },
     async retire() {
       const db = await open(indexedDB);
       try {
