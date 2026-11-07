@@ -229,3 +229,39 @@ test('a failed record write keeps the generated ids so a retry reaches the same 
   assert.equal(locator.workspaceId, failed.workspaceId, 'the retry reused the workspace id');
   assert.equal(locator.deviceId, failed.deviceId, 'the retry reused the device id');
 });
+
+test('duplicate activation on an active workspace preserves ciphertext and locator without destruction', async () => {
+  const h = host();
+  await h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId });
+  const initialVaults = h.idb.stores.get('vaults').size;
+  const initialLocator = { ...h.idb.stores.get('meta').get('device') };
+  assert.equal(initialVaults, 1);
+  assert.ok(initialLocator.scopeId);
+
+  // Duplicate activation attempt throws OFFLINE_GRANT_INVALID because record already exists
+  await assert.rejects(() => h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId }));
+
+  assert.equal(h.idb.stores.get('vaults').size, initialVaults, 'ciphertext count preserved');
+  const currentLocator = h.idb.stores.get('meta').get('device');
+  assert.equal(currentLocator.scopeId, initialLocator.scopeId, 'locator scopeId preserved');
+  assert.equal(currentLocator.retired, false);
+});
+
+test('grant-fetch failure during activation preserves existing locator', async () => {
+  const h = host();
+  await h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId });
+  const initialLocator = { ...h.idb.stores.get('meta').get('device') };
+
+  const failingWorkspace = new OfflineWorkspace({
+    indexedDB: h.idb,
+    clock: { wall: () => h.clock.value, mono: () => h.clock.mono },
+    getOnlineContext: () => ({ token: 'SYNTHETIC', identityIssuer: claims.identityIssuer, identitySubject: claims.identitySubject, epoch: 1 }),
+    endpoint: 'https://shell.example/api/erp/graphql',
+    fetcher: async () => { throw new Error('network down'); }
+  });
+
+  await assert.rejects(() => failingWorkspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId }));
+
+  const currentLocator = h.idb.stores.get('meta').get('device');
+  assert.equal(currentLocator.scopeId, initialLocator.scopeId, 'existing locator scopeId preserved on grant fetch failure');
+});

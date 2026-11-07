@@ -59,15 +59,17 @@ export class OfflineWorkspace {
     const existing = await this.#device();
     // A retained record must go through the documented recovery path.
     if (existing?.retired) throw coded('OFFLINE_RETIRED');
-    const device = (await this.#device()) ?? {
+    const device = existing ?? {
       workspaceId: workspaceId ?? newId(), deviceId: deviceId ?? newId(),
     };
-    try {
-      await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false });
-    } catch (err) {
-      throw (err?.code?.startsWith?.('OFFLINE_') ? err : coded('OFFLINE_STORAGE_FAILED'));
+    if (!existing?.scopeId) {
+      try {
+        await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false });
+      } catch (err) {
+        throw (err?.code?.startsWith?.('OFFLINE_') ? err : coded('OFFLINE_STORAGE_FAILED'));
+      }
+      this.#meta = { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false };
     }
-    this.#meta = { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false };
     const provisioned = await activateOnlineGrant({
       endpoint: this.#endpoint, getOnlineContext: this.#getOnlineContext, workspaceId: device.workspaceId,
       deviceId: device.deviceId, durationSeconds, nowMs: () => this.#clock.wall(), fetcher: this.#fetcher,
@@ -76,13 +78,22 @@ export class OfflineWorkspace {
     const vault = new OfflineVault({store: createIndexedStore(this.#indexedDB, scopeId), scopeId, clock: this.#clock, getIdentity: () => this.#identity()});
     try { await vault.activate(provisioned, pin); }
     catch (error) {
-      this.#meta = null; this.#vault = null;
-      await vault.purge().catch(() => {});
-      await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false }).catch(() => {});
+      this.#meta = existing ?? null; this.#vault = null;
+      if (!existing?.scopeId) {
+        await vault.purge().catch(() => {});
+        await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false }).catch(() => {});
+      } else {
+        await writeDeviceMeta(this.#indexedDB, existing).catch(() => {});
+      }
       throw error;
     }
     try { await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId, retired: false }); }
-    catch (err) { await vault.purge().catch(() => {}); throw (err?.code?.startsWith?.('OFFLINE_') ? err : coded('OFFLINE_STORAGE_FAILED')); }
+    catch (err) {
+      if (!existing?.scopeId || existing.scopeId !== scopeId) {
+        await vault.purge().catch(() => {});
+      }
+      throw (err?.code?.startsWith?.('OFFLINE_') ? err : coded('OFFLINE_STORAGE_FAILED'));
+    }
     this.#meta = {...device, scopeId, retired: false};
     this.#vault = vault;
     const state = await this.status(); this.#emit(state); return state;
