@@ -22,7 +22,7 @@ type Workspace = {
   selector: 'erp-offline-workspace',
   standalone: true,
   template: `
-    <section class="offline-workspace" aria-labelledby="offline-title">
+    <section class="offline-workspace" aria-labelledby="offline-title" [attr.data-state]="state().status" [attr.data-actor-verified]="state().actorVerified">
       <h1 id="offline-title">Jornada offline</h1>
       <p role="status">{{ statusText() }}</p>
       @if (message()) { <p role="alert">{{ message() }}</p> }

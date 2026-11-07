@@ -26,6 +26,13 @@ test('correct PIN unlocks a fresh instance; stored material has no plaintext ide
   const raw=JSON.stringify(f.store.exportEncrypted());for(const secret of [pin,claims.identitySubject,claims.erpUserId,f.a.credential])assert.ok(!raw.includes(secret));
   assert.notEqual(f.store.envelope.wrap.iv,f.store.envelope.context.iv);assert.equal(new Set(f.store.envelope.usedIVs).size,f.store.envelope.usedIVs.length);
 });
+test('fractional device clocks are normalised instead of failing storage',async()=>{
+  const a=await activation(),scopeId=await api.workspaceScopeId(a.binding),store=new CipherStore();
+  const vault=new api.OfflineVault({scopeId,store,clock:{wall:()=>base+1000.4,mono:()=>0.5},getIdentity:()=>({issuer:claims.identityIssuer,subject:claims.identitySubject,epoch:1})});
+  assert.equal((await vault.activate(a,pin)).status,'unlocked');vault.lock();
+  const restored=new api.OfflineVault({scopeId,store,clock:{wall:()=>base+1000.9,mono:()=>0.9},getIdentity:()=>({issuer:claims.identityIssuer,subject:claims.identitySubject,epoch:1})});
+  assert.equal((await restored.unlock(pin)).status,'unlocked');
+});
 test('wrong PIN leaves persisted ciphertext, counters and lock state unchanged',async()=>{
   const f=await fixture();await f.v.activate(f.a,pin);f.v.lock();const before=f.store.exportEncrypted(),writes=f.store.writes;
   await assert.rejects(()=>f.v.unlock('654321'),{code:'OFFLINE_UNLOCK_FAILED'});assert.equal(f.v.state().status,'locked');assert.deepEqual(f.store.exportEncrypted(),before);assert.equal(f.store.writes,writes);

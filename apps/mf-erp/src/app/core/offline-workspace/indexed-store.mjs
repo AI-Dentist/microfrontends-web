@@ -17,8 +17,8 @@ function run(db, stores, mode, body) {
     const tx = db.transaction(stores, mode);
     let value;
     tx.oncomplete = () => resolve(value);
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error ?? Error('indexeddb-error'));
+    tx.onabort = () => reject(tx.error ?? Error('indexeddb-abort'));
     value = body(tx);
   });
 }
@@ -55,13 +55,14 @@ export function createIndexedStore(indexedDB, scopeId) {
     async create(value) {
       const db = await open(indexedDB);
       try {
-        await run(db, ['vaults'], 'readwrite', tx => {
-          const store = tx.objectStore('vaults');
-          const existing = store.get(scopeId);
-          existing.onsuccess = () => {
-            if (existing.result) { tx.abort(); throw Error('already exists'); }
-            store.add({ scopeId, ...value });
-          };
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(['vaults'], 'readwrite');
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error ?? Error('indexeddb-error'));
+          tx.onabort = () => reject(tx.error ?? Error('indexeddb-abort'));
+          // A duplicate scope raises ConstraintError and aborts; the vault never
+          // overwrites an existing workspace for the same scope.
+          tx.objectStore('vaults').add({ scopeId, ...value });
         });
       } finally { db.close(); }
     },
