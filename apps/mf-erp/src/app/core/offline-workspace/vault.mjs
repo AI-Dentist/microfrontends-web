@@ -9,7 +9,7 @@ function clean(value){if(value instanceof Uint8Array)value.fill(0);else if(value
 function identity(value){return value!==null&&typeof value==='object'&&!Array.isArray(value)&&typeof value.issuer==='string'&&value.issuer&&typeof value.subject==='string'&&value.subject&&(Number.isSafeInteger(value.epoch)||typeof value.epoch==='string'&&value.epoch)?Object.freeze({...value}):null;}
 function pinBytes(pin){if(typeof pin!=='string'||!/^\d{6}$/u.test(pin))throw Error('OFFLINE_UNLOCK_FAILED');const bytes=encode.encode(pin);if(bytes.byteLength!==6)throw Error('OFFLINE_UNLOCK_FAILED');return bytes;}
 export class OfflineVaultError extends Error{constructor(code){super(code);this.name='OfflineVaultError';this.code=code;}}
-function failure(code='OFFLINE_UNLOCK_FAILED'){throw new OfflineVaultError(code);}
+function failure(code='OFFLINE_UNLOCK_FAILED',cause){const error=new OfflineVaultError(code);if(cause)error.cause=cause;throw error;}
 const hex=bytes=>Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
 const digest=value=>crypto.subtle.digest('SHA-256',value);
 export async function workspaceScopeId(binding){
@@ -20,7 +20,7 @@ export class OfflineVault{
   #store;#scopeId;#clock;#identity;#credential;#authority;#expected;#ownerEpoch;#expiresAt;#dek=null;#ivKey=null;#serial=0n;#keyId;#revision=0;#lastWall=null;#lastMono=null;#used;
   constructor({store,scopeId,clock,getIdentity}={}){
     this.#store=store;this.#scopeId=scopeId;this.#clock=clock;this.#identity=getIdentity;
-    if(!store||!/^[0-9a-f]{64}$/u.test(scopeId)||typeof getIdentity!=='function'||!Number.isSafeInteger(clock?.wall())||!Number.isSafeInteger(clock?.mono()))failure('OFFLINE_STORAGE_FAILED');
+    if(!store||!/^[0-9a-f]{64}$/u.test(scopeId)||typeof getIdentity!=='function'||!Number.isFinite(clock?.wall())||!Number.isFinite(clock?.mono()))failure('OFFLINE_STORAGE_FAILED');
   }
   #aad(){return json({schema:'erp-offline-vault-v1',scope:this.#scopeId});}
   #time(){
@@ -79,7 +79,7 @@ export class OfflineVault{
       this.#credential=activation.credential;this.#authority=activation.authority;this.#expected=activation.binding;this.#ownerEpoch=activation.ownerEpoch;this.#expiresAt=verified.expiresAtMs;this.#keyId=hex(crypto.getRandomValues(new Uint8Array(16)));this.#used=new Set();this.#revision=0;this.#time();
       this.#activePin=pin;this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=KDF.iterations;try{await this.#store.create(await this.#sealContext(pin));}catch(error){if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_STORAGE_FAILED');}this.#activePin='';this.#lastWall=this.#clock.wall();this.#lastMono=this.#clock.mono();
       return this.state();
-    }catch(error){this.#activePin='';this.#clear();if(error instanceof OfflineVaultError)throw error;if(error?.code?.startsWith('OFFLINE_'))throw error;failure('OFFLINE_STORAGE_FAILED');}
+    }catch(error){this.#activePin='';this.#clear();if(error instanceof OfflineVaultError)throw error;if(error?.code?.startsWith('OFFLINE_'))throw error;failure('OFFLINE_STORAGE_FAILED',error);}
   }
   async unlock(pin){
     this.#clear();const password=pinBytes(pin);let material,derived;

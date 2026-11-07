@@ -9,3 +9,14 @@ import { OFFLINE_ENTRY, OfflineWorkspacePage, type OfflineEntryConfig } from './
 export function createOfflineRoutes(config: OfflineEntryConfig): Routes {
   return [{ path: '', component: OfflineWorkspacePage, providers: [{ provide: OFFLINE_ENTRY, useValue: config }] }];
 }
+
+/**
+ * Factory used by the entry and by the real-browser proof to seed a synthetic
+ * workspace. It is the same local-only implementation the page mounts.
+ */
+export async function createOfflineWorkspace(options: Record<string, unknown>) {
+  const module = await import('./core/offline-workspace/workspace.mjs' as string) as {
+    createOfflineWorkspace(values: Record<string, unknown>): unknown;
+  };
+  return module.createOfflineWorkspace(options);
+}

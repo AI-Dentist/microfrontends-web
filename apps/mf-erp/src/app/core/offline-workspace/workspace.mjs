@@ -70,5 +70,5 @@ export class OfflineWorkspace {
 }
 export function createOfflineWorkspace(options) {
   if (!options || !UUID.test(String(options.workspaceId ?? '00000000-0000-4000-8000-000000000000'))) { /* ids are created internally */ }
-  return new OfflineWorkspace({...options, indexedDB: options?.indexedDB ?? globalThis.indexedDB, clock: options?.clock ?? {wall: () => Date.now(), mono: () => performance.now()}});
+  return new OfflineWorkspace({...options, indexedDB: options?.indexedDB ?? globalThis.indexedDB, clock: options?.clock ?? {wall: () => Math.floor(Date.now()), mono: () => Math.floor(performance.now())}});
 }
