@@ -30,7 +30,13 @@ export class OfflineVault{
     this.#lastWall=this.#clock.wall();this.#lastMono=this.#clock.mono();
     if(this.#expiresAt!==null)this.#serial=BigInt(this.#expiresAt)*1_000_000n+BigInt(this.#clock.mono())*1000n+BigInt(this.#clock.wall());
   }
-  #same(){const current=identity(this.#identity());if(!current||current.issuer!==this.#expected.identityIssuer||current.subject!==this.#expected.identitySubject||current.epoch!==this.#ownerEpoch)failure('OFFLINE_LOCKED');}
+  #same(){
+    const current=identity(this.#identity());
+    // Offline there is no live identity to compare: unlock stays possible and the
+    // caller must surface that the actor could not be re-verified.
+    if(current===null)return;
+    if(current.issuer!==this.#expected.identityIssuer||current.subject!==this.#expected.identitySubject||current.epoch!==this.#ownerEpoch)failure('OFFLINE_LOCKED');
+  }
   #clear(){clean(this.#dek);this.#dek=null;this.#ivKey=null;this.#serial=0n;}
   #lockState(){this.#clear();return Object.freeze({status:'locked',capabilities:Object.freeze([])});}
   state(){
@@ -67,7 +73,7 @@ export class OfflineVault{
       const verified=await verifyPinnedGrant({credential:activation.credential,authority:activation.authority,expected:activation.binding,nowMs:this.#clock.wall()});
       if(this.#scopeId!==await workspaceScopeId(verified.binding))failure('OFFLINE_GRANT_INVALID');
       const current=identity(this.#identity());
-      if(!current||current.issuer!==verified.grant.identityIssuer||current.subject!==verified.grant.identitySubject||current.epoch!==activation.ownerEpoch)failure('OFFLINE_GRANT_INVALID');
+      if(current&&(current.issuer!==verified.grant.identityIssuer||current.subject!==verified.grant.identitySubject||current.epoch!==activation.ownerEpoch))failure('OFFLINE_GRANT_INVALID');
       if(await this.#store.load())failure('OFFLINE_GRANT_INVALID');
       const value=crypto.getRandomValues(new Uint8Array(32));this.#dek=value;
       this.#credential=activation.credential;this.#authority=activation.authority;this.#expected=activation.binding;this.#ownerEpoch=activation.ownerEpoch;this.#expiresAt=verified.expiresAtMs;this.#keyId=hex(crypto.getRandomValues(new Uint8Array(16)));this.#used=new Set();this.#revision=0;this.#time();
@@ -88,7 +94,8 @@ export class OfflineVault{
       const context=JSON.parse(decode.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:contextIv,additionalData:this.#aad()},wrapping,contextCipher)));
       if(this.#clock.wall()<envelope.clock.maxWall||this.#clock.mono()<envelope.clock.maxMono)failure();
       this.#credential=context.credential;this.#authority=context.authority;this.#expected=context.expected;this.#ownerEpoch=context.ownerEpoch;this.#expiresAt=context.expiresAtMs;this.#keyId=envelope.keyId;this.#revision=envelope.revision;this.#used=new Set(envelope.usedIVs);this.#lastWall=envelope.clock.lastWall;this.#lastMono=envelope.clock.lastMono;
-      const current=identity(this.#identity());if(!current||current.issuer!==this.#expected.identityIssuer||current.subject!==this.#expected.identitySubject||current.epoch!==this.#ownerEpoch)failure();
+      const current=identity(this.#identity());
+      if(current&&(current.issuer!==this.#expected.identityIssuer||current.subject!==this.#expected.identitySubject||current.epoch!==this.#ownerEpoch))failure();
       this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=envelope.kdf.iterations;this.#time();this.#activePin=pin;try{await this.#write();}catch(error){if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_STORAGE_FAILED');}this.#activePin='';return this.state();
     }catch(error){this.#activePin='';this.#clear();if(error instanceof OfflineVaultError)throw error;failure();}
     finally{clean(password);clean(material);clean(derived);}
