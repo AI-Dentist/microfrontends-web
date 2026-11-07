@@ -13,7 +13,7 @@ class CipherStore {
   envelope=null;records=new Map();writes=0;fault=false;
   async load(){return structuredClone(this.envelope);}
   async create(value){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope)throw Error('already exists');this.envelope=structuredClone(value);this.writes++;}
-  async replaceContext(keyId,revision,context){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope?.keyId!==keyId||this.envelope.revision!==revision||this.envelope.retired)throw Error('stale');this.envelope.context=structuredClone(context);this.envelope.revision++;this.writes++;return this.envelope.revision;}
+  async replaceContext(keyId,revision,context,clock){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope?.keyId!==keyId||this.envelope.revision!==revision||this.envelope.retired)throw Error('stale');this.envelope.context=structuredClone(context);if(clock)this.envelope.clock=structuredClone(clock);this.envelope.revision++;this.writes++;return this.envelope.revision;}
   async retire(){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope){this.envelope.retired=true;this.envelope.revision++;this.writes++;}}
   async relink(keyId,revision,context,clock){if(this.fault)throw Error('synthetic');if(this.envelope?.keyId!==keyId||this.envelope.revision!==revision||!this.envelope.retired)throw Error('stale');this.envelope.retired=false;this.envelope.context=structuredClone(context);if(clock)this.envelope.clock=structuredClone(clock);this.envelope.revision++;this.writes++;return this.envelope.revision;}
   async penalize(nowWall){await Promise.resolve();if(this.fault)throw Error('synthetic');const fails=(this.envelope.clock?.fails??0)+1;this.envelope.clock={...(this.envelope.clock??{}),fails,nextAttemptAt:nowWall+Math.min(1000*2**(fails-1),300000)};this.writes++;}
@@ -190,4 +190,16 @@ test('an interactive unlock reports the exact lock reason while state() degrades
   mono += 120000; wall += 1000; // mono advances, wall crawls: witness fires
   assert.equal(vault.state().status, 'locked', 'poll degrades quietly');
   await assert.rejects(() => vault.unlock(pin), { code: 'OFFLINE_CLOCK_ROLLBACK' });
+});
+
+test('an interactive unlock advances the persisted wall floor', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  let wall = base + 1000;
+  const open = () => new api.OfflineVault({ scopeId, store, clock: { wall: () => wall, mono: () => 0 }, getIdentity: identity });
+  await open().activate(a, pin);
+  const first = store.envelope.clock.maxWall;
+  wall = base + 1000 + 7200000;
+  await open().unlock(pin);
+  assert.ok(store.envelope.clock.maxWall > first, 'floor advanced after a later unlock');
 });

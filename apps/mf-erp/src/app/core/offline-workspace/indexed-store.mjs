@@ -66,7 +66,7 @@ export function createIndexedStore(indexedDB, scopeId) {
         });
       } finally { db.close(); }
     },
-    async replaceContext(keyId, revision, context) {
+    async replaceContext(keyId, revision, context, clock) {
       const db = await open(indexedDB);
       try {
         return await new Promise((resolve, reject) => {
@@ -81,7 +81,7 @@ export function createIndexedStore(indexedDB, scopeId) {
             const record = current.result;
             if (!record || record.keyId !== keyId || record.revision !== revision || record.retired) { tx.abort(); return; }
             next = revision + 1;
-            store.put({ ...record, context: structuredClone(context), revision: next });
+            store.put({ ...record, context: structuredClone(context), clock: clock ? structuredClone(clock) : record.clock, revision: next });
           };
         });
       } finally { db.close(); }

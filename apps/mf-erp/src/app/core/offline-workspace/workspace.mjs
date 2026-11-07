@@ -43,7 +43,7 @@ export class OfflineWorkspace {
     if (!meta?.scopeId) return Object.freeze({status: 'unconfigured', capabilities: Object.freeze([]), actorVerified: false});
     if (meta.retired && !this.#vault) return Object.freeze({status: 'retired', capabilities: Object.freeze([]), actorVerified: false});
     if (this.#vault) return Object.freeze({...this.#vault.state(), ...(this.#identity() ? {actorVerified: true} : {actorVerified: false})});
-    return Object.freeze({status: 'locked', capabilities: Object.freeze([]), actorVerified: false, requiresPin: true, expiresAtMs: this.#vault?.expiresAtMs ?? null});
+    return Object.freeze({status: 'locked', capabilities: Object.freeze([]), actorVerified: false, requiresPin: true, expiresAtMs: this.#vault?.expiresAtMs ?? null, reason: this.#vault?.lastLockReason ?? null});
   }
   subscribe(listener) { this.#listeners.add(listener); return () => this.#listeners.delete(listener); }
   /** Explicit online activation. Requires a live authenticated host session. */
@@ -104,6 +104,23 @@ export class OfflineWorkspace {
     await vault.relink(provisioned, pin);
     await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId, retired: false });
     this.#meta = { ...device, retired: false };
+    this.#vault = vault;
+    const state = await this.status(); this.#emit(state); return state;
+  }
+  /** Renews an expired workspace with the same scope; requires a live online session. */
+  async renew(pin, { durationSeconds = 28800 } = {}) {
+    const online = this.#getOnlineContext();
+    if (!online) throw coded('OFFLINE_ACTIVATION_REQUIRED');
+    const device = await this.#reconcile(await this.#device());
+    if (!device?.scopeId) throw coded('OFFLINE_UNCONFIGURED');
+    if (device.retired) throw coded('OFFLINE_RETIRED');
+    const provisioned = await activateOnlineGrant({
+      endpoint: this.#endpoint, getOnlineContext: this.#getOnlineContext, workspaceId: device.workspaceId,
+      deviceId: device.deviceId, durationSeconds, nowMs: () => this.#clock.wall(), fetcher: this.#fetcher,
+    });
+    if (await workspaceScopeId(provisioned.binding) !== device.scopeId) throw coded('OFFLINE_GRANT_INVALID');
+    const vault = new OfflineVault({ store: createIndexedStore(this.#indexedDB, device.scopeId), scopeId: device.scopeId, clock: this.#clock, getIdentity: () => this.#identity() });
+    await vault.renew(provisioned, pin);
     this.#vault = vault;
     const state = await this.status(); this.#emit(state); return state;
   }

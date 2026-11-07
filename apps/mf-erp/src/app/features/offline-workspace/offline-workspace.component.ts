@@ -8,10 +8,11 @@ export interface OfflineEntryConfig {
 }
 export const OFFLINE_ENTRY = new InjectionToken<OfflineEntryConfig>('OFFLINE_ENTRY');
 
-type State = { status: string; capabilities: readonly string[]; actorVerified: boolean };
+type State = { status: string; capabilities: readonly string[]; actorVerified: boolean; reason?: string | null };
 type Workspace = {
   status(): Promise<State>;
   reactivate(pin: string): Promise<State>;
+  renew(pin: string): Promise<State>;
   purge(): Promise<State>; activate(pin: string): Promise<State>; unlock(pin: string): Promise<State>;
   lock(): State; retire(): Promise<State>; subscribe(fn: (s: State) => void): () => void;
 };
@@ -54,11 +55,26 @@ type Workspace = {
         <button type="button" (click)="purge()">Eliminar datos cifrados de este dispositivo</button>
       }
       @if (state().status === 'locked') {
+        @if (expired()) {
+          <p>La jornada venció. Con conexión puede renovarla sin perder los datos de este dispositivo.</p>
+        }
+        @if (online()) {
+          <form (submit)="renew($event)">
+            <label for="offline-pin-renew">PIN para renovar</label>
+            <input id="offline-pin-renew" name="pin" type="password" inputmode="numeric" autocomplete="current-password" />
+            <button type="submit" [disabled]="busy()">Renovar jornada</button>
+          </form>
+        } @else if (expired()) {
+          <p>Para renovarla, vuelva a iniciar sesión con conexión.</p>
+        }
         <form (submit)="unlock($event)">
           <label for="offline-pin">PIN</label>
           <input id="offline-pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" />
           <button type="submit" [disabled]="busy()">Desbloquear</button>
         </form>
+      }
+      @if (state().status === 'locked') {
+        <button type="button" (click)="purge()">Eliminar datos cifrados de este dispositivo</button>
       }
       @if (state().status === 'unlocked') {
         <p>Capacidades locales: {{ state().capabilities.join(', ') || 'ninguna' }}</p>
@@ -155,6 +171,16 @@ export class OfflineWorkspacePage {
       return workspace.unlock(value);
     });
   }
+  /** True when the current warning is the signed window, not a wrong PIN. */
+  expired() { return this.state().reason === 'OFFLINE_LOCKED'; }
+  renew(event: Event) {
+    event.preventDefault();
+    const value = this.submittedPin(event);
+    void this.run(async workspace => {
+      if (!/^\d{6}$/u.test(value)) throw Object.assign(Error('PinInvalid'), { code: 'OFFLINE_PIN_INVALID' });
+      return workspace.renew(value);
+    });
+  }
   recover(event: Event) {
     event.preventDefault();
     const value = this.submittedPin(event);
@@ -180,6 +206,8 @@ function message(error: unknown) {
   if (code === 'OFFLINE_UNLOCK_BACKOFF') return 'Demasiados intentos fallidos; espere antes de reintentar.';
   if (code === 'OFFLINE_CLOCK_ROLLBACK') return 'El reloj del dispositivo no avanzó de forma coherente; la jornada se bloqueó.';
   if (code === 'OFFLINE_GRANT_INVALID') return 'La activación no corresponde a este usuario o dispositivo.';
+  if (code === 'OFFLINE_GRANT_EXPIRED') return 'La autorización de la jornada venció; renuévela con conexión.';
+  if (code === 'OFFLINE_ACTIVATION_FAILED') return 'El servidor no autorizó la jornada offline en este momento.';
   if (code === 'OFFLINE_STORAGE_FAILED') return 'El almacenamiento local no está disponible; no se guardó nada.';
   if (code === 'OFFLINE_LOCKED') return 'La jornada se bloqueó por vencimiento o por un reloj incoherente.';
   return 'No se pudo completar la operación con el PIN indicado.';

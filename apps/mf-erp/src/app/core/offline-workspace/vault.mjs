@@ -87,7 +87,7 @@ export class OfflineVault{
   }
   async #write(){
     const envelope=await this.#sealContext(this.#activePin);
-    const revision=await this.#store.replaceContext(this.#keyId,this.#revision,envelope.context);
+    const revision=await this.#store.replaceContext(this.#keyId,this.#revision,envelope.context,envelope.clock);
     this.#revision=revision;
   }
   #activePin='';#activeKeyId='';#activeVersion=1;#activeIterations=KDF.iterations;#salt=null;
@@ -141,6 +141,7 @@ export class OfflineVault{
     }catch{failure('OFFLINE_UNLOCK_FAILED');}
     finally{clean(password);clean(material);clean(derived);}
   }
+  get lastLockReason(){return this.#lastLockReason;}
   get expiresAtMs(){return this.#expiresAt;}
   /** Re-links a retained (retired) record after the original owner re-authenticates. */
   async relink(activation,pin){
@@ -161,7 +162,26 @@ export class OfflineVault{
       this.#activePin=pin;this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=KDF.iterations;
       const sealed=await this.#sealContext(pin);this.#revision=await this.#store.relink(envelope.keyId,envelope.revision,sealed.context,sealed.clock);
       this.#activePin='';return this.state();
-    }catch(error){this.#activePin='';this.#clear();if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_STORAGE_FAILED',error);}
+    }catch(error){this.#activePin='';this.#clear();if(error instanceof OfflineVaultError)throw error;if(error?.code?.startsWith?.('OFFLINE_'))throw error;failure('OFFLINE_STORAGE_FAILED',error);}
+  }
+  /** Renews an EXPIRED but retained workspace: same scope, same salt, same DEK. */
+  async renew(activation,pin){
+    this.#clear();
+    try{
+      const verified=await verifyPinnedGrant({credential:activation.credential,authority:activation.authority,expected:activation.binding,nowMs:this.#wall()});
+      if(this.#scopeId!==await workspaceScopeId(verified.binding))failure('OFFLINE_GRANT_INVALID');
+      const envelope=await this.#store.load();
+      if(!envelope||envelope.retired)failure('OFFLINE_GRANT_INVALID');
+      if(Number.isFinite(envelope.clock?.nextAttemptAt)&&envelope.clock.nextAttemptAt>0&&this.#wall()<envelope.clock.nextAttemptAt)failure('OFFLINE_UNLOCK_BACKOFF');
+      const live=identity(this.#identity());
+      if(live&&(live.issuer!==verified.grant.identityIssuer||live.subject!==verified.grant.identitySubject||live.epoch!==activation.ownerEpoch))failure('OFFLINE_GRANT_INVALID');
+      this.#dek=await this.#unwrap(envelope,pin);this.#salt=bytes(envelope.salt);
+      this.#credential=activation.credential;this.#authority=activation.authority;this.#expected=activation.binding;this.#ownerEpoch=activation.ownerEpoch;this.#expiresAt=verified.expiresAtMs;
+      this.#keyId=envelope.keyId;this.#revision=envelope.revision;this.#lastWall=Math.max(envelope.clock.lastWall??0,this.#wall());this.#maxWall=envelope.clock.maxWall;this.#lastMono=this.#mono();
+      this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=envelope.kdf.iterations;this.#activePin=pin;
+      const sealed=await this.#sealContext(pin);this.#revision=await this.#store.replaceContext(envelope.keyId,envelope.revision,sealed.context,sealed.clock);
+      this.#activePin='';try{await this.#store.clearPenalty?.();}catch{/* best effort */}return this.#verifiedState();
+    }catch(error){this.#activePin='';this.#clear();if(error instanceof OfflineVaultError)throw error;if(error?.code?.startsWith?.('OFFLINE_'))throw error;failure('OFFLINE_STORAGE_FAILED',error);}
   }
   async purge(){this.#clear();try{await this.#store.destroy();}catch{failure('OFFLINE_STORAGE_FAILED');}return this.#lockState();}
   lock(){return this.#lockState();}

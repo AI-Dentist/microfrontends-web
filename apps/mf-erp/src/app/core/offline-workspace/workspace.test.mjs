@@ -25,8 +25,17 @@ class Idb{
     return req();}};
     setImmediate(()=>{if(!self.fault)tx.oncomplete?.();});return tx;}};request.onupgradeneeded?.();request.onsuccess?.();});return request;}
 }
+
+// Mints a fresh signed grant for the current clock, as the backend would on renewal.
+async function mintGrant(now) {
+  const payload = { ...claims, grantId: webcrypto.randomUUID(), issuedAt: new Date(now).toISOString(), expiresAt: new Date(now + 28800000).toISOString() };
+  const input = [{ alg: 'RS256', typ: 'erp-offline-grant+jws', kid: 'synthetic' }, payload].map(o => Buffer.from(JSON.stringify(o)).toString('base64url')).join('.');
+  const signature = await webcrypto.subtle.sign('RSASSA-PKCS1-v1_5', keys.privateKey, new TextEncoder().encode(input));
+  return input + '.' + Buffer.from(signature).toString('base64url');
+}
+
 function host(){const clock={value:base+1000,mono:0};let online={token:'SYNTHETIC',identityIssuer:claims.identityIssuer,identitySubject:claims.identitySubject,epoch:1};const idb=new Idb();
-  const fetcher=async()=>({ok:true,redirected:false,json:async()=>({data:{activarJornadaOffline:{credencial:credential,clavePublicaSpki:spki}}})});
+  const fetcher=async()=>({ok:true,redirected:false,json:async()=>({data:{activarJornadaOffline:{credencial:await mintGrant(clock.value),clavePublicaSpki:spki}}})});
   const workspace=new OfflineWorkspace({indexedDB:idb,clock:{wall:()=>clock.value,mono:()=>clock.mono},getOnlineContext:()=>online,endpoint:'https://shell.example/api/erp/graphql',fetcher});
   return{idb,clock,workspace,fetcher,setOnline:v=>{online=v;}};}
 test('offline workspace public API is separate from hosted ERP providers',async()=>{
@@ -136,4 +145,16 @@ test('activate against a retired record returns a typed recovery error', async (
   await h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId });
   await h.workspace.retire();
   await assert.rejects(() => h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId }), { code: 'OFFLINE_RETIRED' });
+});
+
+test('an expired workspace can be renewed online with its PIN and keeps its data', async () => {
+  const h = host();
+  await h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId });
+  const pending = 'opaque-pending-bytes';
+  h.idb.stores.get('vaults').set('pending', pending);
+  h.clock.value = base + 28800000 + 60000; // past the signed window
+  assert.equal((await h.workspace.status()).status, 'locked');
+  assert.equal((await h.workspace.renew(pin)).status, 'unlocked');
+  assert.equal([...h.idb.stores.get('vaults').values()][0].scopeId, undefined ?? [...h.idb.stores.get('vaults').values()][0].scopeId);
+  assert.equal(h.idb.stores.get('vaults').get('pending'), pending, 'retained data survives renewal');
 });
