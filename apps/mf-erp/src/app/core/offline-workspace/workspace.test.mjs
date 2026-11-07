@@ -51,3 +51,14 @@ test('retirement keeps encrypted ciphertext but clears the locator so a silent r
   const h=host();await h.workspace.activate(pin,{workspaceId:claims.workspaceId,deviceId:claims.deviceId});await h.workspace.retire();
   assert.equal((await h.workspace.status()).status,'unconfigured');await assert.rejects(()=>h.workspace.unlock(pin),{code:'OFFLINE_UNCONFIGURED'});
 });
+
+test('a wrong PIN attempt followed by the correct PIN unlocks again', async () => {
+  const h=host();await h.workspace.activate(pin,{workspaceId:claims.workspaceId,deviceId:claims.deviceId});
+  h.workspace.lock();
+  await assert.rejects(()=>h.workspace.unlock('000000'),{code:'OFFLINE_UNLOCK_FAILED'});
+  try{assert.equal((await h.workspace.unlock(pin)).status,'unlocked');}catch(error){throw Error('cause: '+String(error?.cause?.message??error?.cause));}
+  h.workspace.lock();
+  const reloaded=new OfflineWorkspace({indexedDB:h.idb,clock:{wall:()=>h.clock.value,mono:()=>h.clock.mono},getOnlineContext:()=>null,endpoint:'https://shell.example/api/erp/graphql'});
+  await assert.rejects(()=>reloaded.unlock('000000'),{code:'OFFLINE_UNLOCK_FAILED'});
+  assert.equal((await reloaded.unlock(pin)).status,'unlocked');
+});

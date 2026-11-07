@@ -59,7 +59,9 @@ export class OfflineVault{
   }
   #reserved(iv){if(this.#used.has(base64(iv)))throw Error('duplicate');this.#used.add(base64(iv));return{iv:base64(iv),serial:(++this.#serial).toString()};}
   async #sealContext(pin){
-    const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12)),contextIv=crypto.getRandomValues(new Uint8Array(12));
+    // Context rewrites must reuse the persisted KDF salt: the storage port replaces
+    // only the context slot, so a fresh salt would make it undecryptable.
+    const salt=this.#salt,iv=crypto.getRandomValues(new Uint8Array(12)),contextIv=crypto.getRandomValues(new Uint8Array(12));
     const context={credential:this.#credential,authority:this.#authority,expected:this.#expected,ownerEpoch:this.#ownerEpoch,expiresAtMs:this.#expiresAt};
     const sealed=await this.#seal(pin,this.#dek,this.#activeIterations,salt,iv,this.#activeVersion,this.#activeKeyId,this.#revision,{maxWall:this.#wall(),maxMono:this.#mono(),lastWall:this.#wall(),lastMono:this.#mono()});
     const contextEnvelope=await this.#seal(pin,json(context),this.#activeIterations,salt,contextIv,this.#activeVersion,this.#activeKeyId,this.#revision,{maxWall:this.#wall(),maxMono:this.#mono(),lastWall:this.#wall(),lastMono:this.#mono()});
@@ -70,7 +72,7 @@ export class OfflineVault{
     const revision=await this.#store.replaceContext(this.#keyId,this.#revision,envelope.context);
     this.#revision=revision;
   }
-  #activePin='';#activeKeyId='';#activeVersion=1;#activeIterations=KDF.iterations;
+  #activePin='';#activeKeyId='';#activeVersion=1;#activeIterations=KDF.iterations;#salt=null;
   async activate(activation,pin){
     this.#clear();
     try{
@@ -79,7 +81,7 @@ export class OfflineVault{
       const current=identity(this.#identity());
       if(current&&(current.issuer!==verified.grant.identityIssuer||current.subject!==verified.grant.identitySubject||current.epoch!==activation.ownerEpoch))failure('OFFLINE_GRANT_INVALID');
       if(await this.#store.load())failure('OFFLINE_GRANT_INVALID');
-      const value=crypto.getRandomValues(new Uint8Array(32));this.#dek=value;
+      const value=crypto.getRandomValues(new Uint8Array(32));this.#dek=value;this.#salt=crypto.getRandomValues(new Uint8Array(16));
       this.#credential=activation.credential;this.#authority=activation.authority;this.#expected=activation.binding;this.#ownerEpoch=activation.ownerEpoch;this.#expiresAt=verified.expiresAtMs;this.#keyId=hex(crypto.getRandomValues(new Uint8Array(16)));this.#used=new Set();this.#revision=0;this.#time();
       this.#activePin=pin;this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=KDF.iterations;try{await this.#store.create(await this.#sealContext(pin));}catch(error){if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_STORAGE_FAILED');}this.#activePin='';this.#lastWall=this.#wall();this.#lastMono=this.#mono();
       return this.state();
@@ -97,11 +99,11 @@ export class OfflineVault{
       const contextCipher=bytes(envelope.context.cipher),contextIv=bytes(envelope.context.iv);
       const context=JSON.parse(decode.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:contextIv,additionalData:this.#aad()},wrapping,contextCipher)));
       if(this.#wall()<envelope.clock.maxWall||this.#mono()<envelope.clock.maxMono)failure();
-      this.#credential=context.credential;this.#authority=context.authority;this.#expected=context.expected;this.#ownerEpoch=context.ownerEpoch;this.#expiresAt=context.expiresAtMs;this.#keyId=envelope.keyId;this.#revision=envelope.revision;this.#used=new Set(envelope.usedIVs);this.#lastWall=envelope.clock.lastWall;this.#lastMono=envelope.clock.lastMono;
+      this.#credential=context.credential;this.#authority=context.authority;this.#expected=context.expected;this.#ownerEpoch=context.ownerEpoch;this.#expiresAt=context.expiresAtMs;this.#salt=salt;this.#keyId=envelope.keyId;this.#revision=envelope.revision;this.#used=new Set(envelope.usedIVs);this.#lastWall=envelope.clock.lastWall;this.#lastMono=envelope.clock.lastMono;
       const current=identity(this.#identity());
       if(current&&(current.issuer!==this.#expected.identityIssuer||current.subject!==this.#expected.identitySubject||current.epoch!==this.#ownerEpoch))failure();
       this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=envelope.kdf.iterations;this.#time();this.#activePin=pin;try{await this.#write();}catch(error){if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_STORAGE_FAILED');}this.#activePin='';return this.state();
-    }catch(error){this.#activePin='';this.#clear();if(error instanceof OfflineVaultError)throw error;failure();}
+    }catch(error){this.#activePin='';this.#clear();if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_UNLOCK_FAILED',error);}
     finally{clean(password);clean(material);clean(derived);}
   }
   lock(){return this.#lockState();}
