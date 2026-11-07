@@ -1,0 +1,62 @@
+# ERP offline PIN workspace — T3
+Frontend owner; branch feat/erp-offline-pwa, base 0ec9f0784d1afc4c12edecbde043ea2d53edf89f. T2 closed; this is private local-only activation/vault, not T4 forms/cache/sync.
+Canonical platform-infrastructure/odd/tasks/erp-offline-pwa.md read entirely through L31. Exact backend activation document read from committed fce174bb7fddcdcff45dadc5a0eba7c23477281e; no backend edits.
+
+## Specs
+S1. "Implement explicit authenticatedONLINEactivation using exact committed ERP docs/erp-offline-pwa.md fce174b (activarJornadaOffline,RS256distinctJWS,SPKIpinnedonline,canonicalactor+issuer/sub/workspace/device<=8h)."
+S2. "Separate offline-only ERP entry/provider and NEW encryptedper-userDB, PIN-wrappedrandomDEK/AES-GCM+uniqueIV/AAD+standardKDF."
+S3. "No bearer/refresh/password/PIN persistence/plaintext or secretlogging; PIN never sentserver."
+S4. "LegacyDexie/stores/standalone unchanged. Do not revive retiredonlineleases, pretendJWTauth, deletehostedguards or show pending asserverconfirmed."
+S5. "Expiry/rollback/inconsistency/explicitlogout/userchange lock and clearkeys/RAM while retaining encryptedpending fororiginalowner."
+S6. "Document honest-device/clockrestart/storageeviction/XSS/offlinebruteforce/revocationlimits, no hardwaresecurityclaims."
+S7. "CachedonlypublicPWA does notauthorizeprivateentry."
+S8. "Public test-first PINwrong/ciphertexttamper/actorisolation/expiry-boundary/logout/principalchange/storagefailure; preserveonline/standalone/retirementcontrols, actualbrowserunlock/reload/lock syntheticproof whereapplicable."
+S9. "No privatefiles/providers/containers/dependencyinstall/push. Samefeatbranch,WIPpreserved, coherent~400linecommits withtests/docs, Risk2independentverification oncecandidate ready."
+S10. "Return exact extra entry/providerpath with evidence beforeediting iftheseareinsufficient; notblanketpermission. T4cache/4forms/syncadapters NOTpartofthisslice; followafterT3withboundedhandoff."
+S11. "backend finalindependentreviewer FAILED withoutverdict, so T4b staysUNAPPROVED; own114PASS notindependentapproval. This does not block T3frontend implementation/syntheticchecks, but do NOT claim wholeprivate-syncproductionapproval."
+
+### Allowed source edit surfaces
+- apps/mf-erp/src/app/core/offline-workspace/**
+- apps/mf-erp/src/app/features/offline-workspace/**
+- apps/mf-erp/src/app/offline-entry.routes.ts
+- apps/shell/src/bootstrap.ts
+- apps/shell/src/module-page.ts
+- apps/shell/test/**
+- apps/mf-erp/src/app/core/runtime/erp-runtime-context.ts
+- apps/mf-erp/src/app/core/runtime/erp-runtime-context.spec.ts
+- docs/erp-offline-pwa.md
+Own tracking/memory allowed. Two exact additions APPROVED in L4: apps/mf-erp/federation.config.js (only add ./OfflineRoutes exposure) and scripts/erp-public-inventory.mjs (only actual new audited emitted fingerprint, retain all old profiles/strict rejection). Existing T2 source is frozen/closed; no duplicate T2 suite/browser/reviewer.
+
+S12. "Before profileintegrationfix capture real changed-build graph rejection (not setupfailure), then GREEN actualnewgraph plus negative unknown/tampered target and previous profile/./Routes online/retirement controls."
+S13. "Security/sharedbuildchanges require applicable finalindependentRisk2/5verification forT3 oncecandidate ready, not another T2review."
+
+## Tasks
+W1 | S1,S7,S10-S11 | primary bounded read-only map | done | Canonical complete; committed backend doc read; entry and publisher constraints evidenced L2. Commit:N/A.
+W2 | S1,S3,S7-S8 | primary test-first grant verification + explicit online activation | in_progress | Grant library implemented:14 full controls PASS plus3 new roles/key controls PASS on same source. HTTP activation client still pending. Commit:grant unit next.
+W3 | S2-S3,S5-S8 | primary encrypted per-user vault/storage + public controls | pending | PIN-wrapped random DEK, new DB only, lock/clock/identity/storage safety and encrypted retention. Commit:pending.
+W4 | S2,S4-S8,S10 | primary isolated entry/provider and shell lifecycle | pending | Exact two integration surfaces approved L4; real changed-build graph RED before new fingerprint, actual graph GREEN and old/unknown-target controls required. Commit:pending.
+W5 | S6,S8-S11 | functional build/browser + once-ready independent Risk2 + delivery | pending | Attributed source/functional versus independent evidence; no production/private-sync claim. Commit:pending.
+
+## Log
+L1. Original T3 assignment verbatim:
+Spec: platform-infrastructure/odd/tasks/erp-offline-pwa.md T2d then T3,S2-S4 and LogL28-L30. Read entire canonical document. Parent read actual green-result.json8PASS and localtrackerL30-L36; do NOT rerun completed293/browser8 or start another finalverifier. Finish your ACTIVE T2 finalindependentverification/corrections ifrequired and coherentlocalcommits first. Then AUTOMATICALLY continue next already-authorized T3 frontend vault/PIN, not a status-only stop. Never edit frozenT2candidate concurrently with its reviewer.
+## Allowed edit surfaces
+apps/mf-erp/src/app/core/offline-workspace/**
+apps/mf-erp/src/app/features/offline-workspace/**
+apps/mf-erp/src/app/offline-entry.routes.ts
+apps/shell/src/bootstrap.ts
+apps/shell/src/module-page.ts
+apps/shell/test/**
+apps/mf-erp/src/app/core/runtime/erp-runtime-context.ts
+apps/mf-erp/src/app/core/runtime/erp-runtime-context.spec.ts
+docs/erp-offline-pwa.md
+## Task
+These T3surfaces activate ONLY AFTER T2closure. Implement explicit authenticatedONLINEactivation using exact committed ERP docs/erp-offline-pwa.md fce174b (activarJornadaOffline,RS256distinctJWS,SPKIpinnedonline,canonicalactor+issuer/sub/workspace/device<=8h). Separate offline-only ERP entry/provider and NEW encryptedper-userDB, PIN-wrappedrandomDEK/AES-GCM+uniqueIV/AAD+standardKDF. No bearer/refresh/password/PIN persistence/plaintext or secretlogging; PIN never sentserver. LegacyDexie/stores/standalone unchanged. Do not revive retiredonlineleases, pretendJWTauth, deletehostedguards or show pending asserverconfirmed. Expiry/rollback/inconsistency/explicitlogout/userchange lock and clearkeys/RAM while retaining encryptedpending fororiginalowner. Document honest-device/clockrestart/storageeviction/XSS/offlinebruteforce/revocationlimits, no hardwaresecurityclaims. CachedonlypublicPWA does notauthorizeprivateentry. Public test-first PINwrong/ciphertexttamper/actorisolation/expiry-boundary/logout/principalchange/storagefailure; preserveonline/standalone/retirementcontrols, actualbrowserunlock/reload/lock syntheticproof whereapplicable. No privatefiles/providers/containers/dependencyinstall/push. Samefeatbranch,WIPpreserved, coherent~400linecommits withtests/docs, Risk2independentverification oncecandidate ready. Return exact extra entry/providerpath with evidence beforeediting iftheseareinsufficient; notblanketpermission. T4cache/4forms/syncadapters NOTpartofthisslice; followafterT3withboundedhandoff. Send T2closure and T3milestones/S#covered to run:run_69c1fd01dfd1, continueauthorizedsteps withoutgenericapproval. Parenttodo nowgranular; your source/functionalchecks clearly separated from independentapproval.
+
+L2. T2 closed0ec9f078 after source/acceptance units c2d3167,f8dbf65,3f2bef1,0bb92fc,54871b5,a9783e1; no simultaneous reviewer/writer or repeated293/browser8. Parent acknowledged closure and provided exact public ERP worktree/doc read grant. `git show fce174b:docs/erp-offline-pwa.md` read full: custom RS256 typ erp-offline-grant+jws; SPKI standard-base64 DER, kid online-pinned; exact custom identity/capability/workspace/device/ISO UTC window<=28800s. PIN not sent; no activation Idempotency-Key reuse. Backend T4b reviewer failed/no verdict remains unapproved and does not block synthetic T3.
+L3. Bounded frontend map: angular.json:57/83 selects federation.config.js; .mjs only re-exports it; .js:15 exposes only ./Routes -> erp.routes.ts. That existing factory always creates ErpLayout/provideErp, unsuitable for isolated private offline entry. Need exact added federation.config.js surface to expose authorized offline-entry.routes.ts separately, no hosted guard deletion/global loader workaround. Existing publisher script:61 pins module-page implementation in compiled bootstrap chunk e1f907; authorized new bootstrap route changes that body, requiring exact publisher surface for new source/dataflow-audited fingerprint while retaining old/strict rejection. Exact two-path request msg_a28eddc57419 enqueued, not read/authorized. Core W2/W3 unaffected and will proceed inside grant.
+
+L4. Exact coordinator extension APPROVED (not product decision): apps/mf-erp/federation.config.js ONLY add ./OfflineRoutes -> ./src/app/offline-entry.routes.ts, preserve ./Routes/shared/skip/features/standalone; scripts/erp-public-inventory.mjs ONLY actual new source/dataflow-reviewed emitted bootstrap fingerprint, old audited profiles and unknown/altered/privacy/CORS/target restrictions retained. No broader paths. Before profile change observe real new-build rejection; then actual new graph/negative unknown-tampered/old-profile/online-retirement checks, final independent risks2/5 once-ready T3. Backend final proof remains unapproved, not blocker; no reviewer retry/backend edit. New grant recorded before first production source write.
+L5. First test-only core file grant.test.mjs prepared before production. Owner `node --test --test-name-pattern='pinned offline grant public API' apps/mf-erp/src/app/core/offline-workspace/grant.test.mjs` EXIT1,1 assertionFAIL/0PASS: undefined != function at public API gate, not compiler/import/setup failure. This pins absent new API ONLY, NOT independent semantic RED for all negative grant rules. Fixtures use fresh synthetic RSA keys in RAM and fixed test clock; no private key files/provider/network.
+
+L6. Core grant.mjs implemented after API-gate RED using standard WebCrypto SPKI/RSA-SHA256 only; exact custom typ/audience/schema/canonical binding and three role capability maps, immutable snapshots, fixed authority/kid and nanosecond-precise <=8h duration with conservative millisecond expiry. Initial14? precisely INITIAL13 public tests PASS; owner then added coerced actor/role control and observed meaningful RED1 Missing expected rejection on signed actor-array acceptance, fixed strict string types BEFORE final14/14PASS (0.202s). Role-array second loop case not independently reached in RED, no such claim. Three additional CAJERO/RECEPCIONISTA/wrong-valid-public-key controls PASS (0.250s), source unchanged; total17 distinct observed controls. API gate RED was absence only, not13semantic failures. No PIN/storage/UI/real online backend claim; unreferenced library does not justify app build yet. Final once-ready independent T3 review still pending.

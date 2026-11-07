@@ -143,3 +143,19 @@ was unavailable; no prior infrastructure authority is reused.
 Browser storage can be evicted and public install completion can fail (including
 quota/CORS errors). Retaining public resources does not retain or authorize a private
 session, and does not provide the future workspace's offline security guarantees.
+
+## T3 signed local grant library (implementation in progress)
+
+The new offline-workspace grant verifier consumes only the committed `fce174b`
+custom activation format, not API JWTs. It verifies RSA/SHA-256 with the online
+channel's public SPKI, pins verified kid/issuer and canonical identity/workspace/
+device/role/capabilities, and rejects unexpected fields/types or altered signatures.
+Signed durations use exact nanoseconds, never floating-point expansion past eight
+hours; the local millisecond deadline expires conservatively. This is local-only
+verification, not server authorization or proof of an authenticated activation call.
+
+The HTTP activation adapter, PIN-wrapped random DEK, encrypted per-user database,
+isolated entry and complete lifecycle/browser proof are still in progress. No
+existing hosted/standalone providers or legacy stores are changed by this library.
+Backend final sync verification remains unapproved; no private-sync production
+approval follows from the public PWA or these synthetic grant controls.
