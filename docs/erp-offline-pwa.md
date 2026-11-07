@@ -195,3 +195,27 @@ Still pending: real-browser unlock/reload/lock proof with synthetic state, an
 applicable full current suite/build record for these sources, and the independent
 T3 risk verification. Offline unlock without a live online identity cannot
 cryptographically re-verify the actor.
+
+## T4 constraints recorded ahead of implementation (not implemented)
+
+From the completed backend reviews; nothing here is delivered by T3.
+
+- **Expected expense balance:** use `cashflowBalanceBs` exactly as returned by
+  `prepararSyncOffline`. It is a server-computed **all-time** accounting figure
+  (income minus expenses), nullable for users without expense permission. Do not
+  recompute a month or any period locally: the server comparison is unbounded
+  all-time, so a locally derived period balance makes every synced expense answer
+  `STALE_CASHFLOW_BALANCE`. It is not a cash-drawer or open-register signal.
+- **Open register:** the guard is client-asserted only because the ERP has no
+  register state model. Sending the flag produces a conflict; omitting it does not
+  assert that the register is open. The UI must say so.
+- **Offline actor limit:** unchanged and must stay visible — offline the actor
+  cannot be re-verified; the 8-hour signed window and the PIN are the only bounds,
+  and a revoked permission is undetectable until the next online authentication.
+- **Discounts:** `descuentoBs` is applied by the legacy order use case itself, so
+  large or total discounts are a pre-existing product capability, not an offline
+  invention. No offline-only discount rules may be added; any needed policy is a
+  coordinator decision.
+
+T4 forms/cache/sync remain not started; backend independent proof is still
+unapproved.
