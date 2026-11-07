@@ -32,8 +32,14 @@ export class OfflineWorkspace {
     let record = null;
     try { record = await createIndexedStore(this.#indexedDB, meta.scopeId).load(); } catch { return meta; }
     if (!record) { const repaired = { ...meta, scopeId: null, retired: false }; try { await writeDeviceMeta(this.#indexedDB, repaired); this.#meta = repaired; return repaired; } catch { return repaired; } }
-    if (Boolean(record.retired) !== Boolean(meta.retired)) {
-      const repaired = { ...meta, retired: Boolean(record.retired) };
+    if (meta.retired) {
+      if (!record.retired) {
+        try { await createIndexedStore(this.#indexedDB, meta.scopeId).retire(); } catch {}
+      }
+      return meta;
+    }
+    if (record.retired) {
+      const repaired = { ...meta, retired: true };
       try { await writeDeviceMeta(this.#indexedDB, repaired); this.#meta = repaired; return repaired; } catch { return meta; }
     }
     return meta;
@@ -56,6 +62,12 @@ export class OfflineWorkspace {
     const device = (await this.#device()) ?? {
       workspaceId: workspaceId ?? newId(), deviceId: deviceId ?? newId(),
     };
+    try {
+      await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false });
+    } catch (err) {
+      throw (err?.code?.startsWith?.('OFFLINE_') ? err : coded('OFFLINE_STORAGE_FAILED'));
+    }
+    this.#meta = { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false };
     const provisioned = await activateOnlineGrant({
       endpoint: this.#endpoint, getOnlineContext: this.#getOnlineContext, workspaceId: device.workspaceId,
       deviceId: device.deviceId, durationSeconds, nowMs: () => this.#clock.wall(), fetcher: this.#fetcher,
@@ -64,14 +76,9 @@ export class OfflineWorkspace {
     const vault = new OfflineVault({store: createIndexedStore(this.#indexedDB, scopeId), scopeId, clock: this.#clock, getIdentity: () => this.#identity()});
     try { await vault.activate(provisioned, pin); }
     catch (error) {
-      // Never orphan existing ciphertext: keep the linkage and let reconcile fix the flag.
       this.#meta = null; this.#vault = null;
-      const record = await createIndexedStore(this.#indexedDB, scopeId).load().catch(() => null);
-      if (record) {
-        await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId, retired: Boolean(record.retired) }).catch(() => {});
-      } else {
-        await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false }).catch(() => {});
-      }
+      await vault.purge().catch(() => {});
+      await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false }).catch(() => {});
       throw error;
     }
     try { await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId, retired: false }); }

@@ -176,6 +176,7 @@ export function createIndexedStore(indexedDB, scopeId) {
           const current = store.get(scopeId);
           current.onsuccess = () => {
             if (!current.result) return;
+            if (current.result.retired) return;
             store.put({ ...current.result, retired: true, revision: current.result.revision + 1 });
           };
         });

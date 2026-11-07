@@ -228,6 +228,79 @@ expected state, not a failure.
 
 ## T3 retention, clock and unlock policy (after independent review)
 
+### Lifecycle State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Unconfigured
+    Unconfigured --> Reserved: activate(pin) [pre-write locator scopeId:null]
+    Reserved --> Unlocked: vault.activate() & locator written
+    Reserved --> Unconfigured: failure -> purge ciphertext & reset locator
+    Unlocked --> Locked: lock() / reload / background
+    Locked --> Unlocked: unlock(pin) [correct PIN, advance wall]
+    Locked --> Locked: unlock(wrong PIN) [chargeAttempt -> backoff]
+    Unlocked --> Expired: wall clock > expiresAtMs
+    Expired --> Unlocked: renew(grant, pin) [chargeAttempt -> open & replaceContext]
+    Unlocked --> Retired: retire() / logout() / principalChanged() [reconcile: monotonic]
+    Locked --> Retired: retire() [write meta & record retired:true]
+    Retired --> Unlocked: reactivate(grant, pin) / relink [online grant + correct PIN]
+    Unlocked --> Unconfigured: purge() [destroy ciphertext & clear locator]
+    Locked --> Unconfigured: purge()
+    Retired --> Unconfigured: purge()
+    Locked --> Unconfigured: storage eviction [reconcile repairs locator]
+```
+
+### Activation, Unlock, Retirement and SW Verification Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant WS as OfflineWorkspace
+    participant Store as IndexedStore (IDB)
+    participant Vault as OfflineVault
+    participant SW as ServiceWorker (erp-sw.js)
+
+    Note over User,WS: 1. Activation & Reservation
+    User->>WS: activate(pin)
+    WS->>Store: writeDeviceMeta({scopeId: null, retired: false}) [Pre-reservation]
+    WS->>Vault: activate(grant, pin)
+    Vault->>Store: create(sealedContext)
+    alt Activation/Persistence Failure
+        WS->>Vault: purge()
+        WS->>Store: writeDeviceMeta({scopeId: null})
+    else Activation Success
+        WS->>Store: writeDeviceMeta({scopeId, retired: false})
+    end
+
+    Note over User,WS: 2. Unlock & Backoff Throttle
+    User->>WS: unlock(pin)
+    WS->>Store: chargeAttempt(wall) [atomic claim BEFORE PBKDF2]
+    alt Backoff Active
+        Store-->>WS: allowed: false
+        WS-->>User: OFFLINE_UNLOCK_BACKOFF
+    else Allowed
+        WS->>Vault: unlock(pin) [decrypt DEK, adopt meta]
+        Vault->>Store: replaceContext(sealedContext)
+        WS-->>User: Unlocked
+    end
+
+    Note over User,WS: 3. Retirement & Eviction Reconcile
+    User->>WS: retire()
+    WS->>Store: retire() [idempotent revision bump]
+    WS->>Store: writeDeviceMeta({retired: true})
+    Note over WS: Reconcile enforces monotonic retirement (record cannot clear locator)
+
+    Note over User,SW: 4. Pinned Asset SW Fetch with Integrity
+    User->>SW: fetch(assetUrl)
+    alt Cache Hit
+        SW-->>User: verified(cachedResponse, asset)
+    else Cache Miss
+        SW->>SW: fetch(network) -> verified(netResponse, asset)
+        SW-->>User: verified response (checks SHA-256, MIME, redirects)
+    end
+```
+
 - **Clock:** only wall-clock bounds are persisted in the encrypted envelope
   (`maxWall`/`lastWall`). The monotonic clock is document-local because
   `performance.now()` restarts near zero on reload; it is compared only within one

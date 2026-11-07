@@ -66,6 +66,22 @@ test('retirement keeps the locator marked retired so plain unlock cannot silentl
   assert.equal((await h.workspace.status()).status,'retired');await assert.rejects(()=>h.workspace.unlock(pin),{code:'OFFLINE_RETIRED'});
 });
 
+test('combined flag-and-revision tampering cannot un-retire a retired workspace', async () => {
+  const h = host();
+  await h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId });
+  await h.workspace.retire();
+  assert.equal((await h.workspace.status()).status, 'retired');
+  // Tamper outer record: set retired = false and decrement revision
+  const scopeId = h.idb.stores.get('meta').get('device').scopeId;
+  const record = h.idb.stores.get('vaults').get(scopeId);
+  record.retired = false;
+  record.revision--;
+  // Reopened workspace reconciles and preserves monotonic retirement
+  const reopened = new OfflineWorkspace({ indexedDB: h.idb, clock: { wall: () => h.clock.value, mono: () => h.clock.mono }, getOnlineContext: () => null, endpoint: 'https://shell.example/api/erp/graphql' });
+  assert.equal((await reopened.status()).status, 'retired');
+  await assert.rejects(() => reopened.unlock(pin), { code: 'OFFLINE_RETIRED' });
+});
+
 test('a wrong PIN attempt followed by the correct PIN unlocks again', async () => {
   const h=host();await h.workspace.activate(pin,{workspaceId:claims.workspaceId,deviceId:claims.deviceId});
   h.workspace.lock();

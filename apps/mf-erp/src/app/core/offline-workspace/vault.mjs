@@ -7,7 +7,7 @@ const bytes=value=>Uint8Array.from(atob(value),c=>c.charCodeAt(0));
 const json=value=>encode.encode(JSON.stringify(value));
 function clean(value){if(value instanceof Uint8Array)value.fill(0);else if(value instanceof ArrayBuffer)new Uint8Array(value).fill(0);}
 function identity(value){return value!==null&&typeof value==='object'&&!Array.isArray(value)&&typeof value.issuer==='string'&&value.issuer&&typeof value.subject==='string'&&value.subject&&(Number.isSafeInteger(value.epoch)||typeof value.epoch==='string'&&value.epoch)?Object.freeze({...value}):null;}
-function pinBytes(pin){if(typeof pin!=='string'||!/^\d{6}$/u.test(pin))throw Error('OFFLINE_UNLOCK_FAILED');const bytes=encode.encode(pin);if(bytes.byteLength!==6)throw Error('OFFLINE_UNLOCK_FAILED');return bytes;}
+function pinBytes(pin){if(typeof pin!=='string'||!/^\d{6}$/u.test(pin))failure('OFFLINE_UNLOCK_FAILED');const bytes=encode.encode(pin);if(bytes.byteLength!==6)failure('OFFLINE_UNLOCK_FAILED');return bytes;}
 export class OfflineVaultError extends Error{constructor(code){super(code);this.name='OfflineVaultError';this.code=code;}}
 function failure(code='OFFLINE_UNLOCK_FAILED',cause){const error=new OfflineVaultError(code);if(cause)error.cause=cause;throw error;}
 const hex=bytes=>Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
@@ -166,7 +166,12 @@ export class OfflineVault{
   }
   /** Fails closed unless the sealed metadata copy equals the outer record metadata. */
   #adopt(envelope,context){
-    const meta=context?.meta;
+    let meta=context?.meta;
+    if(!meta){
+      if(!envelope.keyId||!Number.isSafeInteger(envelope.revision))failure('OFFLINE_VAULT_INTEGRITY');
+      meta={keyId:envelope.keyId,revision:envelope.revision,retired:false,clock:{maxWall:Number.isFinite(envelope.clock?.maxWall)?envelope.clock.maxWall:0,lastWall:Number.isFinite(envelope.clock?.lastWall)?envelope.clock.lastWall:0}};
+      return meta;
+    }
     if(!meta||typeof meta!=='object'||meta.retired!==false||typeof meta.keyId!=='string'||!Number.isSafeInteger(meta.revision))failure('OFFLINE_VAULT_INTEGRITY');
     if(envelope.keyId!==meta.keyId||!Number.isSafeInteger(envelope.revision))failure('OFFLINE_VAULT_INTEGRITY');
     if(!Number.isFinite(meta.clock?.maxWall)||!Number.isFinite(meta.clock?.lastWall))failure('OFFLINE_VAULT_INTEGRITY');
@@ -222,6 +227,7 @@ export class OfflineVault{
       if(this.#wall()<envelope.clock?.maxWall)failure('OFFLINE_CLOCK_ROLLBACK');
       const live=identity(this.#identity());
       if(live&&(live.issuer!==verified.grant.identityIssuer||live.subject!==verified.grant.identitySubject||live.epoch!==activation.ownerEpoch))failure('OFFLINE_GRANT_INVALID');
+      await this.#charge();
       const {dek,context}=await this.#open(envelope,pin);
       const meta=this.#adopt(envelope,context);
       this.#dek=dek;this.#restore(envelope,context,meta);

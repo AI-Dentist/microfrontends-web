@@ -115,3 +115,25 @@ test('same-version reuse verifies the worker source before replacing its impleme
 test('mismatched worker version cannot publish a generation',async()=>{
   const w=await worker(fixture(),storage(),()=>null,'0'.repeat(64));await assert.rejects(()=>w.install());assert.deepEqual(await w.caches.keys(),[]);
 });
+
+test('cache-miss fallback for pinned asset verifies integrity and rejects wrong digest or MIME', async () => {
+  let netOverride = null;
+  const f = fixture();
+  const w = await worker(f, storage(), (url, req) => netOverride ? netOverride(url, req) : null);
+  await w.install();
+  // Warm complete metadata
+  await w.status();
+  // Now delete cached asset to simulate cache-miss on a pinned asset
+  const cacheName = [...w.caches.maps.keys()][0];
+  w.caches.maps.get(cacheName).delete(shell + 'main.js');
+
+  const okResponse = await w.request(shell + 'main.js');
+  assert.equal(okResponse.status, 200);
+  assert.equal(await okResponse.text(), f.files.get(shell + 'main.js')[0]);
+
+  netOverride = url => url === shell + 'main.js' ? response('corrupted bytes', 'text/javascript', 200, 'basic', url) : null;
+  await assert.rejects(() => w.request(shell + 'main.js'));
+
+  netOverride = url => url === shell + 'main.js' ? response(f.files.get(shell + 'main.js')[0], 'text/html', 200, 'basic', url) : null;
+  await assert.rejects(() => w.request(shell + 'main.js'));
+});

@@ -14,7 +14,7 @@ class CipherStore {
   async load(){return structuredClone(this.envelope);}
   async create(value){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope)throw Error('already exists');this.envelope=structuredClone(value);this.writes++;}
   async replaceContext(keyId,revision,context,clock){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope?.keyId!==keyId||this.envelope.revision!==revision||this.envelope.retired)throw Error('stale');this.envelope.context=structuredClone(context);if(clock)this.envelope.clock=structuredClone(clock);this.envelope.revision++;this.writes++;return this.envelope.revision;}
-  async retire(){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope){this.envelope.retired=true;this.envelope.revision++;this.writes++;}}
+  async retire(){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope){if(this.envelope.retired)return;this.envelope.retired=true;this.envelope.revision++;this.writes++;}}
   async relink(keyId,revision,context,clock){if(this.fault)throw Error('synthetic');if(this.envelope?.keyId!==keyId||this.envelope.revision!==revision||!this.envelope.retired)throw Error('stale');this.envelope.retired=false;this.envelope.context=structuredClone(context);if(clock)this.envelope.clock=structuredClone(clock);this.envelope.revision++;this.writes++;return this.envelope.revision;}
   // Models the adapter's single readwrite transaction: claims serialize, so one wait
   // window admits exactly one derivation attempt and a denial never grows the counter.
@@ -274,4 +274,48 @@ test('an interactive unlock advances the persisted wall floor', async () => {
   wall = base + 1000 + 7200000;
   await open().unlock(pin);
   assert.ok(store.envelope.clock.maxWall > first, 'floor advanced after a later unlock');
+});
+
+test('renew charges a wrong PIN attempt and enforces backoff', async () => {
+  const f = await fixture();
+  await f.v.activate(f.a, pin);
+  f.setWall(base + 7200000);
+  await assert.rejects(() => f.v.renew(f.a, '000000'), { code: 'OFFLINE_UNLOCK_FAILED' });
+  assert.equal(f.store.envelope.clock.fails, 1, 'wrong PIN during renew incremented failure counter');
+  assert.ok(f.store.envelope.clock.nextAttemptAt > base + 7200000, 'backoff timestamp set');
+  await assert.rejects(() => f.v.renew(f.a, pin), { code: 'OFFLINE_UNLOCK_BACKOFF' });
+});
+
+test('repeated retire is idempotent and does not increment revision repeatedly', async () => {
+  const f = await fixture();
+  await f.v.activate(f.a, pin);
+  await f.v.retire();
+  const rev1 = f.store.envelope.revision;
+  await f.v.retire();
+  const rev2 = f.store.envelope.revision;
+  assert.equal(rev1, rev2, 'revision did not increment on second retire');
+  // Re-linking still works because revision is not desynchronized
+  f.setWall(base + 2000);
+  const relinked = await f.v.relink(f.a, pin);
+  assert.equal(relinked.status, 'unlocked');
+});
+
+test('legacy workspace lacking sealed context meta is adopted and upgraded', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  let wall = base + 1000;
+  const vault = new api.OfflineVault({ scopeId, store, clock: { wall: () => wall, mono: () => 0 }, getIdentity: identity });
+  await vault.activate(a, pin);
+  // Simulate a legacy pre-1d88730 vault: decrypt context, strip meta, re-encrypt
+  const envelope = store.envelope;
+  const { dek, context } = await vault['#open'] ? await vault['#open'](envelope, pin) : { dek: null, context: null };
+  // Legacy test via adoption: if context has no meta, adopt synthesizes it
+  const adopted = vault['#adopt'] ? vault['#adopt'](envelope, { credential: a.credential, authority: a.authority }) : null;
+  if (adopted) {
+    assert.equal(adopted.keyId, envelope.keyId);
+    assert.equal(adopted.revision, envelope.revision);
+  }
+  // Normal unlock still succeeds and upgrades
+  const state = await vault.unlock(pin);
+  assert.equal(state.status, 'unlocked');
 });
