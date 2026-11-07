@@ -17,7 +17,7 @@ export async function workspaceScopeId(binding){
   return hex(new Uint8Array(await digest(json({issuer:binding.identityIssuer,subject:binding.identitySubject,user:binding.erpUserId,workspace:binding.workspaceId,device:binding.deviceId}))));
 }
 export class OfflineVault{
-  #store;#scopeId;#clock;#identity;#credential;#authority;#expected;#ownerEpoch;#expiresAt;#dek=null;#keyId;#revision=0;#lastWall=null;#lastMono=null;#maxWall=null;#used;
+  #store;#scopeId;#clock;#identity;#credential;#authority;#expected;#ownerEpoch;#expiresAt;#dek=null;#keyId;#revision=0;#lastWall=null;#lastMono=null;#maxWall=null;#lastLockReason=null;#used;
   constructor({store,scopeId,clock,getIdentity}={}){
     this.#store=store;this.#scopeId=scopeId;this.#clock=clock;this.#identity=getIdentity;
     if(!store||!/^[0-9a-f]{64}$/u.test(scopeId)||typeof getIdentity!=='function'||!Number.isFinite(clock?.wall())||!Number.isFinite(clock?.mono()))failure('OFFLINE_STORAGE_FAILED');
@@ -56,8 +56,14 @@ export class OfflineVault{
   #clear(){clean(this.#dek);this.#dek=null;}
   #lockState(){this.#clear();return Object.freeze({status:'locked',capabilities:Object.freeze([])});}
   state(){
-    try{if(!this.#dek)return this.#lockState();this.#time();this.#same();return Object.freeze({status:'unlocked',capabilities:Object.freeze([...this.#expected.capabilities])});}
-    catch{return this.#lockState();}
+    try{if(!this.#dek)return this.#lockState();this.#time();this.#same();this.#lastLockReason=null;return Object.freeze({status:'unlocked',capabilities:Object.freeze([...this.#expected.capabilities])});}
+    catch(error){this.#lastLockReason=error?.code??'OFFLINE_LOCKED';return this.#lockState();}
+  }
+  /** Throwing variant for an interactive unlock: the caller needs the real reason. */
+  #verifiedState(){
+    if(!this.#dek)failure('OFFLINE_LOCKED');
+    this.#time();this.#same();
+    return Object.freeze({status:'unlocked',capabilities:Object.freeze([...this.#expected.capabilities])});
   }
   async #seal(pin,dek,iterations,salt,iv,version,keyId,revision,clock){
     const password=pinBytes(pin);let material,derived;
@@ -115,7 +121,7 @@ export class OfflineVault{
       this.#credential=context.credential;this.#authority=context.authority;this.#expected=context.expected;this.#ownerEpoch=context.ownerEpoch;this.#expiresAt=context.expiresAtMs;this.#salt=salt;this.#keyId=envelope.keyId;this.#revision=envelope.revision;this.#lastWall=envelope.clock.lastWall;this.#maxWall=envelope.clock.maxWall;if(this.#lastMono===null)this.#lastMono=this.#mono();
       const current=identity(this.#identity());
       if(current&&(current.issuer!==this.#expected.identityIssuer||current.subject!==this.#expected.identitySubject||current.epoch!==this.#ownerEpoch))failure();
-      this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=envelope.kdf.iterations;this.#time();this.#activePin=pin;try{await this.#write();}catch(error){if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_STORAGE_FAILED');}this.#activePin='';try{await this.#store.clearPenalty?.();}catch{/* best effort */}return this.state();
+      this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=envelope.kdf.iterations;this.#time();this.#activePin=pin;try{await this.#write();}catch(error){if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_STORAGE_FAILED');}this.#activePin='';try{await this.#store.clearPenalty?.();}catch{/* best effort */}return this.#verifiedState();
     }catch(error){this.#activePin='';this.#clear();const code=error instanceof OfflineVaultError?error.code:null;if(code==='OFFLINE_CLOCK_ROLLBACK'||code==='OFFLINE_LOCKED'||code==='OFFLINE_RETIRED'||code==='OFFLINE_UNLOCK_BACKOFF'){throw error;}
       // Only a wrong PIN counts: the record is found by scope, never by a key learned on success.
       try{await this.#store.penalize(this.#wall());}catch{/* best effort */}

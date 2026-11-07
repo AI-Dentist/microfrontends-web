@@ -180,3 +180,14 @@ test('a wall advancing far slower than mono is treated as tampering', async () =
   mono += 120000; wall += 5000;
   await assert.rejects(() => vault.unlock(pin), { code: 'OFFLINE_CLOCK_ROLLBACK' });
 });
+
+test('an interactive unlock reports the exact lock reason while state() degrades quietly', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  let wall = base + 1000, mono = 0;
+  const vault = new api.OfflineVault({ scopeId, store, clock: { wall: () => wall, mono: () => mono }, getIdentity: identity });
+  await vault.activate(a, pin);
+  mono += 120000; wall += 1000; // mono advances, wall crawls: witness fires
+  assert.equal(vault.state().status, 'locked', 'poll degrades quietly');
+  await assert.rejects(() => vault.unlock(pin), { code: 'OFFLINE_CLOCK_ROLLBACK' });
+});
