@@ -121,9 +121,25 @@ credential, permission, identity, activation record or future vault authorizatio
 Existing hosted expiry/retirement, standalone behavior and legacy databases remain
 unchanged. Public CacheStorage is not a place for PINs, tokens or business records.
 
-## Acceptance status
+## Verification evidence
 
-Current-source builds, final293 Node checks and actual-browser8 checks passed;
-independent risks2/5 inspection found no severe candidate-caused findings.
-The next scoped acceptance unit preserves the runnable browser harness, exact
-evidence and excluded/unavailable checks. No production deployment is claimed.
+Current-source shell and ERP production builds passed; the final shell build also
+includes delegated-load failure invalidation. The final shell/script suite passed
+293 tests. The known Windows symlink EPERM case was explicitly excluded, not proven.
+
+`node scripts/tests/erp-pwa-browser.mjs` uses cached Chromium, actual build outputs,
+owned ephemeral CORS servers and synthetic private failures; it needs no backend.
+Its observed run passed online boot, offline reload and official native ERP import,
+other online modules, zero CDP installability errors, unknown-target rejection,
+incomplete-update preservation and complete-update offline activation. It verified
+214 cached resource bodies before the update and 429 across both complete versions
+against their SHA-256 records, with four private network controls and zero external
+requests. Servers/browser were cleaned up. Results live under
+`.git/erp-offline-pwa-proof/green-result.json` and are not deployment proof.
+
+Independent security/delivery inspection passed for this candidate with no severe
+findings. It did not rerun owner checks or claim native approval. Native assessment
+was unavailable; no prior infrastructure authority is reused.
+Browser storage can be evicted and public install completion can fail (including
+quota/CORS errors). Retaining public resources does not retain or authorize a private
+session, and does not provide the future workspace's offline security guarantees.
