@@ -154,8 +154,12 @@ Signed durations use exact nanoseconds, never floating-point expansion past eigh
 hours; the local millisecond deadline expires conservatively. This is local-only
 verification, not server authorization or proof of an authenticated activation call.
 
-The HTTP activation adapter, PIN-wrapped random DEK, encrypted per-user database,
-isolated entry and complete lifecycle/browser proof are still in progress. No
+The network-only activation adapter uses a live in-memory owner fence before and
+after transport/signature verification. It sends only the exact UUID/duration input
+and transient bearer (no PIN, idempotency key or persistence), rejects HTTP/GraphQL
+errors, and cannot extend the requested signed duration. Synthetic HTTP/crypto
+checks passed; real provider integration is not claimed. PIN-wrapped random DEK,
+encrypted per-user database, isolated entry and lifecycle/browser proof remain in progress. No
 existing hosted/standalone providers or legacy stores are changed by this library.
 Backend final sync verification remains unapproved; no private-sync production
 approval follows from the public PWA or these synthetic grant controls.

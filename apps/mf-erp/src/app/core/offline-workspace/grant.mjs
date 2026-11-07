@@ -43,7 +43,8 @@ function instant(value) {
 function binding(grant) {
   return Object.freeze(Object.fromEntries(BINDING.map(k=>[k,k==='capabilities'?Object.freeze([...grant[k]]):grant[k]])));
 }
-async function verified(credential, spki, nowMs) {
+async function verified(credential, spki, nowMs, maxDurationSeconds = 28800) {
+  if (!Number.isInteger(maxDurationSeconds) || maxDurationSeconds < 1 || maxDurationSeconds > 28800) fail();
   if (!text(credential) || credential.length > 32_768 || !Number.isSafeInteger(nowMs) || nowMs < 0) fail();
   const segments = credential.split('.'); if (segments.length !== 3) fail();
   const header = json(segments[0]);
@@ -58,7 +59,7 @@ async function verified(credential, spki, nowMs) {
   for (const k of ['grantIssuer','identityIssuer','identitySubject']) if (!text(grant[k])) fail();
   if (typeof grant.role !== 'string' || !Object.hasOwn(CAPABILITIES,grant.role) || !sameSet(grant.capabilities,CAPABILITIES[grant.role])) fail();
   const start = instant(grant.issuedAt), end = instant(grant.expiresAt), now = BigInt(nowMs)*1_000_000n;
-  if (end <= start || end-start > MAX_NS || now < start) fail();
+  if (end <= start || end-start > MAX_NS || end-start > BigInt(maxDurationSeconds)*1_000_000_000n || now < start) fail();
   // Millisecond clocks cannot resolve a fractional last millisecond: expire early,
   // never extend validity by truncating the signed deadline upward.
   if (nowMs >= Number(end/1_000_000n)) throw new OfflineGrantError('OFFLINE_GRANT_EXPIRED');
@@ -85,10 +86,10 @@ export async function verifyPinnedGrant({credential,authority,expected,nowMs=Dat
  * SPKI is supplied by that channel, never by the unverified JWS. Verified kid,
  * issuer and canonical actor become the full pin for subsequent local unlocks.
  */
-export async function provisionOnlineGrant({credential,spki,identity,workspaceId,deviceId,nowMs=Date.now()} = {}) {
+export async function provisionOnlineGrant({credential,spki,identity,workspaceId,deviceId,nowMs=Date.now(),maxDurationSeconds=28800} = {}) {
   try {
     if (!exact(identity,['issuer','subject']) || !text(identity.issuer) || !text(identity.subject)) fail();
-    const result = await verified(credential,spki,nowMs);
+    const result = await verified(credential,spki,nowMs,maxDurationSeconds);
     if (result.grant.identityIssuer !== identity.issuer || result.grant.identitySubject !== identity.subject
       || result.grant.workspaceId !== workspaceId || result.grant.deviceId !== deviceId) fail();
     const authority = Object.freeze({spki,kid:result.header.kid,grantIssuer:result.grant.grantIssuer});
