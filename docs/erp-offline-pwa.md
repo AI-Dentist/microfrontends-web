@@ -223,4 +223,36 @@ unapproved.
 Service-worker contract in one sentence: query-bearing requests (including the
 `?update=1` release probe) are always network-only and never read cache, and a
 failed manifest fetch preserves the last complete generation instead of deleting
-it.
+it. In a deployment with no published release the probe simply 404s, the page
+returns silently, readiness stays false and no worker is registered — that is the
+expected state, not a failure.
+
+## T3 retention, clock and unlock policy (after independent review)
+
+- **Clock:** only wall-clock bounds are persisted in the encrypted envelope
+  (`maxWall`/`lastWall`). The monotonic clock is document-local because
+  `performance.now()` restarts near zero on reload; it is compared only within one
+  document. A wall rollback still fails closed. Persisting a page-relative value
+  previously made unlock after reload depend on how long the previous document ran.
+- **Retention is real:** `retire()` keeps the ciphertext and a locator marked
+  `retired`, and the workspace reports `retired`. A plain unlock refuses
+  (`OFFLINE_RETIRED`); the original owner recovers the record by authenticating
+  again online (`reactivate`), which re-links only when the derived scope matches,
+  unwraps the retained DEK with the PIN and reuses the persisted salt. `purge()` is
+  the explicit destructive action that deletes the record.
+- **Activation ordering:** the locator is written only after a successful vault
+  activation and cleared on failure, so a failed attempt cannot leave a shell that
+  nothing can open.
+- **PIN throttle:** failed unlocks persist an attempt counter with exponential
+  backoff (capped at five minutes) and surface `OFFLINE_UNLOCK_BACKOFF`.
+- **Lock at deadline:** the page subscribes to the workspace and re-evaluates state
+  every 15 seconds, so an unlocked screen locks when the signed window ends.
+- **Ciphertext integrity:** AAD binds `{schema, version:1, scope}`; each write uses a
+  fresh random 96-bit IV under the retained KDF salt (no IV reservation table), and
+  the previous dead reservation code and its vacuous test were removed.
+- The screen does **not** record pending operations yet; the copy says so.
+
+Accepted limitations recorded, not fixed: the SPKI signing key is pinned on first
+use with no configured allowlist or rotation, and the service worker has no activate
+cleanup for superseded generations (this competes with vault storage quota and
+should be scheduled with T4).
