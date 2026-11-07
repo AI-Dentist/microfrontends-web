@@ -30,12 +30,14 @@ Own tracking/memory allowed. Two exact additions APPROVED in L4: apps/mf-erp/fed
 S12. "Before profileintegrationfix capture real changed-build graph rejection (not setupfailure), then GREEN actualnewgraph plus negative unknown/tampered target and previous profile/./Routes online/retirement controls."
 S13. "Security/sharedbuildchanges require applicable finalindependentRisk2/5verification forT3 oncecandidate ready, not another T2review."
 
+S14. "Browser proof: real Chromium unlock/reload/lock of the synthetic encrypted workspace through the public /offline/erp route; the offline entry module must expose a seeding factory for that check."
+
 ## Tasks
 W1 | S1,S7,S10-S11 | primary bounded read-only map | done | Canonical complete; committed backend doc read; entry and publisher constraints evidenced L2. Commit:N/A.
 W2 | S1,S3,S7-S8 | primary test-first grant verification + explicit online activation | done | Grant library4a4f599; HTTP adapter implemented with real synthetic HTTP, current owner fence, requested duration bound;24 current controls PASS. Activation commit next; not private UI/vault or real IDP proof.
 W3 | S2-S3,S5-S8 | primary encrypted per-user vault/storage + public controls | in_progress | Vault core source+9 public controls PASS after three owner-detected defects fixed; IndexedDB adapter/UI/entry pending. Commit next.
 W4 | S2,S4-S8,S10 | primary isolated entry/provider and shell lifecycle | in_progress | ./OfflineRoutes exposed, public /offline/erp route, IndexedDB adapter and workspace orchestration; new-build graph rejected then admitted under new audited fingerprint. Browser proof pending. Commit next.
-W5 | S6,S8-S11 | functional build/browser + once-ready independent Risk2 + delivery | pending | Attributed source/functional versus independent evidence; no production/private-sync claim. Commit:pending.
+W5 | S6,S8-S11,S13-S14 | functional build/browser + once-ready independent Risk2 + delivery | in_progress | Builds+332 suite PASS; browser unlock/reload/lock and independent T3 risks2/5 remain. No production/private-sync claim.
 
 ## Log
 L1. Original T3 assignment verbatim:
@@ -71,3 +73,5 @@ L10. Entry/integration unit: workspace.mjs+indexed-store.mjs authored against pu
 L11. Vault identity policy refined for offline unlock: a live online identity, when present, must still match the encrypted bound actor/owner epoch; when absent (genuinely offline) unlock proceeds and the workspace reports actorVerified=false. This is an explicit, documented limitation, not silent actor proof: a copied vault plus PIN is guarded only by the 8h signed window, the PIN and device-local storage. The public vault suite and the 38-test offline-workspace group stay GREEN after the change.
 
 L12. Applicable full current suite after these sources: `node --test --test-concurrency=1 --test-skip-pattern='declared symlink' apps/shell/test/*.test.mjs scripts/test/*.test.mjs scripts/tests/*.test.mjs apps/mf-erp/src/app/core/offline-workspace/*.test.mjs` -> 332 tests,332 pass,0 fail,0 skip (Windows symlink case excluded, not proven). Production ERP+shell builds PASS in this state. Still missing: real-browser PIN unlock/reload/lock with synthetic state and independent T3 Risk2/5 verification.
+
+L13. Current state at T3 landing: commits cb96510 (vault), 65e0813 (offline entry/integration+fingerprint), b79173c (offline actor policy), 5b062bd (suite evidence). Next concrete step, no product decision needed: export a seeding factory from offline-entry.routes.ts, then a real-Chromium driver that mounts /offline/erp, seeds a synthetic vault, unlocks via the PIN UI, reloads (locked) and re-unlocks, verifying ciphertext-only storage and no business API calls. After that, one independent T3 risks2/5 verification and the bounded T4 handoff. T4 forms/cache/sync and backend final114 approval remain outside this slice and unapproved.
