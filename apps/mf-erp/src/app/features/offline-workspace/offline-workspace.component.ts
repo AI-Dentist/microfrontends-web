@@ -31,7 +31,7 @@ type Workspace = {
         @if (online()) {
           <form (submit)="activate($event)">
             <label for="offline-pin-new">PIN de 6 dígitos</label>
-            <input id="offline-pin-new" name="pin" inputmode="numeric" autocomplete="new-password" [value]="pin()" (input)="pin.set(value($event))" />
+            <input id="offline-pin-new" name="pin" inputmode="numeric" autocomplete="new-password" />
             <button type="submit" [disabled]="busy()">Habilitar jornada offline</button>
           </form>
         } @else {
@@ -41,7 +41,7 @@ type Workspace = {
       @if (state().status === 'locked') {
         <form (submit)="unlock($event)">
           <label for="offline-pin">PIN</label>
-          <input id="offline-pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" [value]="pin()" (input)="pin.set(value($event))" />
+          <input id="offline-pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" />
           <button type="submit" [disabled]="busy()">Desbloquear</button>
         </form>
       }
@@ -91,21 +91,39 @@ export class OfflineWorkspacePage {
   private async run(action: (workspace: Workspace) => Promise<State>) {
     this.busy.set(true); this.message.set(''); this.online.set(this.config.getOnlineContext() !== null);
     try { this.state.set(await action(await this.engine())); }
-    catch (error) { this.message.set(message(error)); }
+    catch (error) {
+      // Opt-in diagnostics: a harness flag enables a local, non-secret cause trail.
+      const diagnostics = (globalThis as { __erpOfflineDiagnostics?: boolean }).__erpOfflineDiagnostics;
+      if (diagnostics) {
+        const chain: string[] = [];
+        for (let cause = error as { code?: string; message?: string; cause?: unknown }; cause; cause = cause.cause as never) chain.push(String(cause.code ?? '') + ':' + String(cause.message ?? cause));
+        (globalThis as unknown as { __erpOfflineErrors?: string[] }).__erpOfflineErrors = [...((globalThis as unknown as { __erpOfflineErrors?: string[] }).__erpOfflineErrors ?? []), chain.join(' <- ')];
+      }
+      this.message.set(message(error));
+    }
     finally { this.busy.set(false); this.pin.set(''); }
+  }
+  /** Read the PIN from the submitted form, never from a possibly stale signal. */
+  private submittedPin(event: Event) {
+    const form = event.target as HTMLFormElement | null;
+    const input = form?.querySelector?.('input') as HTMLInputElement | null | undefined;
+    const value = input?.value ?? '';
+    if (input) input.value = '';
+    this.pin.set('');
+    return value;
   }
   activate(event: Event) {
     event.preventDefault();
+    const value = this.submittedPin(event);
     void this.run(async workspace => {
-      const value = this.pin(); this.pin.set('');
       if (!/^\d{6}$/u.test(value)) throw Object.assign(Error('PinInvalid'), { code: 'OFFLINE_PIN_INVALID' });
       return workspace.activate(value);
     });
   }
   unlock(event: Event) {
     event.preventDefault();
+    const value = this.submittedPin(event);
     void this.run(async workspace => {
-      const value = this.pin(); this.pin.set('');
       if (!/^\d{6}$/u.test(value)) throw Object.assign(Error('PinInvalid'), { code: 'OFFLINE_PIN_INVALID' });
       return workspace.unlock(value);
     });
