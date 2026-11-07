@@ -17,7 +17,7 @@ export async function workspaceScopeId(binding){
   return hex(new Uint8Array(await digest(json({issuer:binding.identityIssuer,subject:binding.identitySubject,user:binding.erpUserId,workspace:binding.workspaceId,device:binding.deviceId}))));
 }
 export class OfflineVault{
-  #store;#scopeId;#clock;#identity;#credential;#authority;#expected;#ownerEpoch;#expiresAt;#dek=null;#ivKey=null;#keyId;#revision=0;#lastWall=null;#lastMono=null;#used;
+  #store;#scopeId;#clock;#identity;#credential;#authority;#expected;#ownerEpoch;#expiresAt;#dek=null;#keyId;#revision=0;#lastWall=null;#lastMono=null;#used;
   constructor({store,scopeId,clock,getIdentity}={}){
     this.#store=store;this.#scopeId=scopeId;this.#clock=clock;this.#identity=getIdentity;
     if(!store||!/^[0-9a-f]{64}$/u.test(scopeId)||typeof getIdentity!=='function'||!Number.isFinite(clock?.wall())||!Number.isFinite(clock?.mono()))failure('OFFLINE_STORAGE_FAILED');
@@ -26,16 +26,19 @@ export class OfflineVault{
   // never lets a clock value reach BigInt arithmetic unconverted.
   #wall(){const value=this.#clock?.wall();return Number.isFinite(value)?Math.floor(value):NaN;}
   #mono(){const value=this.#clock?.mono();return Number.isFinite(value)?Math.floor(value):NaN;}
-  #aad(){return json({schema:'erp-offline-vault-v1',version:1,scope:this.#scopeId});}
+  #aad(version=1){return json({schema:'erp-offline-vault-v1',version,scope:this.#scopeId});}
   // Wall bounds persist across documents; the monotonic clock is document-local
   // (performance.now() restarts near zero on reload), so it can only be compared
   // inside the same document.
   #time(){
     const wall=this.#wall(),mono=this.#mono();
-    if(!Number.isFinite(wall)||!Number.isFinite(mono))failure('OFFLINE_LOCKED');
+    if(!Number.isFinite(wall)||!Number.isFinite(mono))failure('OFFLINE_CLOCK_ROLLBACK');
     if(this.#expiresAt!==null&&wall>=this.#expiresAt)failure('OFFLINE_LOCKED');
-    if(this.#lastWall!==null&&wall<this.#lastWall)failure('OFFLINE_LOCKED');
-    if(this.#lastMono!==null&&mono<this.#lastMono)failure('OFFLINE_LOCKED');
+    if(this.#lastWall!==null&&wall<this.#lastWall)failure('OFFLINE_CLOCK_ROLLBACK');
+    if(this.#lastMono!==null&&mono<this.#lastMono)failure('OFFLINE_CLOCK_ROLLBACK');
+    // Within one document the monotonic clock is an independent witness: large
+    // monotonic progress with a frozen wall means the wall was held back.
+    if(this.#lastWall!==null&&mono-this.#lastMono>60000&&wall===this.#lastWall)failure('OFFLINE_CLOCK_ROLLBACK');
     this.#lastWall=wall;this.#lastMono=mono;
   }
   #same(){
@@ -45,7 +48,7 @@ export class OfflineVault{
     if(current===null)return;
     if(current.issuer!==this.#expected.identityIssuer||current.subject!==this.#expected.identitySubject||current.epoch!==this.#ownerEpoch)failure('OFFLINE_LOCKED');
   }
-  #clear(){clean(this.#dek);this.#dek=null;this.#ivKey=null;}
+  #clear(){clean(this.#dek);this.#dek=null;}
   #lockState(){this.#clear();return Object.freeze({status:'locked',capabilities:Object.freeze([])});}
   state(){
     try{if(!this.#dek)return this.#lockState();this.#time();this.#same();return Object.freeze({status:'unlocked',capabilities:Object.freeze([...this.#expected.capabilities])});}
@@ -57,7 +60,7 @@ export class OfflineVault{
       material=await crypto.subtle.importKey('raw',password,'PBKDF2',false,['deriveBits']);
       derived=new Uint8Array(await crypto.subtle.deriveBits({...KDF,salt,iterations},material,256));
       const wrapping=await crypto.subtle.importKey('raw',derived,'AES-GCM',false,['encrypt']);
-      const cipher=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:this.#aad()},wrapping,dek));
+      const cipher=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:this.#aad(version)},wrapping,dek));
       return{version,schema:'erp-offline-vault-v1',kdf:{...KDF},salt:base64(salt),wrap:{iv:base64(iv),cipher:base64(cipher)},clock,context:null,keyId,revision,retired:false};
     }finally{clean(password);clean(material);clean(derived);}
   }
@@ -94,24 +97,29 @@ export class OfflineVault{
     this.#clear();const password=pinBytes(pin);let material,derived;
     try{
       let envelope;try{envelope=await this.#store.load();}catch{failure('OFFLINE_STORAGE_FAILED');}if(!envelope)failure('OFFLINE_UNCONFIGURED');if(envelope.retired)failure('OFFLINE_RETIRED');
-      if(Number.isFinite(envelope.clock?.nextAttemptAt)&&this.#wall()<envelope.clock.nextAttemptAt)failure('OFFLINE_UNLOCK_BACKOFF');
+      if(Number.isFinite(envelope.clock?.nextAttemptAt)&&envelope.clock.nextAttemptAt>0&&this.#wall()<envelope.clock.nextAttemptAt)failure('OFFLINE_UNLOCK_BACKOFF');
       if(envelope.schema!=='erp-offline-vault-v1'||envelope.version!==1||envelope.kdf.name!==KDF.name||envelope.kdf.hash!==KDF.hash||envelope.kdf.iterations!==600000||typeof envelope.salt!=='string'||typeof envelope.wrap?.iv!=='string'||typeof envelope.wrap?.cipher!=='string')failure();
       const salt=bytes(envelope.salt),iv=bytes(envelope.wrap.iv),cipher=bytes(envelope.wrap.cipher);if(salt.length!==16||iv.length!==12||cipher.length!==48)failure();
       material=await crypto.subtle.importKey('raw',password,'PBKDF2',false,['deriveBits']);derived=new Uint8Array(await crypto.subtle.deriveBits({...KDF,salt,iterations:envelope.kdf.iterations},material,256));
       const wrapping=await crypto.subtle.importKey('raw',derived,'AES-GCM',false,['decrypt']);
-      this.#dek=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv,additionalData:this.#aad()},wrapping,cipher));
+      this.#dek=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv,additionalData:this.#aad(envelope.version)},wrapping,cipher));
       const contextCipher=bytes(envelope.context.cipher),contextIv=bytes(envelope.context.iv);
-      const context=JSON.parse(decode.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:contextIv,additionalData:this.#aad()},wrapping,contextCipher)));
-      if(this.#wall()<envelope.clock.maxWall)failure();
-      this.#credential=context.credential;this.#authority=context.authority;this.#expected=context.expected;this.#ownerEpoch=context.ownerEpoch;this.#expiresAt=context.expiresAtMs;this.#salt=salt;this.#keyId=envelope.keyId;this.#revision=envelope.revision;this.#lastWall=envelope.clock.lastWall;this.#lastMono=this.#mono();
+      const context=JSON.parse(decode.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:contextIv,additionalData:this.#aad(envelope.version)},wrapping,contextCipher)));
+      if(this.#wall()<envelope.clock.maxWall)failure('OFFLINE_CLOCK_ROLLBACK');
+      this.#credential=context.credential;this.#authority=context.authority;this.#expected=context.expected;this.#ownerEpoch=context.ownerEpoch;this.#expiresAt=context.expiresAtMs;this.#salt=salt;this.#keyId=envelope.keyId;this.#revision=envelope.revision;this.#lastWall=envelope.clock.lastWall;if(this.#lastMono===null)this.#lastMono=this.#mono();
       const current=identity(this.#identity());
       if(current&&(current.issuer!==this.#expected.identityIssuer||current.subject!==this.#expected.identitySubject||current.epoch!==this.#ownerEpoch))failure();
-      this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=envelope.kdf.iterations;this.#time();this.#activePin=pin;try{await this.#write();}catch(error){if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_STORAGE_FAILED');}this.#activePin='';return this.state();
-    }catch(error){this.#activePin='';this.#clear();if(error instanceof OfflineVaultError){if(error.code==='OFFLINE_UNLOCK_FAILED'){try{await this.#store.penalize?.(this.#keyId,1);}catch{/* throttling is best effort */}}throw error;}try{await this.#store.penalize?.(this.#keyId,1);}catch{}failure('OFFLINE_UNLOCK_FAILED',error);}
+      this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=envelope.kdf.iterations;this.#time();this.#activePin=pin;try{await this.#write();}catch(error){if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_STORAGE_FAILED');}this.#activePin='';try{await this.#store.clearPenalty?.();}catch{/* best effort */}return this.state();
+    }catch(error){this.#activePin='';this.#clear();const code=error instanceof OfflineVaultError?error.code:null;if(code==='OFFLINE_CLOCK_ROLLBACK'||code==='OFFLINE_LOCKED'||code==='OFFLINE_RETIRED'||code==='OFFLINE_UNLOCK_BACKOFF'){throw error;}
+      // Only a wrong PIN counts: the record is found by scope, never by a key learned on success.
+      try{const fails=(await this.#store.load())?.clock?.fails??0;await this.#store.penalize(this.#wall(),Math.min(1000*2**fails,300000));}catch{/* best effort */}
+      if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_UNLOCK_FAILED',error);}
     finally{clean(password);clean(material);clean(derived);}
   }
   async #unwrap(envelope,pin){
-    if(!envelope||typeof envelope.salt!=='string'||typeof envelope.wrap?.iv!=='string'||typeof envelope.wrap?.cipher!=='string')failure('OFFLINE_UNLOCK_FAILED');
+    if(!envelope||envelope.schema!=='erp-offline-vault-v1'||envelope.version!==1||envelope.kdf?.name!==KDF.name||envelope.kdf?.hash!==KDF.hash||envelope.kdf?.iterations!==KDF.iterations)failure('OFFLINE_UNLOCK_FAILED');
+    if(typeof envelope.salt!=='string'||typeof envelope.wrap?.iv!=='string'||typeof envelope.wrap?.cipher!=='string')failure('OFFLINE_UNLOCK_FAILED');
+    if(bytes(envelope.salt).length!==16||bytes(envelope.wrap.iv).length!==12||bytes(envelope.wrap.cipher).length!==48)failure('OFFLINE_UNLOCK_FAILED');
     const password=pinBytes(pin);let material,derived;
     try{
       material=await crypto.subtle.importKey('raw',password,'PBKDF2',false,['deriveBits']);
@@ -130,6 +138,8 @@ export class OfflineVault{
       if(this.#scopeId!==await workspaceScopeId(verified.binding))failure('OFFLINE_GRANT_INVALID');
       const envelope=await this.#store.load();
       if(!envelope||!envelope.retired)failure('OFFLINE_GRANT_INVALID');
+      const live=identity(this.#identity());
+      if(live&&(live.issuer!==verified.grant.identityIssuer||live.subject!==verified.grant.identitySubject||live.epoch!==activation.ownerEpoch))failure('OFFLINE_GRANT_INVALID');
       this.#dek=await this.#unwrap(envelope,pin);this.#salt=bytes(envelope.salt);
       this.#credential=activation.credential;this.#authority=activation.authority;this.#expected=activation.binding;this.#ownerEpoch=activation.ownerEpoch;this.#expiresAt=verified.expiresAtMs;
       this.#keyId=envelope.keyId;this.#revision=envelope.revision;this.#time();

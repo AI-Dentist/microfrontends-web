@@ -13,9 +13,10 @@ class CipherStore {
   envelope=null;records=new Map();writes=0;fault=false;
   async load(){return structuredClone(this.envelope);}
   async create(value){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope)throw Error('already exists');this.envelope=structuredClone(value);this.writes++;}
-  async reserveIv(keyId,iv){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope?.keyId!==keyId||this.envelope.retired)throw Error('retired');if(this.envelope.usedIVs.includes(iv))return false;this.envelope.usedIVs.push(iv);this.writes++;return true;}
   async replaceContext(keyId,revision,context){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope?.keyId!==keyId||this.envelope.revision!==revision||this.envelope.retired)throw Error('stale');this.envelope.context=structuredClone(context);this.envelope.revision++;this.writes++;return this.envelope.revision;}
   async retire(){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope){this.envelope.retired=true;this.envelope.revision++;this.writes++;}}
+  async penalize(nowWall,waitMs){if(this.fault)throw Error('synthetic');this.envelope.clock={...(this.envelope.clock??{}),fails:(this.envelope.clock?.fails??0)+1,nextAttemptAt:nowWall+waitMs};this.writes++;}
+  async clearPenalty(){if(this.fault)throw Error('synthetic');if(this.envelope)this.envelope.clock={...(this.envelope.clock??{}),fails:0,nextAttemptAt:0};this.writes++;}
   exportEncrypted(){return structuredClone({envelope:this.envelope,records:[...this.records]});}
 }
 async function fixture(){const a=await activation(),scopeId=await api.workspaceScopeId(a.binding),store=new CipherStore();let wall=base+1000,mono=0,identity={issuer:claims.identityIssuer,subject:claims.identitySubject,epoch:1};const options={scopeId,store,clock:{wall:()=>wall,mono:()=>mono},getIdentity:()=>identity};const v=new api.OfflineVault(options);return{a,scopeId,store,v,options,setWall:v=>{wall=v;},setMono:v=>{mono=v;},setIdentity:v=>{identity=v;}};}
@@ -36,8 +37,11 @@ test('fractional device clocks are normalised instead of failing storage',async(
   assert.equal((await restored.unlock(pin)).status,'unlocked');
 });
 test('wrong PIN leaves persisted ciphertext, counters and lock state unchanged',async()=>{
-  const f=await fixture();await f.v.activate(f.a,pin);f.v.lock();const before=f.store.exportEncrypted(),writes=f.store.writes;
-  await assert.rejects(()=>f.v.unlock('654321'),{code:'OFFLINE_UNLOCK_FAILED'});assert.equal(f.v.state().status,'locked');assert.deepEqual(f.store.exportEncrypted(),before);assert.equal(f.store.writes,writes);
+  const f=await fixture();await f.v.activate(f.a,pin);f.v.lock();const before=f.store.exportEncrypted();
+  await assert.rejects(()=>f.v.unlock('654321'),{code:'OFFLINE_UNLOCK_FAILED'});assert.equal(f.v.state().status,'locked');
+  // Ciphertext must not change; only the persisted throttle counter may move.
+  assert.equal(f.store.envelope.wrap.cipher,before.envelope.wrap.cipher);assert.equal(f.store.envelope.context.cipher,before.envelope.context.cipher);
+  assert.equal(f.store.envelope.clock.fails,1);
 });
 test('ciphertext tamper and AAD scope relocation cannot unlock',async()=>{
   const f=await fixture();await f.v.activate(f.a,pin);f.v.lock();const original=f.store.exportEncrypted();
@@ -47,7 +51,7 @@ test('ciphertext tamper and AAD scope relocation cannot unlock',async()=>{
 });
 test('another online actor cannot unlock this owner even with the PIN',async()=>{
   const f=await fixture();await f.v.activate(f.a,pin);f.v.lock();f.setIdentity({issuer:claims.identityIssuer,subject:'owner-b',epoch:2});const before=f.store.exportEncrypted();
-  await assert.rejects(()=>f.v.unlock(pin),{code:'OFFLINE_UNLOCK_FAILED'});assert.equal(f.v.state().status,'locked');assert.deepEqual(f.store.exportEncrypted(),before);
+  await assert.rejects(()=>f.v.unlock(pin),{code:'OFFLINE_UNLOCK_FAILED'});assert.equal(f.v.state().status,'locked');assert.equal(f.store.envelope.wrap.cipher,before.envelope.wrap.cipher);
 });
 test('exclusive expiry, rollback and monotonic inconsistency clear the live workspace',async()=>{
   for(const kind of ['expiry','rollback','inconsistent']){const f=await fixture();await f.v.activate(f.a,pin);
@@ -66,7 +70,7 @@ test('storage failure cannot report activation or unlocking success',async()=>{
   f.store.fault=false;await f.v.activate(f.a,pin);f.v.lock();f.store.fault=true;await assert.rejects(()=>f.v.unlock(pin),{code:'OFFLINE_STORAGE_FAILED'});assert.equal(f.v.state().status,'locked');
 });
 test('unlock after a persisted clock rollback does not change encrypted state',async()=>{
-  const f=await fixture();await f.v.activate(f.a,pin);f.v.lock();f.setWall(base);const before=f.store.exportEncrypted();await assert.rejects(()=>f.v.unlock(pin),{code:'OFFLINE_UNLOCK_FAILED'});assert.deepEqual(f.store.exportEncrypted(),before);
+  const f=await fixture();await f.v.activate(f.a,pin);f.v.lock();f.setWall(base);const before=f.store.exportEncrypted();await assert.rejects(()=>f.v.unlock(pin),{code:'OFFLINE_CLOCK_ROLLBACK'});assert.deepEqual(f.store.exportEncrypted(),before);
 });
 
 test('unlock survives a real document restart where mono resets near zero', async () => {
@@ -86,5 +90,51 @@ test('a wall rollback still fails closed after a document restart', async () => 
   const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
   await (new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 5000, mono: () => 100 }, getIdentity: identity })).activate(a, pin);
   const restored = new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 1000, mono: () => 5 }, getIdentity: identity });
-  await assert.rejects(() => restored.unlock(pin), { code: 'OFFLINE_UNLOCK_FAILED' });
+  await assert.rejects(() => restored.unlock(pin), { code: 'OFFLINE_CLOCK_ROLLBACK' });
+});
+
+test('a wrong PIN persists a backoff the correct PIN must respect until it expires', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  let wall = base + 1000;
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  const open = () => new api.OfflineVault({ scopeId, store, clock: { wall: () => wall, mono: () => 100 }, getIdentity: identity });
+  await open().activate(a, pin);
+  await assert.rejects(() => open().unlock('000000'), { code: 'OFFLINE_UNLOCK_FAILED' });
+  assert.equal(store.envelope.clock.fails, 1, 'failure counter persisted');
+  assert.ok(store.envelope.clock.nextAttemptAt > wall, 'backoff persisted against the injected clock');
+  await assert.rejects(() => open().unlock(pin), { code: 'OFFLINE_UNLOCK_BACKOFF' });
+  wall = store.envelope.clock.nextAttemptAt + 1;
+  assert.equal((await open().unlock(pin)).status, 'unlocked');
+  assert.equal(store.envelope.clock.fails, 0, 'successful unlock resets the counter');
+});
+
+test('clock rollback is distinct from a wrong PIN and does not penalise', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  await new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 9000, mono: () => 100 }, getIdentity: identity }).activate(a, pin);
+  const back = new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 1000, mono: () => 10 }, getIdentity: identity });
+  await assert.rejects(() => back.unlock(pin), { code: 'OFFLINE_CLOCK_ROLLBACK' });
+  assert.equal(store.envelope.clock?.fails ?? 0, 0, 'rollback must not count as a wrong PIN');
+});
+
+test('a stationary wall while mono advances is treated as clock tampering', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  let mono = 100;
+  await new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 1000, mono: () => mono }, getIdentity: identity }).activate(a, pin);
+  const frozen = new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 1000, mono: () => mono }, getIdentity: identity });
+  await frozen.unlock(pin);
+  mono += 120000; // two minutes of monotonic time with the wall frozen
+  await assert.rejects(() => frozen.unlock(pin), { code: 'OFFLINE_CLOCK_ROLLBACK' });
+});
+
+test('a tampered retired record cannot force an absurd KDF cost', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  await new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 1000, mono: () => 0 }, getIdentity: identity }).activate(a, pin);
+  await new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 1000, mono: () => 0 }, getIdentity: identity }).retire();
+  store.envelope.kdf.iterations = 100000000;
+  const started = Date.now();
+  await assert.rejects(() => new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 1000, mono: () => 0 }, getIdentity: identity }).relink(a, pin), { code: 'OFFLINE_UNLOCK_FAILED' });
+  assert.ok(Date.now() - started < 2000, 'rejected before running PBKDF2');
 });

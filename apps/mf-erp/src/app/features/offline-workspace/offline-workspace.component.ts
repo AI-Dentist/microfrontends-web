@@ -10,7 +10,9 @@ export const OFFLINE_ENTRY = new InjectionToken<OfflineEntryConfig>('OFFLINE_ENT
 
 type State = { status: string; capabilities: readonly string[]; actorVerified: boolean };
 type Workspace = {
-  status(): Promise<State>; activate(pin: string): Promise<State>; unlock(pin: string): Promise<State>;
+  status(): Promise<State>;
+  reactivate(pin: string): Promise<State>;
+  purge(): Promise<State>; activate(pin: string): Promise<State>; unlock(pin: string): Promise<State>;
   lock(): State; retire(): Promise<State>; subscribe(fn: (s: State) => void): () => void;
 };
 
@@ -37,6 +39,19 @@ type Workspace = {
         } @else {
           <p>Habilitarla exige iniciar sesión con conexión. Sin sesión solo puede abrirse una jornada ya habilitada.</p>
         }
+      }
+      @if (state().status === 'retired') {
+        <p>La jornada offline está cerrada, pero los datos cifrados siguen en este dispositivo.</p>
+        @if (online()) {
+          <form (submit)="recover($event)">
+            <label for="offline-pin-recover">PIN para recuperar</label>
+            <input id="offline-pin-recover" name="pin" type="password" inputmode="numeric" autocomplete="current-password" />
+            <button type="submit" [disabled]="busy()">Recuperar jornada</button>
+          </form>
+        } @else {
+          <p>Para recuperarla, vuelva a iniciar sesión con conexión.</p>
+        }
+        <button type="button" (click)="purge()">Eliminar datos cifrados de este dispositivo</button>
       }
       @if (state().status === 'locked') {
         <form (submit)="unlock($event)">
@@ -137,6 +152,19 @@ export class OfflineWorkspacePage {
       if (!/^\d{6}$/u.test(value)) throw Object.assign(Error('PinInvalid'), { code: 'OFFLINE_PIN_INVALID' });
       return workspace.unlock(value);
     });
+  }
+  recover(event: Event) {
+    event.preventDefault();
+    const value = this.submittedPin(event);
+    void this.run(async workspace => {
+      if (!/^\d{6}$/u.test(value)) throw Object.assign(Error('PinInvalid'), { code: 'OFFLINE_PIN_INVALID' });
+      return workspace.reactivate(value);
+    });
+  }
+  /** Deliberate destruction: the only path that deletes encrypted records. */
+  purge() {
+    if (!globalThis.confirm('Se eliminarán los datos cifrados de este dispositivo. ¿Continuar?')) return;
+    void this.run(workspace => workspace.purge());
   }
   lock() { const state = this.workspace?.lock(); if (state) this.state.set(state); }
   retire() { void this.run(workspace => workspace.retire()); }

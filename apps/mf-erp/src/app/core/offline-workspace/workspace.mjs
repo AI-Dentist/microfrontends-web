@@ -38,6 +38,9 @@ export class OfflineWorkspace {
   async activate(pin, {durationSeconds = 28800, workspaceId, deviceId} = {}) {
     const online = this.#getOnlineContext();
     if (!online) throw coded('OFFLINE_ACTIVATION_REQUIRED');
+    const existing = await this.#device();
+    // A retained record must go through the documented recovery path.
+    if (existing?.retired) throw coded('OFFLINE_RETIRED');
     const device = (await this.#device()) ?? {
       workspaceId: workspaceId ?? newId(), deviceId: deviceId ?? newId(),
     };
@@ -99,7 +102,7 @@ export class OfflineWorkspace {
   async retire() {
     const state = this.#vault ? await this.#vault.retire() : {status: 'locked', capabilities: []};
     // Clear the locator so the encrypted record is not silently reused; ciphertext stays.
-    await writeDeviceMeta(this.#indexedDB, {workspaceId: this.#meta?.workspaceId ?? null, deviceId: this.#meta?.deviceId ?? null, scopeId: null});
+    await writeDeviceMeta(this.#indexedDB, {workspaceId: this.#meta?.workspaceId ?? null, deviceId: this.#meta?.deviceId ?? null, scopeId: this.#meta?.scopeId ?? null, retired: true});
     this.#meta = this.#meta ? { ...this.#meta, retired: true } : null; this.#vault = null; this.#emit(state); return state;
   }
 }

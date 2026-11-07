@@ -28,7 +28,7 @@ class Idb{
 function host(){const clock={value:base+1000,mono:0};let online={token:'SYNTHETIC',identityIssuer:claims.identityIssuer,identitySubject:claims.identitySubject,epoch:1};const idb=new Idb();
   const fetcher=async()=>({ok:true,redirected:false,json:async()=>({data:{activarJornadaOffline:{credencial:credential,clavePublicaSpki:spki}}})});
   const workspace=new OfflineWorkspace({indexedDB:idb,clock:{wall:()=>clock.value,mono:()=>clock.mono},getOnlineContext:()=>online,endpoint:'https://shell.example/api/erp/graphql',fetcher});
-  return{idb,clock,workspace,setOnline:v=>{online=v;}};}
+  return{idb,clock,workspace,fetcher,setOnline:v=>{online=v;}};}
 test('offline workspace public API is separate from hosted ERP providers',async()=>{
   const h=host();assert.equal((await h.workspace.status()).status,'unconfigured');assert.equal(typeof h.workspace.activate,'function');
 });
@@ -57,10 +57,13 @@ test('a wrong PIN attempt followed by the correct PIN unlocks again', async () =
   const h=host();await h.workspace.activate(pin,{workspaceId:claims.workspaceId,deviceId:claims.deviceId});
   h.workspace.lock();
   await assert.rejects(()=>h.workspace.unlock('000000'),{code:'OFFLINE_UNLOCK_FAILED'});
-  try{assert.equal((await h.workspace.unlock(pin)).status,'unlocked');}catch(error){throw Error('cause: '+String(error?.cause?.message??error?.cause));}
+  await assert.rejects(()=>h.workspace.unlock(pin),{code:'OFFLINE_UNLOCK_BACKOFF'});
+  h.clock.value+=5000;
+  assert.equal((await h.workspace.unlock(pin)).status,'unlocked');
   h.workspace.lock();
   const reloaded=new OfflineWorkspace({indexedDB:h.idb,clock:{wall:()=>h.clock.value,mono:()=>h.clock.mono},getOnlineContext:()=>null,endpoint:'https://shell.example/api/erp/graphql'});
   await assert.rejects(()=>reloaded.unlock('000000'),{code:'OFFLINE_UNLOCK_FAILED'});
+  h.clock.value+=5000;
   assert.equal((await reloaded.unlock(pin)).status,'unlocked');
 });
 
@@ -91,4 +94,15 @@ test('a failed activation leaves no locator and no locked shell', async () => {
   const h = host();
   await assert.rejects(() => h.workspace.activate('12345', { workspaceId: claims.workspaceId, deviceId: claims.deviceId }));
   assert.equal((await h.workspace.status()).status, 'unconfigured');
+});
+
+test('a fresh document sees a retired workspace and the owner can recover it', async () => {
+  const h = host();
+  await h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId });
+  await h.workspace.retire();
+  const reopened = new OfflineWorkspace({ indexedDB: h.idb, clock: { wall: () => h.clock.value, mono: () => 0 }, getOnlineContext: () => null, endpoint: 'https://shell.example/api/erp/graphql' });
+  assert.equal((await reopened.status()).status, 'retired');
+  await assert.rejects(() => reopened.unlock(pin), { code: 'OFFLINE_RETIRED' });
+  const owner = new OfflineWorkspace({ indexedDB: h.idb, clock: { wall: () => h.clock.value, mono: () => 0 }, getOnlineContext: () => ({ token: 'SYNTHETIC', identityIssuer: claims.identityIssuer, identitySubject: claims.identitySubject, epoch: 1 }), endpoint: 'https://shell.example/api/erp/graphql', fetcher: h.fetcher });
+  assert.equal((await owner.reactivate(pin)).status, 'unlocked');
 });

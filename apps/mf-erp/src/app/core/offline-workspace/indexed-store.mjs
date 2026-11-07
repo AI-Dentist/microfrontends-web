@@ -106,7 +106,7 @@ export function createIndexedStore(indexedDB, scopeId) {
         });
       } finally { db.close(); }
     },
-    async penalize(keyId, delta) {
+    async penalize(nowWall, waitMs) {
       const db = await open(indexedDB);
       try {
         await new Promise((resolve, reject) => {
@@ -117,10 +117,26 @@ export function createIndexedStore(indexedDB, scopeId) {
           const current = store.get(scopeId);
           current.onsuccess = () => {
             const record = current.result;
-            if (!record || record.keyId !== keyId) return;
+            if (!record) return;
             const fails = (record.clock?.fails ?? 0) + 1;
-            const wait = Math.min(1000 * 2 ** (fails - 1), 300000);
-            store.put({ ...record, clock: { ...record.clock, fails, nextAttemptAt: Date.now() + wait, waitMs: wait } });
+            store.put({ ...record, clock: { ...record.clock, fails, nextAttemptAt: nowWall + waitMs } });
+          };
+        });
+      } finally { db.close(); }
+    },
+    async clearPenalty() {
+      const db = await open(indexedDB);
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(['vaults'], 'readwrite');
+          const store = tx.objectStore('vaults');
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error ?? Error('indexeddb-error'));
+          const current = store.get(scopeId);
+          current.onsuccess = () => {
+            const record = current.result;
+            if (!record || (!record.clock?.fails && !record.clock?.nextAttemptAt)) return;
+            store.put({ ...record, clock: { ...record.clock, fails: 0, nextAttemptAt: 0 } });
           };
         });
       } finally { db.close(); }
