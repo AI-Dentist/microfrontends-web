@@ -75,21 +75,29 @@ export class OfflineVault{
       return{version,schema:'erp-offline-vault-v1',kdf:{...KDF},salt:base64(salt),wrap:{iv:base64(iv),cipher:base64(cipher)},clock,context:null,keyId,revision,retired:false};
     }finally{clean(password);clean(material);clean(derived);}
   }
-  async #sealContext(pin){
+  async #sealContext(pin,revision){
     // Context rewrites must reuse the persisted KDF salt: the storage port replaces
     // only the context slot, so a fresh salt would make it undecryptable.
     const salt=this.#salt,iv=crypto.getRandomValues(new Uint8Array(12)),contextIv=crypto.getRandomValues(new Uint8Array(12));
-    const context={credential:this.#credential,authority:this.#authority,expected:this.#expected,ownerEpoch:this.#ownerEpoch,expiresAtMs:this.#expiresAt};
     const wall=this.#wall();this.#maxWall=Math.max(this.#maxWall??0,wall);const bounds={maxWall:this.#maxWall,lastWall:wall};
-    const sealed=await this.#seal(pin,this.#dek,this.#activeIterations,salt,iv,this.#activeVersion,this.#activeKeyId,this.#revision,bounds);
-    const contextEnvelope=await this.#seal(pin,json(context),this.#activeIterations,salt,contextIv,this.#activeVersion,this.#activeKeyId,this.#revision,bounds);
+    // The outer record's mutable metadata is only a hint. The same values are sealed
+    // inside the AEAD, so rewriting the outer copy cannot move the wall floor, change
+    // the key binding, roll the revision back or clear retirement.
+    const meta={keyId:this.#activeKeyId,revision,retired:false,clock:{maxWall:bounds.maxWall,lastWall:bounds.lastWall}};
+    const context={credential:this.#credential,authority:this.#authority,expected:this.#expected,ownerEpoch:this.#ownerEpoch,expiresAtMs:this.#expiresAt,meta};
+    const sealed=await this.#seal(pin,this.#dek,this.#activeIterations,salt,iv,this.#activeVersion,this.#activeKeyId,revision,bounds);
+    const contextEnvelope=await this.#seal(pin,json(context),this.#activeIterations,salt,contextIv,this.#activeVersion,this.#activeKeyId,revision,bounds);
     sealed.context={iv:base64(contextIv),cipher:contextEnvelope.wrap.cipher};return sealed;
   }
-  async #write(){
-    const envelope=await this.#sealContext(this.#activePin);
-    const revision=await this.#store.replaceContext(this.#keyId,this.#revision,envelope.context,envelope.clock);
-    this.#revision=revision;
+  /** Seals the next revision and refuses a port that reports any other revision. */
+  async #commit(pin,write){
+    const next=this.#revision+1;
+    const sealed=await this.#sealContext(pin,next);
+    let revision;try{revision=await write(sealed);}catch(error){if(error instanceof OfflineVaultError||error?.code?.startsWith?.('OFFLINE_'))throw error;if(error?.code==='OFFLINE_VAULT_INTEGRITY'){try{await this.#store.clearPenalty?.();}catch{}}failure('OFFLINE_STORAGE_FAILED',error);}
+    if(revision!==next)failure('OFFLINE_VAULT_INTEGRITY');
+    this.#revision=next;
   }
+  #write(pin){return this.#commit(pin,sealed=>this.#store.replaceContext(this.#keyId,this.#revision,sealed.context,sealed.clock));}
   #activePin='';#activeKeyId='';#activeVersion=1;#activeIterations=KDF.iterations;#salt=null;
   async activate(activation,pin){
     this.#clear();
@@ -101,45 +109,78 @@ export class OfflineVault{
       if(await this.#store.load())failure('OFFLINE_GRANT_INVALID');
       const value=crypto.getRandomValues(new Uint8Array(32));this.#dek=value;this.#salt=crypto.getRandomValues(new Uint8Array(16));
       this.#credential=activation.credential;this.#authority=activation.authority;this.#expected=activation.binding;this.#ownerEpoch=activation.ownerEpoch;this.#expiresAt=verified.expiresAtMs;this.#keyId=hex(crypto.getRandomValues(new Uint8Array(16)));this.#revision=0;this.#time();
-      this.#activePin=pin;this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=KDF.iterations;try{await this.#store.create(await this.#sealContext(pin));}catch(error){if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_STORAGE_FAILED');}this.#activePin='';this.#lastWall=this.#wall();this.#lastMono=this.#mono();
+      this.#activePin=pin;this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=KDF.iterations;try{await this.#store.create(await this.#sealContext(pin,this.#revision));}catch(error){if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_STORAGE_FAILED');}this.#activePin='';this.#lastWall=this.#wall();this.#lastMono=this.#mono();
       return this.state();
     }catch(error){this.#activePin='';this.#clear();if(error instanceof OfflineVaultError)throw error;if(error?.code?.startsWith('OFFLINE_'))throw error;failure('OFFLINE_STORAGE_FAILED',error);}
   }
   async unlock(pin){
-    this.#clear();const password=pinBytes(pin);let material,derived;
+    this.#clear();
     try{
+      clean(pinBytes(pin));
       let envelope;try{envelope=await this.#store.load();}catch{failure('OFFLINE_STORAGE_FAILED');}if(!envelope)failure('OFFLINE_UNCONFIGURED');if(envelope.retired)failure('OFFLINE_RETIRED');
-      if(Number.isFinite(envelope.clock?.nextAttemptAt)&&envelope.clock.nextAttemptAt>0&&this.#wall()<envelope.clock.nextAttemptAt)failure('OFFLINE_UNLOCK_BACKOFF');
-      if(envelope.schema!=='erp-offline-vault-v1'||envelope.version!==1||envelope.kdf.name!==KDF.name||envelope.kdf.hash!==KDF.hash||envelope.kdf.iterations!==600000||typeof envelope.salt!=='string'||typeof envelope.wrap?.iv!=='string'||typeof envelope.wrap?.cipher!=='string')failure();
-      const salt=bytes(envelope.salt),iv=bytes(envelope.wrap.iv),cipher=bytes(envelope.wrap.cipher);if(salt.length!==16||iv.length!==12||cipher.length!==48)failure();
-      material=await crypto.subtle.importKey('raw',password,'PBKDF2',false,['deriveBits']);derived=new Uint8Array(await crypto.subtle.deriveBits({...KDF,salt,iterations:envelope.kdf.iterations},material,256));
-      const wrapping=await crypto.subtle.importKey('raw',derived,'AES-GCM',false,['decrypt']);
-      this.#dek=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv,additionalData:this.#aad(envelope.version)},wrapping,cipher));
-      const contextCipher=bytes(envelope.context.cipher),contextIv=bytes(envelope.context.iv);
-      const context=JSON.parse(decode.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:contextIv,additionalData:this.#aad(envelope.version)},wrapping,contextCipher)));
-      if(this.#wall()<envelope.clock.maxWall)failure('OFFLINE_CLOCK_ROLLBACK');
-      this.#credential=context.credential;this.#authority=context.authority;this.#expected=context.expected;this.#ownerEpoch=context.ownerEpoch;this.#expiresAt=context.expiresAtMs;this.#salt=salt;this.#keyId=envelope.keyId;this.#revision=envelope.revision;this.#lastWall=envelope.clock.lastWall;this.#maxWall=envelope.clock.maxWall;if(this.#lastMono===null)this.#lastMono=this.#mono();
+      if(this.#waiting(envelope))failure('OFFLINE_UNLOCK_BACKOFF');
+      this.#format(envelope);
+      // Cheap outer floor first: a rollback is refused before the attempt is charged.
+      // The sealed copy is the authority and is re-checked after decryption.
+      if(this.#wall()<envelope.clock?.maxWall)failure('OFFLINE_CLOCK_ROLLBACK');
+      await this.#charge();
+      const {dek,context}=await this.#open(envelope,pin);
+      const meta=this.#adopt(envelope,context);
+      this.#dek=dek;this.#restore(envelope,context,meta);
+      if(this.#wall()<meta.clock.maxWall)failure('OFFLINE_CLOCK_ROLLBACK');
       const current=identity(this.#identity());
       if(current&&(current.issuer!==this.#expected.identityIssuer||current.subject!==this.#expected.identitySubject||current.epoch!==this.#ownerEpoch))failure();
-      this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=envelope.kdf.iterations;this.#time();this.#activePin=pin;try{await this.#write();}catch(error){if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_STORAGE_FAILED');}this.#activePin='';try{await this.#store.clearPenalty?.();}catch{/* best effort */}return this.#verifiedState();
-    }catch(error){this.#activePin='';this.#clear();const code=error instanceof OfflineVaultError?error.code:null;if(code==='OFFLINE_CLOCK_ROLLBACK'||code==='OFFLINE_LOCKED'||code==='OFFLINE_RETIRED'||code==='OFFLINE_UNLOCK_BACKOFF'){throw error;}
-      // Only a wrong PIN counts: the record is found by scope, never by a key learned on success.
-      try{await this.#store.penalize(this.#wall());}catch{/* best effort */}
-      if(error instanceof OfflineVaultError)throw error;failure('OFFLINE_UNLOCK_FAILED',error);}
-    finally{clean(password);clean(material);clean(derived);}
+      this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=envelope.kdf.iterations;if(this.#lastMono===null)this.#lastMono=this.#mono();this.#time();
+      this.#activePin=pin;await this.#write(pin);this.#activePin='';
+      try{await this.#store.clearPenalty?.();}catch{/* best effort */}return this.#verifiedState();
+    }catch(error){this.#activePin='';this.#clear();if(error?.code==='OFFLINE_VAULT_INTEGRITY'){try{await this.#store.clearPenalty?.();}catch{}}if(error instanceof OfflineVaultError)throw error;if(error?.code?.startsWith?.('OFFLINE_'))throw error;failure('OFFLINE_UNLOCK_FAILED',error);}
   }
-  async #unwrap(envelope,pin){
+  #waiting(envelope){const until=envelope?.clock?.nextAttemptAt;return Number.isFinite(until)&&until>0&&this.#wall()<until;}
+  /** Charges the attempt BEFORE any key derivation, so a burst cannot derive twice. */
+  async #charge(){
+    let claim;try{claim=await this.#store.chargeAttempt(this.#wall());}catch{failure('OFFLINE_STORAGE_FAILED');}
+    if(claim?.missing)failure('OFFLINE_UNCONFIGURED');
+    if(claim?.allowed!==true)failure('OFFLINE_UNLOCK_BACKOFF');
+  }
+  /** Structural gate: pins schema, version, KDF cost and slot shapes before any work. */
+  #format(envelope){
     if(!envelope||envelope.schema!=='erp-offline-vault-v1'||envelope.version!==1||envelope.kdf?.name!==KDF.name||envelope.kdf?.hash!==KDF.hash||envelope.kdf?.iterations!==KDF.iterations)failure('OFFLINE_UNLOCK_FAILED');
-    if(typeof envelope.salt!=='string'||typeof envelope.wrap?.iv!=='string'||typeof envelope.wrap?.cipher!=='string')failure('OFFLINE_UNLOCK_FAILED');
-    if(bytes(envelope.salt).length!==16||bytes(envelope.wrap.iv).length!==12||bytes(envelope.wrap.cipher).length!==48)failure('OFFLINE_UNLOCK_FAILED');
+    if(typeof envelope.salt!=='string'||typeof envelope.wrap?.iv!=='string'||typeof envelope.wrap?.cipher!=='string'||typeof envelope.context?.iv!=='string'||typeof envelope.context?.cipher!=='string')failure('OFFLINE_UNLOCK_FAILED');
+  }
+  /** One derivation unwraps the DEK and the sealed context; nothing outer is trusted. */
+  async #open(envelope,pin){
+    this.#format(envelope);
     const password=pinBytes(pin);let material,derived;
     try{
+      const salt=bytes(envelope.salt),iv=bytes(envelope.wrap.iv),cipher=bytes(envelope.wrap.cipher);
+      if(salt.length!==16||iv.length!==12||cipher.length!==48)failure('OFFLINE_UNLOCK_FAILED');
       material=await crypto.subtle.importKey('raw',password,'PBKDF2',false,['deriveBits']);
-      derived=new Uint8Array(await crypto.subtle.deriveBits({...KDF,salt:bytes(envelope.salt),iterations:envelope.kdf.iterations},material,256));
+      derived=new Uint8Array(await crypto.subtle.deriveBits({...KDF,salt,iterations:envelope.kdf.iterations},material,256));
       const wrapping=await crypto.subtle.importKey('raw',derived,'AES-GCM',false,['decrypt']);
-      return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(envelope.wrap.iv),additionalData:this.#aad()},wrapping,bytes(envelope.wrap.cipher)));
-    }catch{failure('OFFLINE_UNLOCK_FAILED');}
+      const dek=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv,additionalData:this.#aad(envelope.version)},wrapping,cipher));
+      const plain=decode.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(envelope.context.iv),additionalData:this.#aad(envelope.version)},wrapping,bytes(envelope.context.cipher)));
+      let context;try{context=JSON.parse(plain);}catch{failure('OFFLINE_VAULT_INTEGRITY');}
+      return{dek,context};
+    }catch(error){if(error instanceof OfflineVaultError)throw error;if(error?.code?.startsWith?.('OFFLINE_'))throw error;failure('OFFLINE_UNLOCK_FAILED',error);}
     finally{clean(password);clean(material);clean(derived);}
+  }
+  /** Fails closed unless the sealed metadata copy equals the outer record metadata. */
+  #adopt(envelope,context){
+    const meta=context?.meta;
+    if(!meta||typeof meta!=='object'||meta.retired!==false||typeof meta.keyId!=='string'||!Number.isSafeInteger(meta.revision))failure('OFFLINE_VAULT_INTEGRITY');
+    if(envelope.keyId!==meta.keyId||!Number.isSafeInteger(envelope.revision))failure('OFFLINE_VAULT_INTEGRITY');
+    if(!Number.isFinite(meta.clock?.maxWall)||!Number.isFinite(meta.clock?.lastWall))failure('OFFLINE_VAULT_INTEGRITY');
+    if(envelope.clock?.maxWall!==meta.clock.maxWall||envelope.clock?.lastWall!==meta.clock.lastWall)failure('OFFLINE_VAULT_INTEGRITY');
+    // Retirement writes only the outer flag and moves the record exactly one revision
+    // past the sealed copy, so any other divergence is a rewrite and not a retirement.
+    const sealed=envelope.revision===meta.revision&&!envelope.retired;
+    const retiredAfterSeal=envelope.revision===meta.revision+1&&Boolean(envelope.retired);
+    if(!sealed&&!retiredAfterSeal)failure('OFFLINE_VAULT_INTEGRITY');
+    return meta;
+  }
+  #restore(envelope,context,meta){
+    this.#credential=context.credential;this.#authority=context.authority;this.#expected=context.expected;this.#ownerEpoch=context.ownerEpoch;this.#expiresAt=context.expiresAtMs;
+    this.#salt=bytes(envelope.salt);this.#keyId=meta.keyId;this.#revision=envelope.revision;this.#lastWall=meta.clock.lastWall;this.#maxWall=meta.clock.maxWall;
   }
   get lastLockReason(){return this.#lastLockReason;}
   get expiresAtMs(){return this.#expiresAt;}
@@ -151,17 +192,21 @@ export class OfflineVault{
       if(this.#scopeId!==await workspaceScopeId(verified.binding))failure('OFFLINE_GRANT_INVALID');
       const envelope=await this.#store.load();
       if(!envelope||!envelope.retired)failure('OFFLINE_GRANT_INVALID');
-      if(Number.isFinite(envelope.clock?.nextAttemptAt)&&envelope.clock.nextAttemptAt>0&&this.#wall()<envelope.clock.nextAttemptAt)failure('OFFLINE_UNLOCK_BACKOFF');
-      if(this.#wall()<envelope.clock.maxWall)failure('OFFLINE_CLOCK_ROLLBACK');
-      this.#lastWall=envelope.clock.lastWall;this.#maxWall=envelope.clock.maxWall;
+      if(this.#waiting(envelope))failure('OFFLINE_UNLOCK_BACKOFF');
+      this.#format(envelope);
+      if(this.#wall()<envelope.clock?.maxWall)failure('OFFLINE_CLOCK_ROLLBACK');
       const live=identity(this.#identity());
       if(live&&(live.issuer!==verified.grant.identityIssuer||live.subject!==verified.grant.identitySubject||live.epoch!==activation.ownerEpoch))failure('OFFLINE_GRANT_INVALID');
-      this.#dek=await this.#unwrap(envelope,pin);this.#salt=bytes(envelope.salt);
+      // A wrong relink PIN is a PIN guess and is charged exactly like an unlock.
+      await this.#charge();
+      const {dek,context}=await this.#open(envelope,pin);
+      const meta=this.#adopt(envelope,context);
+      this.#dek=dek;this.#restore(envelope,context,meta);
       this.#credential=activation.credential;this.#authority=activation.authority;this.#expected=activation.binding;this.#ownerEpoch=activation.ownerEpoch;this.#expiresAt=verified.expiresAtMs;
-      this.#keyId=envelope.keyId;this.#revision=envelope.revision;this.#time();
-      this.#activePin=pin;this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=KDF.iterations;
-      const sealed=await this.#sealContext(pin);this.#revision=await this.#store.relink(envelope.keyId,envelope.revision,sealed.context,sealed.clock);
-      this.#activePin='';return this.state();
+      if(this.#wall()<meta.clock.maxWall)failure('OFFLINE_CLOCK_ROLLBACK');
+      this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=KDF.iterations;this.#time();
+      this.#activePin=pin;await this.#commit(pin,sealed=>this.#store.relink(envelope.keyId,envelope.revision,sealed.context,sealed.clock));this.#activePin='';
+      try{await this.#store.clearPenalty?.();}catch{/* best effort */}return this.state();
     }catch(error){this.#activePin='';this.#clear();if(error instanceof OfflineVaultError)throw error;if(error?.code?.startsWith?.('OFFLINE_'))throw error;failure('OFFLINE_STORAGE_FAILED',error);}
   }
   /** Renews an EXPIRED but retained workspace: same scope, same salt, same DEK. */
@@ -172,14 +217,18 @@ export class OfflineVault{
       if(this.#scopeId!==await workspaceScopeId(verified.binding))failure('OFFLINE_GRANT_INVALID');
       const envelope=await this.#store.load();
       if(!envelope||envelope.retired)failure('OFFLINE_GRANT_INVALID');
-      if(Number.isFinite(envelope.clock?.nextAttemptAt)&&envelope.clock.nextAttemptAt>0&&this.#wall()<envelope.clock.nextAttemptAt)failure('OFFLINE_UNLOCK_BACKOFF');
+      if(this.#waiting(envelope))failure('OFFLINE_UNLOCK_BACKOFF');
+      this.#format(envelope);
+      if(this.#wall()<envelope.clock?.maxWall)failure('OFFLINE_CLOCK_ROLLBACK');
       const live=identity(this.#identity());
       if(live&&(live.issuer!==verified.grant.identityIssuer||live.subject!==verified.grant.identitySubject||live.epoch!==activation.ownerEpoch))failure('OFFLINE_GRANT_INVALID');
-      this.#dek=await this.#unwrap(envelope,pin);this.#salt=bytes(envelope.salt);
+      const {dek,context}=await this.#open(envelope,pin);
+      const meta=this.#adopt(envelope,context);
+      this.#dek=dek;this.#restore(envelope,context,meta);
       this.#credential=activation.credential;this.#authority=activation.authority;this.#expected=activation.binding;this.#ownerEpoch=activation.ownerEpoch;this.#expiresAt=verified.expiresAtMs;
-      this.#keyId=envelope.keyId;this.#revision=envelope.revision;this.#lastWall=Math.max(envelope.clock.lastWall??0,this.#wall());this.#maxWall=envelope.clock.maxWall;this.#lastMono=this.#mono();
+      this.#lastWall=Math.max(meta.clock.lastWall??0,this.#wall());this.#maxWall=meta.clock.maxWall;this.#lastMono=this.#mono();
       this.#activeKeyId=this.#keyId;this.#activeVersion=1;this.#activeIterations=envelope.kdf.iterations;this.#activePin=pin;
-      const sealed=await this.#sealContext(pin);this.#revision=await this.#store.replaceContext(envelope.keyId,envelope.revision,sealed.context,sealed.clock);
+      await this.#commit(pin,sealed=>this.#store.replaceContext(this.#keyId,this.#revision,sealed.context,sealed.clock));
       this.#activePin='';try{await this.#store.clearPenalty?.();}catch{/* best effort */}return this.#verifiedState();
     }catch(error){this.#activePin='';this.#clear();if(error instanceof OfflineVaultError)throw error;if(error?.code?.startsWith?.('OFFLINE_'))throw error;failure('OFFLINE_STORAGE_FAILED',error);}
   }

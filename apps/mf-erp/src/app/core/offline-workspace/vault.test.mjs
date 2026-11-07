@@ -10,13 +10,26 @@ const spki=Buffer.from(await webcrypto.subtle.exportKey('spki',keys.publicKey)).
 async function activation(payload=claims){const input=[{alg:'RS256',typ:'erp-offline-grant+jws',kid:'synthetic'},payload].map(o=>Buffer.from(JSON.stringify(o)).toString('base64url')).join('.');const sig=await webcrypto.subtle.sign('RSASSA-PKCS1-v1_5',keys.privateKey,new TextEncoder().encode(input));return{...await provisionOnlineGrant({credential:input+'.'+Buffer.from(sig).toString('base64url'),spki,identity:{issuer:payload.identityIssuer,subject:payload.identitySubject},workspaceId:payload.workspaceId,deviceId:payload.deviceId,nowMs:base+1000}),ownerEpoch:1};}
 // Public persistence-port fixture. It accepts/exports ciphertext records only.
 class CipherStore {
-  envelope=null;records=new Map();writes=0;fault=false;
+  envelope=null;records=new Map();writes=0;fault=false;claims=Promise.resolve();
   async load(){return structuredClone(this.envelope);}
   async create(value){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope)throw Error('already exists');this.envelope=structuredClone(value);this.writes++;}
   async replaceContext(keyId,revision,context,clock){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope?.keyId!==keyId||this.envelope.revision!==revision||this.envelope.retired)throw Error('stale');this.envelope.context=structuredClone(context);if(clock)this.envelope.clock=structuredClone(clock);this.envelope.revision++;this.writes++;return this.envelope.revision;}
   async retire(){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope){this.envelope.retired=true;this.envelope.revision++;this.writes++;}}
   async relink(keyId,revision,context,clock){if(this.fault)throw Error('synthetic');if(this.envelope?.keyId!==keyId||this.envelope.revision!==revision||!this.envelope.retired)throw Error('stale');this.envelope.retired=false;this.envelope.context=structuredClone(context);if(clock)this.envelope.clock=structuredClone(clock);this.envelope.revision++;this.writes++;return this.envelope.revision;}
-  async penalize(nowWall){await Promise.resolve();if(this.fault)throw Error('synthetic');const fails=(this.envelope.clock?.fails??0)+1;this.envelope.clock={...(this.envelope.clock??{}),fails,nextAttemptAt:nowWall+Math.min(1000*2**(fails-1),300000)};this.writes++;}
+  // Models the adapter's single readwrite transaction: claims serialize, so one wait
+  // window admits exactly one derivation attempt and a denial never grows the counter.
+  #claim(nowWall){
+    if(this.fault)throw Error('synthetic storage unavailable');
+    const clock=this.envelope?.clock??{};
+    const wait=Number.isFinite(clock.nextAttemptAt)?clock.nextAttemptAt:0;
+    if(!this.envelope)return{allowed:false,missing:true,clock:null};
+    if(wait>nowWall)return{allowed:false,clock:{...clock}};
+    const fails=(clock.fails??0)+1;
+    this.envelope.clock={...clock,fails,nextAttemptAt:nowWall+Math.min(1000*2**(fails-1),300000)};this.writes++;
+    return{allowed:true,clock:{...this.envelope.clock}};
+  }
+  chargeAttempt(nowWall){const run=()=>this.#claim(nowWall);const claimed=this.claims.then(run,run);this.claims=claimed.then(()=>{},()=>{});return claimed;}
+  penalize(nowWall){return this.chargeAttempt(nowWall);}
   async clearPenalty(){if(this.fault)throw Error('synthetic');if(this.envelope)this.envelope.clock={...(this.envelope.clock??{}),fails:0,nextAttemptAt:0};this.writes++;}
   exportEncrypted(){return structuredClone({envelope:this.envelope,records:[...this.records]});}
 }
@@ -157,16 +170,75 @@ test('relink enforces backoff and never lowers the persisted wall floor', async 
   assert.ok(store.envelope.clock.maxWall >= later, 'maxWall is monotonic');
 });
 
-test('a burst of wrong PINs grows the persisted wait atomically', async () => {
+// Behavioural-only: the fake models one serialized readwrite transaction, as the
+// IndexedDB adapter performs the read, increment and wait stamp atomically. The real
+// adapter's claim is exercised by the workspace suite, not here.
+test('a concurrent wrong-PIN burst charges the wait before deriving, so only one attempt derives', async () => {
   const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
   const wall = base + 1000;
   const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
   const open = () => new api.OfflineVault({ scopeId, store, clock: { wall: () => wall, mono: () => 0 }, getIdentity: identity });
   await open().activate(a, pin);
-  await Promise.all(Array.from({ length: 5 }, () => open().unlock('000000').catch(() => {})));
-  assert.equal(store.envelope.clock.fails, 5, 'every concurrent wrong PIN is counted');
-  // Wait grows with the counter: 5th failure waits 2^4 * 1s.
-  assert.equal(store.envelope.clock.nextAttemptAt, wall + 16000);
+  const settled = await Promise.allSettled(Array.from({ length: 5 }, () => open().unlock('000000')));
+  const codes = settled.map(result => (result.status === 'rejected' ? result.reason.code : 'unlocked'));
+  assert.deepEqual(codes.filter(code => code === 'OFFLINE_UNLOCK_FAILED'), ['OFFLINE_UNLOCK_FAILED'], 'only the attempt that charged the wait derived');
+  assert.equal(codes.filter(code => code === 'OFFLINE_UNLOCK_BACKOFF').length, 4, 'the concurrent attempts are refused before deriving');
+  assert.equal(store.envelope.clock.fails, 1, 'the burst grows the counter once');
+  assert.equal(store.envelope.clock.nextAttemptAt, wall + 1000, 'the wait was stamped before any derivation');
+});
+
+test('relink charges a wrong PIN and enforces the resulting wait', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  let wall = base + 1000;
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  const open = () => new api.OfflineVault({ scopeId, store, clock: { wall: () => wall, mono: () => 0 }, getIdentity: identity });
+  await open().activate(a, pin);
+  await open().retire();
+  await assert.rejects(() => open().relink(a, '000000'), { code: 'OFFLINE_UNLOCK_FAILED' });
+  assert.equal(store.envelope.clock.fails, 1, 'a wrong relink PIN is charged');
+  assert.ok(store.envelope.clock.nextAttemptAt > wall, 'the relink wait is persisted');
+  await assert.rejects(() => open().relink(a, pin), { code: 'OFFLINE_UNLOCK_BACKOFF' });
+  wall = store.envelope.clock.nextAttemptAt + 1;
+  assert.equal((await open().relink(a, pin)).status, 'unlocked');
+  assert.equal(store.envelope.clock.fails, 0, 'a successful relink clears the counter');
+});
+
+test('outer metadata that disagrees with the encrypted copy fails closed with a typed error', async () => {
+  const tampers = {
+    'wall floor reset': envelope => { envelope.clock = { ...envelope.clock, maxWall: 0, lastWall: 0 }; },
+    'key identifier swapped': envelope => { envelope.keyId = 'a'.repeat(32); },
+    'revision bumped': envelope => { envelope.revision += 1; },
+  };
+  for (const [name, tamper] of Object.entries(tampers)) {
+    const f = await fixture();
+    await f.v.activate(f.a, pin);
+    f.v.lock();
+    f.setWall(base + 1000);
+    tamper(f.store.envelope);
+    await assert.rejects(() => f.v.unlock(pin), { code: 'OFFLINE_VAULT_INTEGRITY' }, name);
+    assert.equal(f.v.state().status, 'locked', `${name} cannot unlock`);
+    assert.equal(f.store.envelope.clock?.fails ?? 0, 0, `${name} is not counted as a wrong PIN`);
+  }
+});
+
+test('a retired record cannot be un-retired by rewriting the outer flag', async () => {
+  const f = await fixture();
+  await f.v.activate(f.a, pin);
+  await f.v.retire();
+  f.setWall(base + 2000);
+  f.store.envelope.retired = false;
+  await assert.rejects(() => f.v.unlock(pin), { code: 'OFFLINE_VAULT_INTEGRITY' });
+  assert.equal(f.v.state().status, 'locked');
+});
+
+test('relink verifies the encrypted metadata copy before trusting the outer record', async () => {
+  const f = await fixture();
+  await f.v.activate(f.a, pin);
+  await f.v.retire();
+  f.setWall(base + 2000);
+  f.store.envelope.clock = { ...f.store.envelope.clock, maxWall: 0, lastWall: 0 };
+  await assert.rejects(() => f.v.relink(f.a, pin), { code: 'OFFLINE_VAULT_INTEGRITY' });
+  assert.equal(f.store.envelope.retired, true, 'the retained record was not relinked');
 });
 
 test('a wall advancing far slower than mono is treated as tampering', async () => {

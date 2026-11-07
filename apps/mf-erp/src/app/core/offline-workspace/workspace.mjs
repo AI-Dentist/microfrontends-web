@@ -31,7 +31,7 @@ export class OfflineWorkspace {
     if (!meta?.scopeId) return meta;
     let record = null;
     try { record = await createIndexedStore(this.#indexedDB, meta.scopeId).load(); } catch { return meta; }
-    if (!record) return meta;
+    if (!record) { const repaired = { ...meta, scopeId: null, retired: false }; try { await writeDeviceMeta(this.#indexedDB, repaired); this.#meta = repaired; return repaired; } catch { return repaired; } }
     if (Boolean(record.retired) !== Boolean(meta.retired)) {
       const repaired = { ...meta, retired: Boolean(record.retired) };
       try { await writeDeviceMeta(this.#indexedDB, repaired); this.#meta = repaired; return repaired; } catch { return meta; }
@@ -74,7 +74,8 @@ export class OfflineWorkspace {
       }
       throw error;
     }
-    await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId, retired: false });
+    try { await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId, retired: false }); }
+    catch (err) { await vault.purge().catch(() => {}); throw (err?.code?.startsWith?.('OFFLINE_') ? err : coded('OFFLINE_STORAGE_FAILED')); }
     this.#meta = {...device, scopeId, retired: false};
     this.#vault = vault;
     const state = await this.status(); this.#emit(state); return state;

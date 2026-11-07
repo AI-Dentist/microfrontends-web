@@ -118,7 +118,7 @@ async function handle(request) {
   if(!m)return fetch(request);
   if(u.origin===origin && u.pathname==='/erp-public-release.json')return new Response(JSON.stringify(m),{headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
   const a=m.assets.find(x=>x.url===u.href);
-  if(a) {const r=await (await caches.open(name)).match(a.url);return verified(r,a);}
+  if(a) {const r=await (await caches.open(name)).match(a.url);if(r)return verified(r,a);return fetch(request);}
   if(request.mode==='navigate' && u.origin===origin && !u.pathname.split('/').pop().includes('.')) {
     const index=m.assets.find(x=>x.url===origin+'/index.html');
     if(index)return verified(await (await caches.open(name)).match(index.url),index);

@@ -106,22 +106,33 @@ export function createIndexedStore(indexedDB, scopeId) {
         });
       } finally { db.close(); }
     },
-    /** Atomic: the counter read, increment and wait all happen inside one transaction. */
-    async penalize(nowWall) {
+    /**
+     * Atomic attempt claim: the counter read, the increment and the wait stamp happen
+     * inside one readwrite transaction, so concurrent attempts serialize. Only the
+     * first attempt of a wait window is allowed to derive; a denied claim changes
+     * nothing. Charging BEFORE key derivation is what makes the throttle burst-safe.
+     */
+    async chargeAttempt(nowWall) {
       const db = await open(indexedDB);
       try {
-        await new Promise((resolve, reject) => {
+        return await new Promise((resolve, reject) => {
           const tx = db.transaction(['vaults'], 'readwrite');
           const store = tx.objectStore('vaults');
-          tx.oncomplete = resolve;
+          let claim = { allowed: false, missing: true, clock: null };
+          tx.oncomplete = () => resolve(claim);
           tx.onerror = () => reject(tx.error ?? Error('indexeddb-error'));
+          tx.onabort = () => reject(tx.error ?? Error('indexeddb-abort'));
           const current = store.get(scopeId);
           current.onsuccess = () => {
             const record = current.result;
             if (!record) return;
-            const fails = (record.clock?.fails ?? 0) + 1;
+            const clock = record.clock ?? {};
+            const waiting = Number.isFinite(clock.nextAttemptAt) ? clock.nextAttemptAt : 0;
+            if (waiting > nowWall) { claim = { allowed: false, clock: { ...clock } }; return; }
+            const fails = (clock.fails ?? 0) + 1;
             const waitMs = Math.min(1000 * 2 ** (fails - 1), 300000);
-            store.put({ ...record, clock: { ...record.clock, fails, nextAttemptAt: nowWall + waitMs } });
+            claim = { allowed: true, clock: { ...clock, fails, nextAttemptAt: nowWall + waitMs } };
+            store.put({ ...record, clock: claim.clock });
           };
         });
       } finally { db.close(); }

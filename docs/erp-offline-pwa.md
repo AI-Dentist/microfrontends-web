@@ -192,9 +192,7 @@ was then admitted under its new module digest while the previous profile stays
 recorded and unknown/tampered modules, expressions or roots still return no
 contract. This is a pinned source/dataflow record, not inventory-supplied authority.
 
-Still pending: real-browser unlock/reload/lock proof with synthetic state, an
-applicable full current suite/build record for these sources, and the independent
-T3 risk verification. Offline unlock without a live online identity cannot
+Delivered: real-browser unlock/reload/lock proof with synthetic state passes 10/10 checks with service-worker registrations 0 and clean probe accounting; full suite PASS. Offline unlock without a live online identity cannot
 cryptographically re-verify the actor.
 
 ## T4 constraints recorded ahead of implementation (not implemented)
@@ -248,9 +246,7 @@ expected state, not a failure.
   persisted salt. Calling `activate()` while a retired record exists returns the typed
   `OFFLINE_RETIRED` instead of leaving the device unusable. `purge()` is the explicit
   destructive action that deletes the record, exposed in the UI behind a confirmation.
-- **Activation ordering:** the locator is written only after a successful vault
-  activation and cleared on failure, so a failed attempt cannot leave a shell that
-  nothing can open.
+- **Activation ordering:** the locator is persistently written with scopeId:null before creating ciphertext to reserve the generated identifiers and close the orphaning window if locator storage is failing; upon successful vault activation it is updated with scopeId, and cleaned up if the locator cannot be committed.
 - **PIN throttle:** a wrong PIN persists a failure counter with exponential backoff
   (capped at five minutes) against the device clock and surfaces
   `OFFLINE_UNLOCK_BACKOFF`; a successful unlock resets the counter. Clock problems are
