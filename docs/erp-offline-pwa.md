@@ -232,22 +232,31 @@ expected state, not a failure.
 - **Clock:** only wall-clock bounds are persisted in the encrypted envelope
   (`maxWall`/`lastWall`). The monotonic clock is document-local because
   `performance.now()` restarts near zero on reload; it is compared only within one
-  document. A wall rollback still fails closed. Persisting a page-relative value
-  previously made unlock after reload depend on how long the previous document ran.
-- **Retention is real:** `retire()` keeps the ciphertext and a locator marked
-  `retired`, and the workspace reports `retired`. A plain unlock refuses
-  (`OFFLINE_RETIRED`); the original owner recovers the record by authenticating
-  again online (`reactivate`), which re-links only when the derived scope matches,
-  unwraps the retained DEK with the PIN and reuses the persisted salt. `purge()` is
-  the explicit destructive action that deletes the record.
+  document. A wall rollback fails closed with `OFFLINE_CLOCK_ROLLBACK`, and inside one
+  document large monotonic progress with a frozen wall is treated as tampering. Across
+  documents the deadline relies on the wall clock advancing: no persisted monotonic
+  witness remains, and no stronger protection is claimed.
+- **Retention is real:** `retire()` persists the scope linkage **and** `retired:true`
+  next to the ciphertext, and the workspace reports `retired`. A plain unlock refuses
+  (`OFFLINE_RETIRED`); the original owner recovers the record by authenticating again
+  online (`reactivate`), which requires the live identity to match, re-links only when
+  the derived scope matches, unwraps the retained DEK with the PIN and reuses the
+  persisted salt. Calling `activate()` while a retired record exists returns the typed
+  `OFFLINE_RETIRED` instead of leaving the device unusable. `purge()` is the explicit
+  destructive action that deletes the record, exposed in the UI behind a confirmation.
 - **Activation ordering:** the locator is written only after a successful vault
   activation and cleared on failure, so a failed attempt cannot leave a shell that
   nothing can open.
-- **PIN throttle:** failed unlocks persist an attempt counter with exponential
-  backoff (capped at five minutes) and surface `OFFLINE_UNLOCK_BACKOFF`.
+- **PIN throttle:** a wrong PIN persists a failure counter with exponential backoff
+  (capped at five minutes) against the device clock and surfaces
+  `OFFLINE_UNLOCK_BACKOFF`; a successful unlock resets the counter. Clock problems are
+  reported as `OFFLINE_CLOCK_ROLLBACK` and never counted as wrong attempts.
 - **Lock at deadline:** the page subscribes to the workspace and re-evaluates state
   every 15 seconds, so an unlocked screen locks when the signed window ends.
-- **Ciphertext integrity:** AAD binds `{schema, version:1, scope}`; each write uses a
+- **Ciphertext integrity:** AAD binds `{schema, version, scope}` using the seal
+  version; a retained record is validated (schema, version, KDF name/hash, pinned
+  600000 iterations, salt/IV/cipher lengths) before any PBKDF2 work, so a tampered
+  retired record cannot force an absurd cost; each write uses a
   fresh random 96-bit IV under the retained KDF salt (no IV reservation table), and
   the previous dead reservation code and its vacuous test were removed.
 - The screen does **not** record pending operations yet; the copy says so.
