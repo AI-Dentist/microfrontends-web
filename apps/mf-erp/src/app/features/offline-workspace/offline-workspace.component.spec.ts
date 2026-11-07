@@ -47,16 +47,24 @@ describe('OfflineWorkspacePage', () => {
     expect(calls).toContain('purge');
   });
 
-  it('maps clock and grant failures to their own messages instead of a wrong PIN', () => {
+  it('maps clock and grant failures to their own messages instead of a wrong PIN', async () => {
     const component = page();
-    const run = (code: string) => (component as unknown as { run: (f: () => Promise<State>) => Promise<void> }).run(async () => { throw Object.assign(new Error(code), { code }); });
-    const read = async (code: string) => { await run(code); return component.message(); };
-    return Promise.all([read('OFFLINE_CLOCK_ROLLBACK'), read('OFFLINE_GRANT_INVALID'), read('OFFLINE_UNLOCK_FAILED')]).then(([clock, grant, wrong]) => {
-      expect(clock).toContain('reloj');
-      expect(grant).toContain('activación');
-      expect(wrong).toContain('PIN');
-      expect(new Set([clock, grant, wrong]).size).toBe(3);
-    });
+    const submit = (code: string) => {
+      const input = { value: '123456' };
+      const event = { preventDefault() {}, target: { querySelector: () => input } } as unknown as Event;
+      const throwing = { ...workspace, unlock: async () => { throw Object.assign(new Error(code), { code }); } };
+      (component as unknown as { workspace: unknown }).workspace = throwing;
+      (component as unknown as { engine: () => Promise<unknown> }).engine = async () => throwing;
+      component.unlock(event);
+      return new Promise<void>(resolve => setTimeout(resolve, 0)).then(() => component.message());
+    };
+    const clock = await submit('OFFLINE_CLOCK_ROLLBACK');
+    const grant = await submit('OFFLINE_GRANT_INVALID');
+    const wrong = await submit('OFFLINE_UNLOCK_FAILED');
+    expect(clock).toContain('reloj');
+    expect(grant).toContain('activación');
+    expect(wrong).toContain('PIN');
+    expect(new Set([clock, grant, wrong]).size).toBe(3);
   });
 
   it('refreshes state on a timer and clears it on destroy', async () => {
