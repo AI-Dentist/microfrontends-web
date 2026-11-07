@@ -85,3 +85,17 @@ Controller changes and delegated import failures latch readiness false.
 diagnostic, not an authentication grant. The atomic worker, publisher's additional
 reviewed runtime contracts, and final acceptance documentation land in the next
 scoped units; this intermediate commit alone does not deliver offline boot.
+
+## Atomic public worker (worker unit)
+
+`erp-sw.js?release=<version>` stages only successful public responses with matching
+MIME/CORS and SHA-256. The completion marker is last; failed candidates cannot
+delete an earlier complete generation. Same-version reuse checks fresh metadata
+and published worker bytes before replacing the implementation. Status audits
+exact cache membership. No skipWaiting/clients.claim: close existing controlled
+clients before a complete waiting update activates.
+
+API/auth/authorization/query/non-GET requests remain network-only. The public
+config snapshot is available only on network failure, never HTTP/validation failure.
+The manifest and public icons support installation; none authorize offline ERP
+operations. Actual-build publisher integration and final evidence are the next unit.
