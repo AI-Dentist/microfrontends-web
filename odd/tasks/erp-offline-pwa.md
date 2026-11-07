@@ -1,6 +1,6 @@
 # Hosted ERP public offline PWA — T2
 Frontend owner; base813947c1621a1605b06ff121a87c117c7f2f78a6, branch feat/erp-offline-pwa. Public boot ONLY, not offline authorization or transactions.
-Canonical spec: platform-infrastructure/odd/tasks/erp-offline-pwa.md T2/S1-S2, read ENTIRE through LogL12; coordinator engineering decision accepted. Preserve standalone and all unrelated WIP; no push/deploy.
+Canonical spec: platform-infrastructure/odd/tasks/erp-offline-pwa.md T2/S1-S2, read ENTIRE through LogL31; coordinator engineering decision accepted. Preserve standalone and all unrelated WIP; no push/deploy.
 
 ## Specs
 S12. "Baseline strict mode without explicit attested inventory must retain rejection."
@@ -45,7 +45,7 @@ T2c | S2-S4,S7,S13-S15 | bounded active native/shim/runtime contracts | done | C
 T3 | S2-S4,S7,S9 | test-first atomic SW | done | Commit0bb92fc94343e44fe9e26409cfdd3dada1e2533c;15 SW cases in293-suite and actual incomplete/complete/browser privacy checks PASS; source/meta checked before same-version reuse.
 T4 | S1,S4-S7,S9 | boot/install integration | done | Commits3f2bef1+0bb92fc; manifest/icons/official hook/root SW, normal online default preserved. Current builds/CDP/offline boot PASS L34-L35.
 T5 | S7-S10 | owner focused + existing suites/build, actual Chromium SW | done | Current-source shell+ERP builds PASS; final shell build job12 PASS; actual browser8 checks PASS/214 assets; complete current Node suite293 PASS L35-L36. Windows symlink proof unavailable/excluded. Not independent approval.
-T6 | S9-S11 | independent security/delivery verification + local delivery | in_progress | Independent risks2/5 PASS L37; final acceptance harness/docs slice is next after54871b5. All source unchanged since verified snapshot. Native assessment unavailable, no retry/old authority. No push.
+T6 | S9-S11 | independent security/delivery verification + local delivery | done | Independent risks2/5 PASS L37; final source/acceptance commit a9783e17dbf883ee0342a9d67afb3bfb27afceb6. Exact local slice staging observed; no source changes after verified snapshot. Native assessment unavailable/no retry, no push.
 
 ## Log
 L1. User original request verbatim:
@@ -141,3 +141,6 @@ L39. C3 runtime unit committed3f2bef1d7eed0b801509ff8c2537959b822dcfff (basef8db
 L40. C4 worker/install unit committed0bb92fc94343e44fe9e26409cfdd3dada1e2533c (base3f2bef1):8 explicit paths,288insert1delete plus two public PNGs. Source+matching SW tests+manifest/icons/docs, staged names/stat/check observed. No foreign paths or model binaries staged. Prior functional/independent proof still applies: no source changes during delivery. C5 publisher contracts and C6 acceptance/documentation remain.
 
 L41. C5 publisher/runtime unit committed54871b50cb386b6b88be79c981e0ea2ab417810d (base0bb92fc):5 explicit paths,391insert131delete including218 changed operator/protocol doc lines (~298 code/test lines). Coherent documentation overage records correct complete publishing, all four audited contracts, SDK provenance and actual client/worker boundary alongside behavior. Staged names/stat/check observed; no foreign WIP staged. Final browser harness/evidence documentation slice closes delivery; no source changes/retests/new reviewer.
+
+L42. Final C6 acceptance unit committeda9783e17dbf883ee0342a9d67afb3bfb27afceb6 (base54871b5):3 explicit paths,132insert8delete, actual browser harness plus exact evidence/limits documentation and ledger. Current gitstatus shows ONLY previously unrelated WIP after commit; owned T2 source/tests/docs clean. All localS1-S15 delivered (public boot only; not root PIN/financial scope). Buildsetup/TS failures, baselinebrowserRED and unavailable native/symlink proof remain historical/explicit; no production deployment/model inference/private-vault approval. No duplicate293/browser8/reviewer run. This bookkeeping closure records the source unit SHA without pretending a self-referential commit hash.
+L43. Next authorized dependency: user explicitly assigns FRONTEND T3 vault/PIN only AFTER this T2 closure, canonical platform-infrastructure spec read ENTIRE throughL31. T3 exact grant will be recorded in a separate bounded tracker/mirror before its first source write. T4 cache/forms/sync not included. Same branch/WIP, no new worker/restarted verifier/provider/container/install/push. Need exact committed backend activation format and entry integration map before design/source; no generic continue prompt.
