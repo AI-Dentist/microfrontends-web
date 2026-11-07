@@ -158,8 +158,15 @@ The network-only activation adapter uses a live in-memory owner fence before and
 after transport/signature verification. It sends only the exact UUID/duration input
 and transient bearer (no PIN, idempotency key or persistence), rejects HTTP/GraphQL
 errors, and cannot extend the requested signed duration. Synthetic HTTP/crypto
-checks passed; real provider integration is not claimed. PIN-wrapped random DEK,
-encrypted per-user database, isolated entry and lifecycle/browser proof remain in progress. No
+checks passed; real provider integration is not claimed. PIN-wrapped random DEK and the encrypted vault core are implemented with public
+synthetic controls: PBKDF2-SHA256 (600k) wrapping a random 256-bit DEK, unique
+AES-GCM IVs and AAD binding schema/workspace scope. Wrong PIN, tampered or relocated
+ciphertext, different online actor, expiry/clock-rollback and storage faults all fail
+closed without writes; logout/principal change clears keys while retaining already
+encrypted pending bytes. The IndexedDB adapter, Angular offline entry and real-browser
+proof remain in progress. Offline unlock cannot prove the actor without a live online
+identity, and XSS, hostile devices, clock tampering and offline PIN brute force stay
+client risks that this vault does not eliminate. No
 existing hosted/standalone providers or legacy stores are changed by this library.
 Backend final sync verification remains unapproved; no private-sync production
 approval follows from the public PWA or these synthetic grant controls.

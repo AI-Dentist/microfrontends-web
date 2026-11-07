@@ -1,0 +1,61 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {webcrypto} from 'node:crypto';
+import {provisionOnlineGrant} from './grant.mjs';
+const api=await import('./vault.mjs').catch(e=>{if(e.code==='ERR_MODULE_NOT_FOUND')return{};throw e;});
+const base=Date.parse('2026-11-07T00:00:00Z'),pin='123456';
+const claims={version:1,grantId:'33333333-3333-4333-8333-333333333333',grantIssuer:'https://erp-grant.example',audience:'erp-offline-local-only',erpUserId:'44444444-4444-4444-8444-444444444444',identityIssuer:'https://identity.example',identitySubject:'synthetic-owner-a',role:'ADMIN',capabilities:['CASH','EXPENSES','MANUAL_ORDERS','PATIENTS'],workspaceId:'11111111-1111-4111-8111-111111111111',deviceId:'22222222-2222-4222-8222-222222222222',issuedAt:new Date(base).toISOString(),expiresAt:new Date(base+28800000).toISOString()};
+const keys=await webcrypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
+const spki=Buffer.from(await webcrypto.subtle.exportKey('spki',keys.publicKey)).toString('base64');
+async function activation(payload=claims){const input=[{alg:'RS256',typ:'erp-offline-grant+jws',kid:'synthetic'},payload].map(o=>Buffer.from(JSON.stringify(o)).toString('base64url')).join('.');const sig=await webcrypto.subtle.sign('RSASSA-PKCS1-v1_5',keys.privateKey,new TextEncoder().encode(input));return{...await provisionOnlineGrant({credential:input+'.'+Buffer.from(sig).toString('base64url'),spki,identity:{issuer:payload.identityIssuer,subject:payload.identitySubject},workspaceId:payload.workspaceId,deviceId:payload.deviceId,nowMs:base+1000}),ownerEpoch:1};}
+// Public persistence-port fixture. It accepts/exports ciphertext records only.
+class CipherStore {
+  envelope=null;records=new Map();writes=0;fault=false;
+  async load(){return structuredClone(this.envelope);}
+  async create(value){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope)throw Error('already exists');this.envelope=structuredClone(value);this.writes++;}
+  async reserveIv(keyId,iv){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope?.keyId!==keyId||this.envelope.retired)throw Error('retired');if(this.envelope.usedIVs.includes(iv))return false;this.envelope.usedIVs.push(iv);this.writes++;return true;}
+  async replaceContext(keyId,revision,context){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope?.keyId!==keyId||this.envelope.revision!==revision||this.envelope.retired)throw Error('stale');this.envelope.context=structuredClone(context);this.envelope.revision++;this.writes++;return this.envelope.revision;}
+  async retire(){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope){this.envelope.retired=true;this.envelope.revision++;this.writes++;}}
+  exportEncrypted(){return structuredClone({envelope:this.envelope,records:[...this.records]});}
+}
+async function fixture(){const a=await activation(),scopeId=await api.workspaceScopeId(a.binding),store=new CipherStore();let wall=base+1000,mono=0,identity={issuer:claims.identityIssuer,subject:claims.identitySubject,epoch:1};const options={scopeId,store,clock:{wall:()=>wall,mono:()=>mono},getIdentity:()=>identity};const v=new api.OfflineVault(options);return{a,scopeId,store,v,options,setWall:v=>{wall=v;},setMono:v=>{mono=v;},setIdentity:v=>{identity=v;}};}
+test('encrypted PIN vault public API exists without hosted or legacy providers',()=>{assert.equal(typeof api.OfflineVault,'function');assert.equal(typeof api.workspaceScopeId,'function');});
+test('correct PIN unlocks a fresh instance; stored material has no plaintext identity, grant or PIN',async()=>{
+  const f=await fixture();await f.v.activate(f.a,pin);assert.equal(f.v.state().status,'unlocked');f.v.lock();assert.equal(f.v.state().status,'locked');
+  const restored=new api.OfflineVault(f.options);await restored.unlock(pin);assert.equal(restored.state().status,'unlocked');
+  const raw=JSON.stringify(f.store.exportEncrypted());for(const secret of [pin,claims.identitySubject,claims.erpUserId,f.a.credential])assert.ok(!raw.includes(secret));
+  assert.notEqual(f.store.envelope.wrap.iv,f.store.envelope.context.iv);assert.equal(new Set(f.store.envelope.usedIVs).size,f.store.envelope.usedIVs.length);
+});
+test('wrong PIN leaves persisted ciphertext, counters and lock state unchanged',async()=>{
+  const f=await fixture();await f.v.activate(f.a,pin);f.v.lock();const before=f.store.exportEncrypted(),writes=f.store.writes;
+  await assert.rejects(()=>f.v.unlock('654321'),{code:'OFFLINE_UNLOCK_FAILED'});assert.equal(f.v.state().status,'locked');assert.deepEqual(f.store.exportEncrypted(),before);assert.equal(f.store.writes,writes);
+});
+test('ciphertext tamper and AAD scope relocation cannot unlock',async()=>{
+  const f=await fixture();await f.v.activate(f.a,pin);f.v.lock();const original=f.store.exportEncrypted();
+  f.store.envelope.context.cipher=(f.store.envelope.context.cipher[0]==='A'?'B':'A')+f.store.envelope.context.cipher.slice(1);
+  await assert.rejects(()=>f.v.unlock(pin),{code:'OFFLINE_UNLOCK_FAILED'});assert.equal(f.v.state().status,'locked');
+  f.store.envelope=original.envelope;const other=new api.OfflineVault({...f.options,scopeId:'f'.repeat(64)});await assert.rejects(()=>other.unlock(pin),{code:'OFFLINE_UNLOCK_FAILED'});
+});
+test('another online actor cannot unlock this owner even with the PIN',async()=>{
+  const f=await fixture();await f.v.activate(f.a,pin);f.v.lock();f.setIdentity({issuer:claims.identityIssuer,subject:'owner-b',epoch:2});const before=f.store.exportEncrypted();
+  await assert.rejects(()=>f.v.unlock(pin),{code:'OFFLINE_UNLOCK_FAILED'});assert.equal(f.v.state().status,'locked');assert.deepEqual(f.store.exportEncrypted(),before);
+});
+test('exclusive expiry, rollback and monotonic inconsistency clear the live workspace',async()=>{
+  for(const kind of ['expiry','rollback','inconsistent']){const f=await fixture();await f.v.activate(f.a,pin);
+    if(kind==='expiry')f.setWall(base+28800000);else if(kind==='rollback')f.setWall(base);else f.setMono(-1);
+    assert.equal(f.v.state().status,'locked');assert.deepEqual(f.v.state().capabilities,[]);
+  }
+});
+test('logout and principal change retire locally while retaining existing encrypted pending bytes',async()=>{
+  for(const event of ['logout','principalChanged']){const f=await fixture();await f.v.activate(f.a,pin);const bytes=Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('base64');f.store.records.set('opaque-pending',bytes);
+    await f.v[event]();assert.equal(f.v.state().status,'locked');assert.equal(f.store.records.get('opaque-pending'),bytes);
+    const restored=new api.OfflineVault(f.options);await assert.rejects(()=>restored.unlock(pin),{code:'OFFLINE_UNLOCK_FAILED'});assert.equal(f.store.records.get('opaque-pending'),bytes);
+  }
+});
+test('storage failure cannot report activation or unlocking success',async()=>{
+  const f=await fixture();f.store.fault=true;await assert.rejects(()=>f.v.activate(f.a,pin),{code:'OFFLINE_STORAGE_FAILED'});assert.equal(f.v.state().status,'locked');assert.equal(f.store.envelope,null);
+  f.store.fault=false;await f.v.activate(f.a,pin);f.v.lock();f.store.fault=true;await assert.rejects(()=>f.v.unlock(pin),{code:'OFFLINE_STORAGE_FAILED'});assert.equal(f.v.state().status,'locked');
+});
+test('unlock after a persisted clock rollback does not change encrypted state',async()=>{
+  const f=await fixture();await f.v.activate(f.a,pin);f.v.lock();f.setWall(base);const before=f.store.exportEncrypted();await assert.rejects(()=>f.v.unlock(pin),{code:'OFFLINE_UNLOCK_FAILED'});assert.deepEqual(f.store.exportEncrypted(),before);
+});
