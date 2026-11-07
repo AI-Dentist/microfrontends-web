@@ -20,7 +20,7 @@ class Idb{
     const req=value=>({result:undefined,error:null,onsuccess:null,onerror:null,
       delete:k=>{if(self.fault||mode!=='readwrite'){tx.error=Error('synthetic');queueMicrotask(()=>tx.onerror?.());return;}m.delete(k);queueMicrotask(()=>tx.oncomplete?.());},
       get:k=>{const request={result:undefined,onsuccess:null,onerror:null};queueMicrotask(()=>{if(self.fault){request.error=Error('synthetic');tx.onerror?.(request);return;}request.result=m.get(k);request.onsuccess?.();});return request;},
-      put:v=>{if(self.fault||mode!=='readwrite'){tx.error=Error('synthetic');queueMicrotask(()=>tx.onerror?.());return;}m.set(v.id??v.scopeId,structuredClone(v));queueMicrotask(()=>tx.oncomplete?.());},
+      put:v=>{if(self.fault||mode!=='readwrite'){tx.error=Error('synthetic');queueMicrotask(()=>tx.onerror?.());return;}if(names.includes('meta')&&self.metaPut&&!self.metaPut(v)){tx.error=Error('synthetic meta');queueMicrotask(()=>tx.onerror?.());return;}m.set(v.id??v.scopeId,structuredClone(v));queueMicrotask(()=>tx.oncomplete?.());},
       add:v=>{if(self.fault||mode!=='readwrite'){tx.error=Error('synthetic');queueMicrotask(()=>tx.onerror?.());return;}m.set(v.id??v.scopeId,structuredClone(v));queueMicrotask(()=>tx.oncomplete?.());}});
     return req();}};
     setImmediate(()=>{if(!self.fault)tx.oncomplete?.();});return tx;}};request.onupgradeneeded?.();request.onsuccess?.();});return request;}
@@ -105,4 +105,35 @@ test('a fresh document sees a retired workspace and the owner can recover it', a
   await assert.rejects(() => reopened.unlock(pin), { code: 'OFFLINE_RETIRED' });
   const owner = new OfflineWorkspace({ indexedDB: h.idb, clock: { wall: () => h.clock.value, mono: () => 0 }, getOnlineContext: () => ({ token: 'SYNTHETIC', identityIssuer: claims.identityIssuer, identitySubject: claims.identitySubject, epoch: 1 }), endpoint: 'https://shell.example/api/erp/graphql', fetcher: h.fetcher });
   assert.equal((await owner.reactivate(pin)).status, 'unlocked');
+});
+
+test('a meta write failure after the record retires still leaves a recoverable workspace', async () => {
+  const h = host();
+  await h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId });
+  // Fail ONLY the next meta put, after the vault record is already retired.
+  const original = h.idb.metaPut;
+  h.idb.metaPut = () => false;
+  await assert.rejects(() => h.workspace.retire());
+  h.idb.metaPut = original;
+  const reopened = new OfflineWorkspace({ indexedDB: h.idb, clock: { wall: () => h.clock.value, mono: () => 0 }, getOnlineContext: () => null, endpoint: 'https://shell.example/api/erp/graphql' });
+  assert.equal((await reopened.status()).status, 'retired', 'locator reconciled from the record');
+  const owner = new OfflineWorkspace({ indexedDB: h.idb, clock: { wall: () => h.clock.value, mono: () => 0 }, getOnlineContext: () => ({ token: 'SYNTHETIC', identityIssuer: claims.identityIssuer, identitySubject: claims.identitySubject, epoch: 1 }), endpoint: 'https://shell.example/api/erp/graphql', fetcher: h.fetcher });
+  assert.equal((await owner.reactivate(pin)).status, 'unlocked');
+  await owner.purge();
+  assert.equal((await owner.status()).status, 'unconfigured');
+});
+
+test('a fresh instance retires the persisted record without a loaded vault', async () => {
+  const h = host();
+  await h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId });
+  const cold = new OfflineWorkspace({ indexedDB: h.idb, clock: { wall: () => h.clock.value, mono: () => 0 }, getOnlineContext: () => null, endpoint: 'https://shell.example/api/erp/graphql' });
+  assert.equal((await cold.retire()).status, 'retired');
+  assert.equal([...h.idb.stores.get('vaults').values()][0].retired, true, 'persisted record retired without a loaded vault');
+});
+
+test('activate against a retired record returns a typed recovery error', async () => {
+  const h = host();
+  await h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId });
+  await h.workspace.retire();
+  await assert.rejects(() => h.workspace.activate(pin, { workspaceId: claims.workspaceId, deviceId: claims.deviceId }), { code: 'OFFLINE_RETIRED' });
 });

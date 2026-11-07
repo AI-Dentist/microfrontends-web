@@ -67,6 +67,8 @@ type Workspace = {
         <button type="button" (click)="retire()">Cerrar jornada offline</button>
       }
       <p class="offline-limits">
+        El límite de 8 horas depende de que el reloj del dispositivo avance de forma
+        aproximadamente real; renovar la jornada exige autenticarse online.
         Un PIN local no sustituye la autenticación del servidor. La revocación remota no se puede comprobar sin conexión;
         el reloj del dispositivo, el software del navegador y el almacenamiento local quedan bajo su control.
       </p>
@@ -176,6 +178,8 @@ function message(error: unknown) {
   if (code === 'OFFLINE_UNCONFIGURED') return 'Este dispositivo no tiene una jornada habilitada.';
   if (code === 'OFFLINE_RETIRED') return 'La jornada se cerró; vuelva a autenticarse para recuperarla.';
   if (code === 'OFFLINE_UNLOCK_BACKOFF') return 'Demasiados intentos fallidos; espere antes de reintentar.';
+  if (code === 'OFFLINE_CLOCK_ROLLBACK') return 'El reloj del dispositivo no avanzó de forma coherente; la jornada se bloqueó.';
+  if (code === 'OFFLINE_GRANT_INVALID') return 'La activación no corresponde a este usuario o dispositivo.';
   if (code === 'OFFLINE_STORAGE_FAILED') return 'El almacenamiento local no está disponible; no se guardó nada.';
   if (code === 'OFFLINE_LOCKED') return 'La jornada se bloqueó por vencimiento o por un reloj incoherente.';
   return 'No se pudo completar la operación con el PIN indicado.';

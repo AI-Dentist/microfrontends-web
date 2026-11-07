@@ -86,7 +86,7 @@ export function createIndexedStore(indexedDB, scopeId) {
         });
       } finally { db.close(); }
     },
-    async relink(keyId, revision, context) {
+    async relink(keyId, revision, context, clock) {
       const db = await open(indexedDB);
       try {
         return await new Promise((resolve, reject) => {
@@ -101,12 +101,13 @@ export function createIndexedStore(indexedDB, scopeId) {
             const record = current.result;
             if (!record || record.keyId !== keyId || record.revision !== revision || !record.retired) { tx.abort(); return; }
             next = revision + 1;
-            store.put({ ...record, retired: false, context: structuredClone(context), revision: next });
+            store.put({ ...record, retired: false, context: structuredClone(context), clock: clock ? structuredClone(clock) : record.clock, revision: next });
           };
         });
       } finally { db.close(); }
     },
-    async penalize(nowWall, waitMs) {
+    /** Atomic: the counter read, increment and wait all happen inside one transaction. */
+    async penalize(nowWall) {
       const db = await open(indexedDB);
       try {
         await new Promise((resolve, reject) => {
@@ -119,6 +120,7 @@ export function createIndexedStore(indexedDB, scopeId) {
             const record = current.result;
             if (!record) return;
             const fails = (record.clock?.fails ?? 0) + 1;
+            const waitMs = Math.min(1000 * 2 ** (fails - 1), 300000);
             store.put({ ...record, clock: { ...record.clock, fails, nextAttemptAt: nowWall + waitMs } });
           };
         });

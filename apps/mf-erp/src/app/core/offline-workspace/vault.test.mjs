@@ -15,7 +15,8 @@ class CipherStore {
   async create(value){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope)throw Error('already exists');this.envelope=structuredClone(value);this.writes++;}
   async replaceContext(keyId,revision,context){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope?.keyId!==keyId||this.envelope.revision!==revision||this.envelope.retired)throw Error('stale');this.envelope.context=structuredClone(context);this.envelope.revision++;this.writes++;return this.envelope.revision;}
   async retire(){if(this.fault)throw Error('synthetic storage unavailable');if(this.envelope){this.envelope.retired=true;this.envelope.revision++;this.writes++;}}
-  async penalize(nowWall,waitMs){if(this.fault)throw Error('synthetic');this.envelope.clock={...(this.envelope.clock??{}),fails:(this.envelope.clock?.fails??0)+1,nextAttemptAt:nowWall+waitMs};this.writes++;}
+  async relink(keyId,revision,context,clock){if(this.fault)throw Error('synthetic');if(this.envelope?.keyId!==keyId||this.envelope.revision!==revision||!this.envelope.retired)throw Error('stale');this.envelope.retired=false;this.envelope.context=structuredClone(context);if(clock)this.envelope.clock=structuredClone(clock);this.envelope.revision++;this.writes++;return this.envelope.revision;}
+  async penalize(nowWall){await Promise.resolve();if(this.fault)throw Error('synthetic');const fails=(this.envelope.clock?.fails??0)+1;this.envelope.clock={...(this.envelope.clock??{}),fails,nextAttemptAt:nowWall+Math.min(1000*2**(fails-1),300000)};this.writes++;}
   async clearPenalty(){if(this.fault)throw Error('synthetic');if(this.envelope)this.envelope.clock={...(this.envelope.clock??{}),fails:0,nextAttemptAt:0};this.writes++;}
   exportEncrypted(){return structuredClone({envelope:this.envelope,records:[...this.records]});}
 }
@@ -137,4 +138,45 @@ test('a tampered retired record cannot force an absurd KDF cost', async () => {
   const started = Date.now();
   await assert.rejects(() => new api.OfflineVault({ scopeId, store, clock: { wall: () => base + 1000, mono: () => 0 }, getIdentity: identity }).relink(a, pin), { code: 'OFFLINE_UNLOCK_FAILED' });
   assert.ok(Date.now() - started < 2000, 'rejected before running PBKDF2');
+});
+
+test('relink enforces backoff and never lowers the persisted wall floor', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  let wall = base + 1000;
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  const open = () => new api.OfflineVault({ scopeId, store, clock: { wall: () => wall, mono: () => 0 }, getIdentity: identity });
+  await open().activate(a, pin);
+  await open().retire();
+  await open().unlock(pin).catch(() => {});
+  await assert.rejects(() => open().unlock('000000'), { code: 'OFFLINE_RETIRED' });
+  // A fresh activation re-links; the wall floor must not go backwards.
+  const later = base + 50000;
+  wall = later;
+  const relinked = await open().relink(a, pin);
+  assert.equal(relinked.status, 'unlocked');
+  assert.ok(store.envelope.clock.maxWall >= later, 'maxWall is monotonic');
+});
+
+test('a burst of wrong PINs grows the persisted wait atomically', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  const wall = base + 1000;
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  const open = () => new api.OfflineVault({ scopeId, store, clock: { wall: () => wall, mono: () => 0 }, getIdentity: identity });
+  await open().activate(a, pin);
+  await Promise.all(Array.from({ length: 5 }, () => open().unlock('000000').catch(() => {})));
+  assert.equal(store.envelope.clock.fails, 5, 'every concurrent wrong PIN is counted');
+  // Wait grows with the counter: 5th failure waits 2^4 * 1s.
+  assert.equal(store.envelope.clock.nextAttemptAt, wall + 16000);
+});
+
+test('a wall advancing far slower than mono is treated as tampering', async () => {
+  const a = await activation(), scopeId = await api.workspaceScopeId(a.binding), store = new CipherStore();
+  const identity = () => ({ issuer: claims.identityIssuer, subject: claims.identitySubject, epoch: 1 });
+  let wall = base + 1000, mono = 0;
+  const vault = new api.OfflineVault({ scopeId, store, clock: { wall: () => wall, mono: () => mono }, getIdentity: identity });
+  await vault.activate(a, pin);
+  await vault.unlock(pin);
+  // Two minutes of real monotonic time, but the device wall advanced only 5 seconds.
+  mono += 120000; wall += 5000;
+  await assert.rejects(() => vault.unlock(pin), { code: 'OFFLINE_CLOCK_ROLLBACK' });
 });

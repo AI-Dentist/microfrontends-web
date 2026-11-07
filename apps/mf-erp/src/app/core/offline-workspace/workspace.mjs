@@ -26,8 +26,20 @@ export class OfflineWorkspace {
     if (!this.#meta) this.#meta = await readDeviceMeta(this.#indexedDB);
     return this.#meta;
   }
+  /** The record is the source of truth: repair a locator that disagrees with it. */
+  async #reconcile(meta) {
+    if (!meta?.scopeId) return meta;
+    let record = null;
+    try { record = await createIndexedStore(this.#indexedDB, meta.scopeId).load(); } catch { return meta; }
+    if (!record) return meta;
+    if (Boolean(record.retired) !== Boolean(meta.retired)) {
+      const repaired = { ...meta, retired: Boolean(record.retired) };
+      try { await writeDeviceMeta(this.#indexedDB, repaired); this.#meta = repaired; return repaired; } catch { return meta; }
+    }
+    return meta;
+  }
   async status() {
-    const meta = await this.#device();
+    const meta = await this.#reconcile(await this.#device());
     if (!meta?.scopeId) return Object.freeze({status: 'unconfigured', capabilities: Object.freeze([]), actorVerified: false});
     if (meta.retired && !this.#vault) return Object.freeze({status: 'retired', capabilities: Object.freeze([]), actorVerified: false});
     if (this.#vault) return Object.freeze({...this.#vault.state(), ...(this.#identity() ? {actorVerified: true} : {actorVerified: false})});
@@ -52,9 +64,14 @@ export class OfflineWorkspace {
     const vault = new OfflineVault({store: createIndexedStore(this.#indexedDB, scopeId), scopeId, clock: this.#clock, getIdentity: () => this.#identity()});
     try { await vault.activate(provisioned, pin); }
     catch (error) {
-      // A failed activation must not leave a locator pointing at a shell nobody can open.
-      await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false });
+      // Never orphan existing ciphertext: keep the linkage and let reconcile fix the flag.
       this.#meta = null; this.#vault = null;
+      const record = await createIndexedStore(this.#indexedDB, scopeId).load().catch(() => null);
+      if (record) {
+        await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId, retired: Boolean(record.retired) }).catch(() => {});
+      } else {
+        await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId: null, retired: false }).catch(() => {});
+      }
       throw error;
     }
     await writeDeviceMeta(this.#indexedDB, { workspaceId: device.workspaceId, deviceId: device.deviceId, scopeId, retired: false });
@@ -75,7 +92,7 @@ export class OfflineWorkspace {
   async reactivate(pin, { durationSeconds = 28800 } = {}) {
     const online = this.#getOnlineContext();
     if (!online) throw coded('OFFLINE_ACTIVATION_REQUIRED');
-    const device = await this.#device();
+    const device = await this.#reconcile(await this.#device());
     if (!device?.scopeId || !device.retired) throw coded('OFFLINE_UNCONFIGURED');
     const provisioned = await activateOnlineGrant({
       endpoint: this.#endpoint, getOnlineContext: this.#getOnlineContext, workspaceId: device.workspaceId,
@@ -100,10 +117,15 @@ export class OfflineWorkspace {
   }
   lock() { const state = this.#vault?.lock() ?? {status: 'locked', capabilities: []}; this.#emit(state); return state; }
   async retire() {
-    const state = this.#vault ? await this.#vault.retire() : {status: 'locked', capabilities: []};
+    const persisted = await this.#device();
+    const scope = persisted?.scopeId;
+    // Retire by the persisted scope even without a loaded vault instance.
+    const target = this.#vault ?? (scope ? new OfflineVault({ store: createIndexedStore(this.#indexedDB, scope), scopeId: scope, clock: this.#clock, getIdentity: () => this.#identity() }) : null);
+    const state = target ? await target.retire() : {status: 'locked', capabilities: []};
     // Clear the locator so the encrypted record is not silently reused; ciphertext stays.
-    await writeDeviceMeta(this.#indexedDB, {workspaceId: this.#meta?.workspaceId ?? null, deviceId: this.#meta?.deviceId ?? null, scopeId: this.#meta?.scopeId ?? null, retired: true});
-    this.#meta = this.#meta ? { ...this.#meta, retired: true } : null; this.#vault = null; this.#emit(state); return state;
+    await writeDeviceMeta(this.#indexedDB, { workspaceId: persisted?.workspaceId ?? null, deviceId: persisted?.deviceId ?? null, scopeId: scope ?? null, retired: true });
+    this.#meta = persisted ? { ...persisted, retired: true } : null; this.#vault = null;
+    const finalState = await this.status(); this.#emit(finalState); return finalState;
   }
 }
 export function createOfflineWorkspace(options) {

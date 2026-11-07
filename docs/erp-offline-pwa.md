@@ -180,9 +180,10 @@ that already exists on this device.
 
 Storage uses a new IndexedDB database (`erp-offline-vault-v1`) with a `vaults`
 store of opaque ciphertext and a `meta` store holding only a non-secret device
-locator (workspace/device UUID and scope digest). Local retirement clears the
-locator but keeps ciphertext for the original owner. Legacy Dexie stores and
-standalone behavior are untouched.
+locator (workspace/device UUID and scope digest). Local retirement keeps that
+locator, marked `retired`, next to the ciphertext so the original owner can recover
+it after authenticating again online; only an explicit purge deletes it. Legacy
+Dexie stores and standalone behavior are untouched.
 
 Because the shell's compiled bootstrap chunk changed, the publisher's audited
 runtime profile needed a second recorded implementation. Generation first failed
@@ -232,10 +233,13 @@ expected state, not a failure.
 - **Clock:** only wall-clock bounds are persisted in the encrypted envelope
   (`maxWall`/`lastWall`). The monotonic clock is document-local because
   `performance.now()` restarts near zero on reload; it is compared only within one
-  document. A wall rollback fails closed with `OFFLINE_CLOCK_ROLLBACK`, and inside one
-  document large monotonic progress with a frozen wall is treated as tampering. Across
-  documents the deadline relies on the wall clock advancing: no persisted monotonic
-  witness remains, and no stronger protection is claimed.
+  document. A wall rollback fails closed with `OFFLINE_CLOCK_ROLLBACK`; inside one
+  document the monotonic clock is an independent witness, so large monotonic progress
+  with a frozen or far slower wall is treated as tampering. Across documents the
+  deadline relies on the device wall clock advancing roughly with real time: no
+  persisted monotonic witness remains, and no stronger protection is claimed.
+  The eight-hour bound is therefore a policy limit, not a hardware guarantee; renewal
+  requires authenticating again online.
 - **Retention is real:** `retire()` persists the scope linkage **and** `retired:true`
   next to the ciphertext, and the workspace reports `retired`. A plain unlock refuses
   (`OFFLINE_RETIRED`); the original owner recovers the record by authenticating again
@@ -262,6 +266,10 @@ expected state, not a failure.
 - The screen does **not** record pending operations yet; the copy says so.
 
 Accepted limitations recorded, not fixed: the SPKI signing key is pinned on first
-use with no configured allowlist or rotation, and the service worker has no activate
-cleanup for superseded generations (this competes with vault storage quota and
-should be scheduled with T4).
+use with no configured allowlist or rotation; the service worker has no activate
+cleanup for superseded generations (it competes with vault storage quota and should
+be scheduled with T4); the retired-state purge button performs **no identity check**
+and destroys the ciphertext for anyone who confirms it, so it is a deliberate
+destructive action rather than an owner-protected one; and a later reactivation
+reopens ciphertext that may be **older than the current signed window**, so pending
+data must always be shown with its age.
