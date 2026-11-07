@@ -1,2 +1,19 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Dental platform</title><base href="/"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><platform-shell></platform-shell></body></html>
+<html lang="en"><head><meta charset="utf-8"><title>Dental platform</title><base href="/"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#123e49">
+<script>
+// Supported es-module-shims options must be installed before its polyfill.
+(() => {
+  const originalFetch = globalThis.fetch.bind(globalThis);
+  globalThis.esmsInitOptions = {
+    shimMode: true,
+    nativePassthrough: false,
+    async fetch(url, options) {
+      if (globalThis.__erpPublicModuleTarget) globalThis.__erpPublicModuleTarget(String(url));
+      return originalFetch(url, options);
+    }
+  };
+  globalThis.__erpPublicShimFetchHook = true;
+})();
+</script>
+</head><body><platform-shell></platform-shell></body></html>

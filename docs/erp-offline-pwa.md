@@ -69,3 +69,19 @@ Other computed imports in the cached build remain unsupported, including module
 remotes and shim implementation sites. No complete actual-build candidate, SW or
 bootstrap integration, production build, real-browser offline proof, or independent
 security/delivery approval is provided.
+
+## Active client boundary (runtime unit)
+
+The shell now optionally registers a version-pinned worker and validates its
+MessageChannel status against the current controller, script URL and public
+configuration. No manifest means the previous normal online startup remains.
+The official native federation callback delegates the original importShim only
+for exact verified targets. The official shim fetch hook is installed before
+initialization with shim mode and native passthrough disabled. Other configured
+module roots remain online-only, never native ERP targets or cached business data.
+Controller changes and delegated import failures latch readiness false.
+
+`window.erpPublicRuntime` is a volatile public-resource `{ready,version}`
+diagnostic, not an authentication grant. The atomic worker, publisher's additional
+reviewed runtime contracts, and final acceptance documentation land in the next
+scoped units; this intermediate commit alone does not deliver offline boot.
