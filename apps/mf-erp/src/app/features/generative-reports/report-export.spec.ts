@@ -72,7 +72,7 @@ describe('report export through the public viewer', () => {
   }
   it('fetches with current Bearer, blocks redirects/cookies, downloads the response blob and never uses unauthenticated open', async () => {
     await download();
-    expect(fetcher).toHaveBeenCalledWith(origin + path, expect.objectContaining({
+    expect(fetcher).toHaveBeenCalledWith(location.origin + path, expect.objectContaining({
       headers: { Authorization: 'Bearer current-token' }, redirect: 'error', credentials: 'omit',
     }));
     expect(httpGet).not.toHaveBeenCalled();

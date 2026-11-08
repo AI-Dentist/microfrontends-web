@@ -41,7 +41,7 @@ it.each([
   const before = snapshot(context);
   const done = firstValueFrom(apollo.mutate({ mutation, context }));
   await drain();
-  const request = http.expectOne('http://localhost:8080/graphql');
+  const request = http.expectOne('/api/erp/graphql');
   expect(request.request.headers.get('Authorization')).toBe(`Bearer ${token}`);
   expect(request.request.headers.has('X-Dev-User')).toBe(false);
   expect(request.request.headers.keys().filter((key) => key.toLowerCase() === 'idempotency-key')).toHaveLength(1);
@@ -191,7 +191,7 @@ it('does not generate a key for existing queries', async () => {
   const factory = vi.spyOn(crypto, 'randomUUID');
   const done = firstValueFrom(apollo.query({ query, context: { idempotencyKey: 'ignored' } }));
   await drain();
-  const request = http.expectOne('http://localhost:8080/graphql');
+  const request = http.expectOne('/api/erp/graphql');
   expect(request.request.headers.has('Idempotency-Key')).toBe(false);
   expect(factory).not.toHaveBeenCalled();
   request.flush({ data: { probe: true } });

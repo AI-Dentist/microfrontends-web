@@ -37,7 +37,7 @@ const receipt = { id: id(8), numeroRecibo: 'REC-2026-000001', fechaEmision: inst
 const role = { id: id(9), codigo: 'ADMIN', nombre: 'Administrador', permisos: [] };
 const company = { id: id(10), nombreComercial: 'Clínica fixture', nit: '123', razonSocial: 'Clínica de prueba', direccion: 'Santa Cruz, ficticia', telefonoContacto: '+59170000000', emailContacto: null, monedaSimbolo: 'Bs' };
 // BARRAS is controlled renderer evidence only. Actual local backend has no AI provider.
-const report = { reporteId: id(11), consultaSqlEjecutada: 'SELECT metodo, monto FROM fixture', columnas: ['Metodo', 'Monto'], filasJson: JSON.stringify([['EFECTIVO', 100], ['QR', 200]]), tipoGraficoSugerido: 'BARRAS', urlDescargaExcel: `http://localhost:8080/api/v1/reports/export/${id(11)}/xlsx`, urlDescargaPdf: `http://localhost:8080/api/v1/reports/export/${id(11)}/pdf` };
+const report = { reporteId: id(11), titulo: 'Ingresos fixture Bs', resumenAnalitico: 'QR lidera los ingresos ficticios.', sqlGenerado: 'SELECT metodo, monto FROM fixture', consultaSqlEjecutada: 'SELECT metodo, monto FROM fixture', columnas: ['Metodo', 'Monto'], filas: [['EFECTIVO', '100'], ['QR', '200']], filasJson: JSON.stringify([['EFECTIVO', 100], ['QR', 200]]), tipoGraficoSugerido: 'BARRAS', urlDescargaExcel: `/api/v1/reports/export/${id(11)}/xlsx`, urlDescargaPdf: `/api/v1/reports/export/${id(11)}/pdf` };
 let reportUnavailable = false;
 const businessError = (message, classification) => ({ errors: [{ message, extensions: { classification } }] });
 function response(name, variables) {
@@ -55,7 +55,7 @@ function response(name, variables) {
     ObtenerEstadoServidorMcp: { obtenerEstadoServidorMcp: { activo: true, protocolVersion: '2025-03-26', toolsRegistradas: [] } },
   };
   if (reads[name]) return reads[name];
-  if (name === 'EjecutarAgenteErp') return { ejecutarAgenteErp: { interaccionId: id(14), fechaEjecucion: instant, instruccionOriginal: variables.instruccion, respuestaNaturalAgente: 'FIXTURE: ingresos por método de pago', toolsMcpInvocadas: ['generarReporteDinamicoSqlTool'], accionCrudEjecutada: null, notificacionN8nEnviada: false, reporteGenerado: report } };
+  if (name === 'EjecutarAgenteErp') return { ejecutarAgenteErp: { interaccionId: id(14), fechaEjecucion: instant, instruccionOriginal: variables.instruccion, respuestaNaturalAgente: 'FIXTURE: ingresos por método de pago', toolsMcpInvocadas: variables.modoAutonomoMonitoreo ? ['auditarSaludNegocio', 'dispararAlertaCobranzaWhatsapp'] : ['generarReporteDinamicoSqlTool'], accionCrudEjecutada: null, notificacionN8nEnviada: !!variables.modoAutonomoMonitoreo, reporteGenerado: report } };
   if (name === 'CrearPaciente') {
     const created = { id: id(13), ...variables.input, activo: true };
     patients.push(created); return { crearPaciente: created };
@@ -182,7 +182,18 @@ try {
   await visible(page.getByRole('cell', { name: 'EFECTIVO', exact: true }));
   await visible(page.getByRole('cell', { name: '200', exact: true }));
   await visible(page.locator('canvas').first());
-  console.log('PASS FIXTURE ONLY BARRAS table/chart; not actual backend AI evidence');
+  await visible(page.getByRole('heading', { name: 'Ingresos fixture Bs', exact: true }));
+  await visible(page.getByText('QR lidera los ingresos ficticios.', { exact: true }));
+  await visible(page.getByTestId('mcp-tool-card').getByText('generarReporteDinamicoSqlTool', { exact: true }));
+  for (const type of ['TORTA', 'LINEAS', 'BARRAS']) {
+    await page.getByLabel('Tipo de gráfico', { exact: true }).selectOption(type);
+    await visible(page.locator('canvas').first());
+  }
+  await page.getByRole('button', { name: 'Monitorea mi negocio', exact: true }).click();
+  await visible(page.getByTestId('whatsapp-confirmation'));
+  assert.equal(await page.getByTestId('mcp-tool-card').count(), 2);
+  assert.ok(calls.some(call => call.name === 'EjecutarAgenteErp' && call.variables.modoAutonomoMonitoreo === true));
+  console.log('PASS FIXTURE ONLY canonical title/summary/rows, interactive BARRAS/LINEAS/TORTA, MCP cards and n8n confirmation; not actual backend AI evidence');
   reportUnavailable = true;
   await page.getByRole('textbox', { name: 'Instrucción para el agente' }).fill('Proveedor no disponible');
   await page.getByRole('button', { name: 'Enviar instrucción', exact: true }).click();
