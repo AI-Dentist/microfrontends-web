@@ -62,7 +62,7 @@ test.after(() => {
   for (const key of globals) delete globalThis[key];
 });
 
-function host(t, { path = '/clinical/citas', roles = ['ADMIN'], serviceBaseUrls = { erp: ERP }, citaReplies = [], citas = [] } = {}) {
+function host(t, { path = '/clinical/citas', roles = ['ADMIN'], serviceBaseUrls = { erp: ERP }, citaReplies = [], citas = [], mlDisponible = true, clusters = null, clusterStatus = 200 } = {}) {
   const calls = [];
   const state = { citas, citaReplies: [...citaReplies],
     insumos: [{ id: 'i-1', codigo: 'RES-01', nombre: 'Resina', stock_actual: 4, stock_minimo: 5,
@@ -76,7 +76,8 @@ function host(t, { path = '/clinical/citas', roles = ['ADMIN'], serviceBaseUrls 
     }
     const path = url.slice(MS3.length + 1);
     if (options.method === 'GET') {
-      if (path === 'citas') return reply(200, { success: true, data: { citas: state.citas }, citas: state.citas });
+      if (path === 'ml/clusters') return reply(clusterStatus, clusters || { success: true, data: { pacientes: { distribucion: {}, asignaciones: [] }, insumos: { distribucion: {}, asignaciones: [] }, datosSinteticos: true } });
+      if (path === 'citas') return reply(200, { success: true, data: { citas: state.citas, mlDisponible }, citas: state.citas });
       if (path === 'horarios') return reply(200, { success: true, data: { horarios: [] }, horarios: [] });
       return reply(200, { success: true, data: { insumos: state.insumos }, insumos: state.insumos });
     }
@@ -228,4 +229,41 @@ test('appointment actions hit the real transitions; completing without insumos c
   assert.deepEqual(writes(), [['PATCH', '/citas/c-1/cancelar', undefined],
     ['PATCH', '/citas/c-1/no-asistio', undefined], ['PATCH', '/citas/c-1/completar', {}]]);
   instance.unmount();
+});
+
+
+const clusterFixture = { success: true, data: {
+  pacientes: { distribucion: { 'Frecuente y Puntual': 1 }, asignaciones: [{ paciente_id: 'pa-uuid', cluster: 'Frecuente y Puntual' }] },
+  insumos: { distribucion: { 'Alta Rotación Crítica': 1 }, asignaciones: [{ insumo_id: 'i-1', cluster: 'Alta Rotación Crítica' }] }, datosSinteticos: true,
+} };
+test('ML appointments show risk, probability, recommendation and patient clusters; high-risk filter is exact', { skip }, async t => {
+  const cita = { id: 'c-high', paciente_id: 'pa-uuid', odontologo_id: 'od-uuid', consultorio_id: 'co-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' };
+  const s = host(t, { clusters: clusterFixture, citas: [
+    { ...cita, nivelRiesgo: 'ALTO', probabilidadNoShow: 0.8, accionRecomendada: 'Confirmar por teléfono' },
+    { ...cita, id: 'c-low', nivelRiesgo: 'MEDIO', probabilidadNoShow: 0.65, accionRecomendada: 'Recordatorio' },
+  ] }); t.after(() => s.instance.unmount());
+  await settle();
+  assert.match(s.container.textContent, /Datos sintéticos/);
+  assert.match(s.container.querySelector('[data-cluster-summary]').textContent, /Frecuente y Puntual.*1/);
+  assert.equal(s.container.querySelectorAll('[data-risk]').length, 2);
+  assert.match(s.container.querySelector('tbody').textContent, /ALTO.*80%.*Confirmar por teléfono.*Frecuente y Puntual/);
+  assert.match(s.container.querySelector('tbody').textContent, /MEDIO.*65%/);
+  const filter = s.container.querySelector('[aria-label="Solo alto riesgo"]'); filter.checked = true;
+  filter.dispatchEvent(new dom.window.Event('change', { bubbles: true })); await settle();
+  assert.equal(s.container.querySelectorAll('[data-risk]').length, 1);
+  assert.equal(s.calls.filter(c => c.url === `${MS3}/ml/clusters`).length, 1);
+});
+test('ML stock shows rotation alongside minimum alert and does not mutate inventory', { skip }, async t => {
+  const s = host(t, { path: '/clinical/stock', clusters: clusterFixture }); t.after(() => s.instance.unmount());
+  await settle(); assert.match(s.container.querySelector('tbody').textContent, /Alta Rotación Crítica.*Reponer urgente/);
+  assert.equal(s.calls.filter(c => c.method !== 'GET' && c.url.startsWith(MS3)).length, 0);
+});
+test('ML unavailability leaves appointments and stock usable and explicitly marks missing predictions', { skip }, async t => {
+  const s = host(t, { mlDisponible: false, clusterStatus: 503, clusters: { success: false, error: 'Sidecar down', code: 'ML_SERVICE_UNAVAILABLE' },
+    citas: [{ id: 'c-one', paciente_id: 'pa-uuid', estado: 'RESERVADA', probabilidadNoShow: null, nivelRiesgo: null }] });
+  t.after(() => s.instance.unmount()); await settle();
+  assert.match(s.container.textContent, /ML no disponible/);
+  assert.match(s.container.querySelector('tbody').textContent, /Sin predicción/);
+  assert.match(s.container.querySelector('tbody').textContent, /RESERVADA/);
+  assert.equal(s.container.querySelector('.error'), null);
 });

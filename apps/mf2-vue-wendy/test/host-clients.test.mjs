@@ -84,6 +84,6 @@ test('standalone default keeps working without a token and ignores retirement fl
   await service.getCitas();
   assert.equal(service.retired, false);
   assert.deepEqual(calls, [
-    { url: 'http://localhost:8001/api/agendamiento/citas', authorization: undefined },
+    { url: '/api/agendamiento/citas', authorization: undefined },
   ]);
 });

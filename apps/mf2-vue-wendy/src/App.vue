@@ -27,6 +27,14 @@
         </div>
 
         <h3 class="section-title">Citas Registradas</h3>
+        <p v-if="!mlDisponible" role="status">ML no disponible. Las citas siguen disponibles sin predicción.</p>
+        <p v-if="mlError" role="status">{{ mlError }}</p>
+        <p v-if="clusters?.datosSinteticos">Datos sintéticos: apoyo operativo, no certeza clínica.</p>
+        <div data-cluster-summary aria-label="Segmentación de pacientes">
+          <h4>Segmentación K-Means de pacientes</h4>
+          <span v-for="(count, label) in clusters?.pacientes?.distribucion" :key="label" class="badge">{{ label }}: {{ count }}</span>
+        </div>
+        <label><input type="checkbox" aria-label="Solo alto riesgo" v-model="soloAltoRiesgo" /> Solo alto riesgo</label>
         <table class="data-table">
           <thead>
             <tr>
@@ -36,17 +44,26 @@
               <th>Consultorio</th>
               <th>Paciente</th>
               <th>Estado</th>
+              <th>Riesgo y segmento ML</th>
               <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="c in citas" :key="c.id">
+            <tr v-for="c in citasFiltradas" :key="c.id">
               <td><code>{{ c.id.substring(0, 8) }}...</code></td>
               <td>{{ c.fecha_hora }}</td>
               <td>{{ nombre('odontologos', c.odontologo_id) }}</td>
               <td>{{ nombre('consultorios', c.consultorio_id) }}</td>
               <td>{{ nombre('pacientes', c.paciente_id) }}</td>
               <td><span class="badge">{{ c.estado }}</span></td>
+              <td>
+                <div v-if="mlDisponible && c.nivelRiesgo && c.probabilidadNoShow != null" data-risk :class="['badge', c.nivelRiesgo === 'ALTO' ? 'alerta' : 'ok']">
+                  {{ c.nivelRiesgo }} · {{ Math.round(c.probabilidadNoShow * 100) }}%
+                  <p>{{ c.accionRecomendada }}</p>
+                </div>
+                <span v-else>Sin predicción</span>
+                <p>{{ clusterDe('pacientes', 'paciente_id', c.paciente_id) }}</p>
+              </td>
               <td>
                 <CitaAcciones :cita="c" :stock="stock" :busy="enviando || stockBusy"
                   @cancelar="ejecutar(s => s.cancelarCita(c.id), 'Cita cancelada.')"
@@ -55,8 +72,8 @@
                   @completar="datos => ejecutar(s => s.completarCita(c.id, datos), 'Cita completada.')" />
               </td>
             </tr>
-            <tr v-if="citas.length === 0">
-              <td colspan="7" class="text-center">No hay citas agendadas</td>
+            <tr v-if="citasFiltradas.length === 0">
+              <td colspan="8" class="text-center">No hay citas agendadas</td>
             </tr>
           </tbody>
         </table>
@@ -105,6 +122,8 @@
       <!-- TAB 3: STOCK -->
       <section v-if="tab === 'stock' && !cargando">
         <h3 class="section-title">Stock de Insumos Odontológicos</h3>
+        <p v-if="mlError" role="status">{{ mlError }}</p>
+        <p v-if="clusters?.datosSinteticos">Datos sintéticos: agrupación operativa estimada.</p>
         <div class="card form-card">
           <h3>Registrar movimiento de stock</h3>
           <MovimientoForm :key="stockFormVersion" :stock="stock" :busy="enviando || stockBusy"
@@ -119,6 +138,7 @@
               <th>Stock Actual</th>
               <th>Mínimo</th>
               <th>Unidad</th>
+              <th>Rotación K-Means</th>
               <th>Alerta Reposición</th>
             </tr>
           </thead>
@@ -129,6 +149,7 @@
               <td><strong>{{ item.stock_actual }}</strong></td>
               <td>{{ item.stock_minimo }}</td>
               <td>{{ item.unidad_medida }}</td>
+              <td><span class="badge">{{ clusterDe('insumos', 'insumo_id', item.id) }}</span></td>
               <td>
                 <span :class="['badge', item.alerta_reposicion ? 'alerta' : 'ok']">
                   {{ item.alerta_reposicion ? '⚠️ Reponer urgente' : 'OK' }}
@@ -180,6 +201,22 @@ let catalogGeneration = 0;
 const citas = ref([]);
 const horarios = ref([]);
 const stock = ref([]);
+const soloAltoRiesgo = ref(false);
+const mlDisponible = ref(true);
+const clusters = ref(null);
+const mlError = ref('');
+const citasFiltradas = computed(() => soloAltoRiesgo.value ? citas.value.filter(c => c.nivelRiesgo === 'ALTO') : citas.value);
+const clusterDe = (group, key, id) => clusters.value?.[group]?.asignaciones?.find(item => item[key] === id)?.cluster ?? 'Sin segmento';
+async function cargarClusters() {
+  const service = ms3Service.value;
+  clusters.value = null; mlError.value = '';
+  try {
+    const result = await service.getClusters();
+    if (active && service === ms3Service.value) clusters.value = result.data ?? result;
+  } catch (e) {
+    if (active && service === ms3Service.value) mlError.value = `ML no disponible: ${describeError(e)}`;
+  }
+}
 const catalogos = ref({ odontologos: [], consultorios: [], pacientes: [] });
 const catalogError = ref(null);
 const puedeEditarHorarios = ref(true);
@@ -215,12 +252,13 @@ async function leerDatos(service) {
     service.getHorarios(),
     service.getStock()
   ]);
-  return { citas: listFrom(citasRes, 'citas'), horarios: listFrom(horariosRes, 'horarios'),
+  return { mlDisponible: citasRes?.data?.mlDisponible !== false, citas: listFrom(citasRes, 'citas'), horarios: listFrom(horariosRes, 'horarios'),
     stock: listFrom(stockRes, 'insumos') };
 }
 
 function aplicar(datos) {
   citas.value = datos.citas;
+  mlDisponible.value = datos.mlDisponible;
   horarios.value = datos.horarios;
   stock.value = datos.stock;
 }
@@ -359,8 +397,9 @@ async function guardarCita(payload) {
   }
 }
 
-onMounted(() => { cargarDatos(); cargarCatalogos(); });
+onMounted(() => { cargarDatos(); cargarCatalogos(); cargarClusters(); });
 watch(ms3Service, cargarDatos);
+watch(ms3Service, cargarClusters);
 watch(erpService, cargarCatalogos);
 onUnmounted(() => {
   active = false;

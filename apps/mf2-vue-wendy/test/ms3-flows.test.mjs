@@ -213,7 +213,7 @@ test('standalone default movement stays anonymous and keyless for the legacy cal
   });
   const result = await api.ms3Service.registrarMovimiento(movement);
   assert.equal(result.data.id, 'fixture-standalone');
-  assert.deepEqual(calls, [{ url: 'http://localhost:8001/api/agendamiento/stock/movimientos', method: 'POST',
+  assert.deepEqual(calls, [{ url: '/api/agendamiento/stock/movimientos', method: 'POST',
     headers: { 'Content-Type': 'application/json' }, body: movement }]);
 });
 

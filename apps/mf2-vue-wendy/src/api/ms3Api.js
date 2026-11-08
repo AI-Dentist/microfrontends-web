@@ -1,5 +1,5 @@
 const DEFAULT_BASE = import.meta.env?.VITE_MS3_API_BASE_URL ||
-  'http://localhost:8001/api/agendamiento';
+  '/api/agendamiento';
 
 export class Ms3CapabilityError extends Error {
   constructor(message = 'MS3 host capability unavailable') {
@@ -119,6 +119,8 @@ export function createMs3Service({ apiBaseUrl, getAccessToken, hosted = false } 
   return {
     get retired() { return retired; },
     retire,
+    getClusters: () => request('ml/clusters'),
+    predictNoShow: payload => send('POST', 'ml/predict-noshow', payload),
     getCitas: () => request('citas'),
     getHorarios: () => request('horarios'),
     getStock: () => request('stock'),

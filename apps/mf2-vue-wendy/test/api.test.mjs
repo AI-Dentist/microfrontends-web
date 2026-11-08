@@ -15,7 +15,7 @@ test('standalone defaults preserve reads, POST payload and both idempotency keys
   await service.getHorarios();
   await service.getStock();
   await service.crearCita({ paciente_id: 'p1' });
-  const base = 'http://localhost:8001/api/agendamiento';
+  const base = '/api/agendamiento';
   const key = calls[3][1].headers['Idempotency-Key'];
   assert.match(key, UUID);
   assert.deepEqual(calls, [
@@ -54,7 +54,7 @@ test('runtime base and token are read on every request without leaking across in
     ['https://api.example/clinical/horarios', { method: 'GET', headers: { Authorization: 'Bearer second' } }],
     ['https://api.example/clinical/stock', { method: 'GET', headers: {} }],
   ]);
-  assert.deepEqual(calls[3], ['http://localhost:8001/api/agendamiento/stock', { method: 'GET', headers: {} }]);
+  assert.deepEqual(calls[3], ['/api/agendamiento/stock', { method: 'GET', headers: {} }]);
   const key = calls[4][1].headers['Idempotency-Key'];
   assert.match(key, UUID);
   assert.deepEqual(calls[4], ['https://api.example/clinical/citas', { method: 'POST',
@@ -91,7 +91,7 @@ test('named legacy ms3Service export retains default factory behavior', async (t
     return { ok: true, json: async () => ({}) };
   });
   await ms3Service.getCitas();
-  assert.deepEqual(calls, ['http://localhost:8001/api/agendamiento/citas']);
+  assert.deepEqual(calls, ['/api/agendamiento/citas']);
 });
 
 test('every API operation rejects non-ok HTTP with the status when the body is unreadable', async (t) => {
