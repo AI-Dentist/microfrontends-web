@@ -13,6 +13,7 @@ import { LaboratorioModal } from '../components/estudios/LaboratorioModal.jsx';
 import { SolicitarEstudioModal } from '../components/estudios/SolicitarEstudioModal.jsx';
 import { RegistrarResultadoModal } from '../components/estudios/RegistrarResultadoModal.jsx';
 import { CambiarEstadoSolicitudModal } from '../components/estudios/CambiarEstadoSolicitudModal.jsx';
+import { RadiographAnalysis } from '../components/estudios/RadiographAnalysis.jsx';
 import { DetalleSolicitudModal } from '../components/estudios/DetalleSolicitudModal.jsx';
 
 export function EstudiosPage({
@@ -218,6 +219,7 @@ export function EstudiosPage({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <RadiographAnalysis />
       {/* Encabezado y subtabs */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>
