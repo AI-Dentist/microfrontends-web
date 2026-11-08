@@ -16,7 +16,7 @@ describe('dedicated local AI worker contract', () => {
     mocks.env.fetch = mocks.fetch.mockReset().mockRejectedValue(new Error('Unexpected resource request'));
     vi.stubGlobal('navigator', { userAgent: 'Worker fixture' });
     embed = vi.fn(async (texts: string[]) => ({ tolist: () => texts.map((text) => text.includes('muela') ? [1, 0] : [0, 1]) }));
-    classify = vi.fn(async () => ({ labels: ['alquiler del consultorio', 'insumos odontológicos', 'servicios básicos', 'otros gastos'], scores: [0.7, 0.2, 0.08, 0.02] }));
+    classify = vi.fn(async () => ({ labels: ['alquiler del consultorio', 'insumos odontológicos', 'servicios básicos', 'mantenimiento y reparación de equipos', 'otros gastos'], scores: [0.7, 0.2, 0.08, 0, 0.02] }));
     Object.assign(embed, { dispose: vi.fn(async () => undefined) });
     mocks.cache.match.mockReset().mockImplementation(async (url: string) => new Response(JSON.stringify(url.endsWith('tokenizer_config.json') ? { tokenizer_class: 'XLMRobertaTokenizer', model_max_length: 512 } : { model: { type: 'Unigram' } })));
     mocks.cache.put.mockReset().mockResolvedValue(undefined);
@@ -196,11 +196,11 @@ describe('dedicated local AI worker contract', () => {
     await receive({ data: { ...search, requestId: 8, items: [{ id: 'a', text: 'limpieza' }] } } as MessageEvent);
     expect(messages.at(-1)).toEqual({ type: 'search-result', requestId: 8, results: [] });
   });
-  it('maps only genuine zero-shot output, not input keywords, to the four accounting categories', async () => {
+  it('maps only genuine zero-shot output, not input keywords, to the five accounting categories', async () => {
     await receive({ data: init } as MessageEvent);
     await receive({ data: { type: 'classify', requestId: 9, text: 'luz agua guantes' } } as MessageEvent);
-    expect(classify).toHaveBeenCalledWith('luz agua guantes', ['servicios básicos', 'insumos odontológicos', 'alquiler del consultorio', 'otros gastos'], { hypothesis_template: 'Este gasto corresponde a {}.', multi_label: false });
-    expect(messages.at(-1)).toEqual({ type: 'classify-result', requestId: 9, result: { category: 'ALQUILER', score: 0.7, scores: { ALQUILER: 0.7, INSUMOS: 0.2, SERVICIOS_BASICOS: 0.08, OTROS: 0.02 } } });
+    expect(classify).toHaveBeenCalledWith('luz agua guantes', ['servicios básicos', 'insumos odontológicos', 'alquiler del consultorio', 'mantenimiento y reparación de equipos', 'otros gastos'], { hypothesis_template: 'Este gasto corresponde a {}.', multi_label: false });
+    expect(messages.at(-1)).toEqual({ type: 'classify-result', requestId: 9, result: { category: 'ALQUILER', score: 0.7, scores: { ALQUILER: 0.7, INSUMOS: 0.2, SERVICIOS_BASICOS: 0.08, MANTENIMIENTO: 0, OTROS: 0.02 } } });
   });
   it('fails visibly on session or model-output failure with no manufactured category', async () => {
     mocks.pipeline.mockRejectedValueOnce(new Error('session unavailable'));

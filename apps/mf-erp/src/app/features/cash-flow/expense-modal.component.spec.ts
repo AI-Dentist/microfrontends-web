@@ -145,12 +145,14 @@ describe('hosted cashier identity', () => {
   });
 });
 
-it('never asks the local AI for a category in a hosted scope and keeps manual category entry working', async () => {
+it('uses local AI in a hosted scope and keeps manual category entry working', async () => {
   const s = await setup(new ErpRuntimeContext({ mode: 'hosted', graphqlUrl: 'https://api.example/erp/graphql', getAccessToken: () => 'token' }));
   s.type('Guantes'); s.timers.forEach((run) => run());
   await s.fixture.whenStable();
-  expect(s.ai).not.toHaveBeenCalled();
-  expect(s.hint()).not.toContain('Procesando');
+  expect(s.ai).toHaveBeenCalledWith('Guantes');
+  s.prediction.resolve({ category: 'MANTENIMIENTO', source: 'local-ai' });
+  await Promise.resolve(); await s.fixture.whenStable();
+  expect(s.hint()).toContain('Sugerido por IA');
   s.category('INSUMOS');
   s.fixture.debugElement.query(By.css('p-inputnumber')).triggerEventHandler('ngModelChange', 20);
   await s.fixture.whenStable();

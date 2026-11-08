@@ -1,4 +1,4 @@
-export const EXPENSE_CATEGORIES = ['SERVICIOS_BASICOS', 'INSUMOS', 'ALQUILER', 'OTROS'] as const;
+export const EXPENSE_CATEGORIES = ['SERVICIOS_BASICOS', 'INSUMOS', 'ALQUILER', 'MANTENIMIENTO', 'OTROS'] as const;
 export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
 
 /** Natural-language descriptions embedded once and compared against each expense description. */
@@ -6,7 +6,8 @@ export const CATEGORY_PROTOTYPES: Record<ExpenseCategory, string> = {
   SERVICIOS_BASICOS: 'pago de servicios basicos: electricidad, luz, agua, gas, internet, telefono, factura de CRE, Saguapac, Tigo, Entel',
   INSUMOS: 'compra de insumos y materiales odontologicos: anestesia, lidocaina, agujas, guantes, resina, algodon, barbijos, instrumental',
   ALQUILER: 'pago de alquiler, renta o anticretico del consultorio, local u oficina',
-  OTROS: 'otros gastos varios: refrigerio, transporte, limpieza, papeleria, mantenimiento',
+  MANTENIMIENTO: 'mantenimiento y reparacion de equipos odontologicos, sillon, compresor e instalaciones',
+  OTROS: 'otros gastos varios: refrigerio, transporte, limpieza, papeleria',
 };
 
 // Keywords of five or more characters also match as word prefixes (insumo -> insumos);
@@ -14,6 +15,7 @@ export const CATEGORY_PROTOTYPES: Record<ExpenseCategory, string> = {
 const CATEGORY_KEYWORDS: Record<Exclude<ExpenseCategory, 'OTROS'>, string[]> = {
   INSUMOS: ['insumo', 'lidocaina', 'anestesi', 'aguja', 'guante', 'resina', 'algodon', 'barbijo', 'gasa', 'gasas', 'jeringa', 'composite', 'amalgama', 'material', 'instrumental', 'fresa'],
   ALQUILER: ['alquiler', 'renta', 'anticretico', 'arriendo'],
+  MANTENIMIENTO: ['mantenimiento', 'reparacion', 'reparar'],
   SERVICIOS_BASICOS: ['electricidad', 'luz', 'agua', 'gas', 'internet', 'telefono', 'cre', 'saguapac', 'tigo', 'entel', 'viva', 'cotas', 'servicio basico', 'servicios basicos'],
 };
 

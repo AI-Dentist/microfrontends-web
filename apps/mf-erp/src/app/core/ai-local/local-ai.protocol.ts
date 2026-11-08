@@ -7,6 +7,7 @@ export const EXPENSE_LABELS = {
   SERVICIOS_BASICOS: 'servicios básicos',
   INSUMOS: 'insumos odontológicos',
   ALQUILER: 'alquiler del consultorio',
+  MANTENIMIENTO: 'mantenimiento y reparación de equipos',
   OTROS: 'otros gastos',
 } as const;
 

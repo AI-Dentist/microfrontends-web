@@ -184,6 +184,10 @@ export interface ResumenFlujoCaja {
 export interface ReporteGenerativoPayload {
   reporteId: UUID;
   consultaSqlEjecutada: string;
+  sqlGenerado?: string | null;
+  titulo?: string | null;
+  resumenAnalitico?: string | null;
+  filas?: (string | null)[][] | null;
   columnas: string[];
   filasJson: string;
   tipoGraficoSugerido: TipoGrafico;

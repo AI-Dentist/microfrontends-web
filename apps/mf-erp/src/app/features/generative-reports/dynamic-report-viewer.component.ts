@@ -19,6 +19,13 @@ type ExportKind = 'excel' | 'pdf';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="flex flex-col gap-4" data-testid="report-viewer">
+      @if (report().titulo; as title) { <h2 class="text-lg font-semibold">{{ title }}</h2> }
+      @if (report().resumenAnalitico; as summary) { <p>{{ summary }}</p> }
+      <label>Tipo de gráfico
+        <select aria-label="Tipo de gráfico" [value]="chartType() || report().tipoGraficoSugerido" (change)="chartType.set($any($event.target).value)">
+          <option value="BARRAS">Barras</option><option value="LINEAS">Líneas</option><option value="TORTA">Torta</option>
+        </select>
+      </label>
       @if (downloadError(); as message) { <p role="alert">{{ message }}</p> }
 
       @if (report().consultaSqlEjecutada) {
@@ -97,9 +104,11 @@ export class DynamicReportViewer {
   protected readonly canExport = computed(() => this.auth.roles().includes('ADMIN'));
   protected readonly exporting = signal<ExportKind | null>(null);
   protected readonly downloadError = signal<string | null>(null);
-  protected readonly parsed = computed(() => parseReportRows(this.report().columnas, this.report().filasJson));
+  protected readonly chartType = signal<string | null>(null);
+  protected readonly parsed = computed(() => parseReportRows(this.report().columnas,
+    this.report().filas != null ? JSON.stringify(this.report().filas) : this.report().filasJson));
   protected readonly chartOptions = computed(() =>
-    buildChartOptions(this.report().tipoGraficoSugerido, this.report().columnas, this.parsed().rows));
+    buildChartOptions(this.chartType() ?? this.report().tipoGraficoSugerido, this.report().columnas, this.parsed().rows));
   protected async download(kind: ExportKind): Promise<void> {
     if (this.exporting() || !this.canExport()) return;
     this.exporting.set(kind);

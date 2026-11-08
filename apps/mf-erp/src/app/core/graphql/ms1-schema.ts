@@ -31,7 +31,7 @@ type OrdenCobro { cantidadCuotas: Int! consultaExternaId: UUID createdAt: DateTi
 type OrdenCobroItem { cantidad: Int! id: UUID! piezaDental: String precioUnitarioBs: BigDecimal! servicio: ServicioOdontologico! subtotalBs: BigDecimal! }
 type Paciente { activo: Boolean! apellidos: String! ciNit: String! direccion: String email: String fechaNacimiento: Date genero: String id: UUID! nombres: String! telefonoWhatsapp: String! }
 type Recibo { ciNitCliente: String! concepto: String! enviadoWhatsapp: Boolean! fechaEmision: DateTime! id: UUID! montoTotalBs: BigDecimal! numeroRecibo: String! pdfUrlS3: String razonSocialCliente: String! }
-type ReporteGenerativoPayload { reporteId: UUID! consultaSqlEjecutada: String! columnas: [String!]! filasJson: String! tipoGraficoSugerido: String! urlDescargaExcel: String! urlDescargaPdf: String! }
+type ReporteGenerativoPayload { reporteId: UUID! consultaSqlEjecutada: String! sqlGenerado: String titulo: String resumenAnalitico: String filas: [[String]] columnas: [String!]! filasJson: String! tipoGraficoSugerido: String! urlDescargaExcel: String! urlDescargaPdf: String! }
 type AgenteInteraccionResponse { interaccionId: UUID! fechaEjecucion: DateTime! instruccionOriginal: String! respuestaNaturalAgente: String! toolsMcpInvocadas: [String!]! accionCrudEjecutada: String notificacionN8nEnviada: Boolean! reporteGenerado: ReporteGenerativoPayload }
 type McpServerStatus { activo: Boolean! protocolVersion: String! toolsRegistradas: [McpToolMetadata!]! }
 type McpToolMetadata { nombre: String! categoria: String! descripcion: String! }

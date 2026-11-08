@@ -122,7 +122,7 @@ async function classify(classifier: ZeroShotClassificationPipeline, text: string
   const output = await classifier(text, Object.values(EXPENSE_LABELS), {
     hypothesis_template: 'Este gasto corresponde a {}.', multi_label: false,
   });
-  if (Array.isArray(output) || output.labels.length !== 4 || output.scores.length !== 4 || new Set(output.labels).size !== 4) {
+  if (Array.isArray(output) || output.labels.length !== EXPENSE_CATEGORIES.length || output.scores.length !== EXPENSE_CATEGORIES.length || new Set(output.labels).size !== EXPENSE_CATEGORIES.length) {
     throw new Error('Invalid zero-shot output');
   }
   const scores = {} as ClassificationScores['scores'];

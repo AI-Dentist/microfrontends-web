@@ -58,21 +58,32 @@ it('sends a manual mutation as reception, with exact variables, no cache and sta
   expect(s.mutate.mock.calls[0][0]).toMatchObject({ variables: { instruccion: 'Ingresos', modoAutonomoMonitoreo: false }, fetchPolicy: 'no-cache' });
   expect(s.mutate.mock.calls[0][0].context.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
   expect(s.text()).toContain(reply.respuestaNaturalAgente);
-  expect(s.text()).toContain('consultarCaja');
+  expect(s.fixture.nativeElement.querySelector('[data-testid="mcp-tool-card"]').textContent).toContain('consultarCaja');
   expect(s.text()).toContain('n8n: no');
   expect(s.fixture.nativeElement.querySelector('img')).toBeNull();
   expect(s.fixture.nativeElement.querySelector('erp-dynamic-report-viewer')).toBeNull();
 });
 
+it('confirms WhatsApp only when n8n delivery and the collection tool are both reported', async () => {
+  const s = await setup();
+  const delivered = { ...reply, toolsMcpInvocadas: ['dispararAlertaCobranzaWhatsapp'], notificacionN8nEnviada: true };
+  s.mutate.mockReturnValue(of({ data: { ejecutarAgenteErp: delivered } }));
+  await s.enter(); await s.submit();
+  expect(s.fixture.nativeElement.querySelector('[data-testid="whatsapp-confirmation"]').textContent).toContain('WhatsApp');
+  s.mutate.mockReturnValue(of({ data: { ejecutarAgenteErp: { ...delivered, notificacionN8nEnviada: false } } }));
+  await s.enter(); await s.submit();
+  expect(s.fixture.nativeElement.querySelector('[data-testid="whatsapp-confirmation"]')).toBeNull();
+});
+
 it('sends the exact autonomous instruction only for authorized roles', async () => {
   const s = await setup(['CAJERO']);
-  await s.click('[Auditar Negocio Ahora (Autónomo)]');
+  await s.click('Monitorea mi negocio');
   expect(s.mutate.mock.calls[0][0].variables).toEqual({ instruccion: 'Monitorea mi negocio', modoAutonomoMonitoreo: true });
 });
 
 it('does not allow autonomous execution as reception or any execution as dentist', async () => {
   const s = await setup(['RECEPCIONISTA']);
-  await s.click('[Auditar Negocio Ahora (Autónomo)]');
+  await s.click('Monitorea mi negocio');
   expect(s.mutate).not.toHaveBeenCalled();
   s.roleSignal.set(['ODONTOLOGO']); await s.fixture.whenStable();
   await s.enter(); await s.submit();

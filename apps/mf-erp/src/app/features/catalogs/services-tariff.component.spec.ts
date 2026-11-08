@@ -63,14 +63,15 @@ it('shows unavailable semantic AI instead of fabricated keyword results, preserv
   expect(s.query).not.toHaveBeenCalled();
 });
 
-it('does not call the local AI in a hosted scope and says semantic search is unavailable, keeping the manual tariff', async () => {
+it('calls local AI in a hosted scope without reading the persistent standalone cache', async () => {
   const s = await setup(new ErpRuntimeContext({ mode: 'hosted', graphqlUrl: 'https://api.example/erp/graphql', getAccessToken: () => 'token' }));
   s.type('Conducto'); s.timers.forEach((run) => run());
   await s.fixture.whenStable();
-  expect(s.search).not.toHaveBeenCalled();
+  expect(s.search).toHaveBeenCalledWith('Conducto', [], 8);
+  s.first.resolve([]);
+  await Promise.resolve(); await s.fixture.whenStable();
   const mode = s.fixture.nativeElement.querySelector('[data-testid="search-mode"]').textContent;
-  expect(mode).toContain('no disponible en este entorno');
-  expect(mode).not.toContain('Procesando');
+  expect(mode).toContain('similitud semántica');
   expect(s.fixture.nativeElement.querySelector('[data-testid="search-error"]')).toBeNull();
   expect(s.fixture.nativeElement.querySelector('p-table')).not.toBeNull();
 });

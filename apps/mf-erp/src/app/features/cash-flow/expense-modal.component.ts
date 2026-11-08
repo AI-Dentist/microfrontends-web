@@ -22,6 +22,7 @@ const CATEGORY_OPTIONS: { label: string; value: CategoriaEgreso }[] = [
   { label: 'Servicios básicos', value: 'SERVICIOS_BASICOS' },
   { label: 'Insumos', value: 'INSUMOS' },
   { label: 'Alquiler', value: 'ALQUILER' },
+  { label: 'Mantenimiento', value: 'MANTENIMIENTO' },
   { label: 'Otros', value: 'OTROS' },
 ];
 
@@ -149,8 +150,8 @@ export class ExpenseModal {
     if (this.debounceTimer !== null) {
       clearTimeout(this.debounceTimer);
     }
-    // Hosted scopes never use the local AI: the category stays a manual choice.
-    if (this.runtime.hosted || this.manualCategory() || !this.concepto().trim()) {
+    // Inference stays in the browser in both hosted and standalone scopes.
+    if (this.manualCategory() || !this.concepto().trim()) {
       return;
     }
     this.debounceTimer = setTimeout(() => void this.suggest(request), SUGGESTION_DEBOUNCE_MS);

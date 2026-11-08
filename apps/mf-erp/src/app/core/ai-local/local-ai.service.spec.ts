@@ -36,7 +36,7 @@ describe('LocalAiService bridge contract', () => {
     expect((service as any).processing?.()).toBe(true);
     expect((service as any).engineState?.()).toBe('PROCESANDO');
     const requests = worker.postMessage.mock.calls.map(([m]) => m).filter((m) => m.requestId);
-    send({ type: 'classify-result', requestId: requests[1].requestId, result: { category: 'ALQUILER', score: 0.8, scores: { ALQUILER: 0.8, INSUMOS: 0.1, SERVICIOS_BASICOS: 0.05, OTROS: 0.05 } } });
+    send({ type: 'classify-result', requestId: requests[1].requestId, result: { category: 'ALQUILER', score: 0.8, scores: { ALQUILER: 0.8, INSUMOS: 0.1, SERVICIOS_BASICOS: 0.05, MANTENIMIENTO: 0, OTROS: 0.05 } } });
     expect(await b).toEqual({ category: 'ALQUILER', source: 'local-ai', score: 0.8 });
     expect((service as any).processing()).toBe(true);
     send({ type: 'search-result', requestId: requests[0].requestId, results: [{ id: 'a', score: 0.9 }] });

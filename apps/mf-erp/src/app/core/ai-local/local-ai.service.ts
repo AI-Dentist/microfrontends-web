@@ -93,7 +93,7 @@ export class LocalAiService {
       return handle.worker;
     };
     const Worker = function (url: URL, options: WorkerOptions) { return create(url, options); } as unknown as typeof globalThis.Worker;
-    const worker = new Worker(new URL('./local-ai.worker', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./ai-local.worker', import.meta.url), { type: 'module' });
     worker.addEventListener('message', ({ data }: MessageEvent<unknown>) => { if (this.worker === worker) this.handleMessage(data); });
     worker.addEventListener('error', () => { if (this.worker === worker) this.fail('El Worker de IA local dejó de funcionar.'); });
     worker.addEventListener('messageerror', () => { if (this.worker === worker) this.fail('Respuesta ilegible del Worker de IA local.'); });

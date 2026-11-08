@@ -46,7 +46,7 @@ type Command = Readonly<{
             [disabled]="loading() || !canExecute() || !question().trim()">
             <ng-template #icon><svg lucideSend class="size-4"></svg></ng-template>
           </p-button>
-          <p-button type="button" label="[Auditar Negocio Ahora (Autónomo)]" severity="secondary"
+          <p-button type="button" label="Monitorea mi negocio" title="[Auditar Negocio Ahora (Autónomo)]" severity="secondary"
             [disabled]="loading() || !canMonitor()" (onClick)="monitor()" />
           <p-button type="button" [label]="speech.listening() ? 'Detener dictado' : 'Dictar instrucción'"
             [disabled]="!speech.supported() || !canExecute()" (onClick)="toggleMic()">
@@ -95,9 +95,16 @@ type Command = Readonly<{
             <article class="flex flex-col gap-3">
               <h2 class="font-semibold">{{ current.instruccionOriginal }}</h2>
               <p class="whitespace-pre-wrap rounded bg-sky-50 p-3">{{ current.respuestaNaturalAgente }}</p>
-              <p>Herramientas: {{ current.toolsMcpInvocadas.join(', ') || 'ninguna' }}</p>
+              <div class="grid gap-2 sm:grid-cols-2" aria-label="Herramientas MCP invocadas">
+                @for (tool of current.toolsMcpInvocadas; track $index) {
+                  <article data-testid="mcp-tool-card" class="rounded border border-sky-200 bg-sky-50 p-3"><strong>{{ tool }}</strong></article>
+                } @empty { <p>Herramientas: ninguna</p> }
+              </div>
               @if (current.accionCrudEjecutada) { <p>Acción: {{ current.accionCrudEjecutada }}</p> }
               <p>n8n: {{ current.notificacionN8nEnviada ? 'sí' : 'no' }}</p>
+              @if (current.notificacionN8nEnviada && (current.toolsMcpInvocadas.includes('dispararAlertaCobranzaWhatsapp') || current.toolsMcpInvocadas.includes('dispararAlertaCobranzaN8nTool'))) {
+                <p role="status" data-testid="whatsapp-confirmation" class="rounded border border-green-300 bg-green-50 p-3 text-green-900">Alerta de cobranza WhatsApp enviada mediante n8n.</p>
+              }
               @if (current.reporteGenerado; as report) { <erp-dynamic-report-viewer [report]="report" /> }
             </article>
           }
