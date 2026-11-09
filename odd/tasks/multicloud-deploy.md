@@ -11,8 +11,8 @@ Scope: repository-owned build/static/Compose/runtime-config/CI artifacts only; c
 - S8: "Corre tests y builds de shell, mf-erp y mf2 y un docker build local si Docker esta disponible; commits por unidad en main y push origin main. Reporta SHAs y evidencia."
 
 ## Tasks
-- T5 [in_progress] S0,S4,S6,S7 route:inline commit:pending | Azure Docker targets, generated validated production manifest, static nginx, workflow and isolation tests.
-- T6 [pending] S0,S5,S7 route:worker-if-available commit:pending | AWS Vue static container/Compose/workflow/tests/docs; allowed surfaces deploy/aws/**, .github/workflows/deploy-aws.yml, scripts/tests/aws-deploy.test.mjs, docs/aws-frontend-deployment.md.
+- T5 [done] S0,S4,S6,S7 route:inline commit:03f2f6d (340 authored-line Azure work unit; deployment tests and independent structural verification PASS; app verification tracked inT7) | Azure Docker targets, generated validated production manifest, static nginx, workflow and isolation tests.
+- T6 [in_progress] S0,S5,S7 route:worker+parent commit:pending | AWS Vue static container/Compose/workflow/tests/docs; allowed surfaces deploy/aws/**, .github/workflows/deploy-aws.yml, scripts/tests/aws-deploy.test.mjs, docs/aws-frontend-deployment.md.
 - T7 [pending] S8 route:inline+independent-verifier commit:pending | app suites/builds, available Docker checks, scoped independent verification, docs/evidence and publish main.
 
 ## Log

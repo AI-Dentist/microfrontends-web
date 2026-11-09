@@ -1,0 +1,23 @@
+name: Deploy AWS frontend
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        env:
+          AWS_SSH_KEY: ${{ secrets.AWS_SSH_KEY }}
+        run: |
+          set -eu
+          umask 077
+          dir=$(mktemp -d)
+          trap 'rm -rf "$dir"' EXIT
+          printf '%s\n' "$AWS_SSH_KEY" > "$dir/key"
+          chmod 600 "$dir/key"
+          ssh-keyscan -H 100.60.248.245 > "$dir/known_hosts"
+          ssh -i "$dir/key" -o UserKnownHostsFile="$dir/known_hosts" -o StrictHostKeyChecking=yes -o BatchMode=yes ubuntu@100.60.248.245 'cd /home/ubuntu/deploy/microfrontends-web && git pull --ff-only && docker compose up -d --build --remove-orphans'

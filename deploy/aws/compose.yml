@@ -1,0 +1,14 @@
+name: dental-operations-web
+services:
+  mf2-web:
+    build:
+      context: ../..
+      dockerfile: deploy/aws/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - dental-net
+networks:
+  dental-net:
+    external: true
