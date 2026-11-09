@@ -39,6 +39,7 @@ const company = { id: id(10), nombreComercial: 'Clínica fixture', nit: '123', r
 // BARRAS is controlled renderer evidence only. Actual local backend has no AI provider.
 const report = { reporteId: id(11), titulo: 'Ingresos fixture Bs', resumenAnalitico: 'QR lidera los ingresos ficticios.', sqlGenerado: 'SELECT metodo, monto FROM fixture', consultaSqlEjecutada: 'SELECT metodo, monto FROM fixture', columnas: ['Metodo', 'Monto'], filas: [['EFECTIVO', '100'], ['QR', '200']], filasJson: JSON.stringify([['EFECTIVO', 100], ['QR', 200]]), tipoGraficoSugerido: 'BARRAS', urlDescargaExcel: `/api/v1/reports/export/${id(11)}/xlsx`, urlDescargaPdf: `/api/v1/reports/export/${id(11)}/pdf` };
 let reportUnavailable = false;
+let qrVerificationPaid = false;
 let multichannelMode = 'SIMULADO_SIN_N8N';
 const multichannelInstruction = 'Notificar cobro pendiente por WhatsApp, Telegram y Gmail';
 function notificationFixture() {
@@ -75,6 +76,17 @@ function response(name, variables) {
     assert.ok(existing, 'Fixture patient must exist');
     Object.assign(existing, variables.input);
     return { actualizarPaciente: existing };
+  }
+  if (name === 'GenerarQrPagoFacil') return { generarQrPagoFacil: {
+    id: id(15), cuotaId: order.cuotas[0].id, pagofacilTransactionId: 'FIXTURE-QR-15',
+    qrImagenBase64: 'aW1hZ2U=', montoBs: order.cuotas[0].montoCuotaBs, estado: 'GENERADO', fechaExpiracion: null,
+  } };
+  if (name === 'VerificarPagoQrPagoFacil') {
+    assert.deepEqual(variables, { pagofacilTransactionId: 'FIXTURE-QR-15' });
+    if (!qrVerificationPaid) return { verificarPagoQrPagoFacil: null };
+    order.cuotas[0].estado = 'PAGADA'; order.cuotas[0].fechaPago = instant;
+    order.estado = 'PAGADO'; order.saldoPendienteBs = 0;
+    return { verificarPagoQrPagoFacil: receipt };
   }
   if (name === 'CobrarCuotaEnEfectivo') {
     assert.deepEqual(variables.input, { cuotaId: order.cuotas[0].id, usuarioCajeroId: ADMIN_ID, ciNitCliente: patient.ciNit, razonSocialCliente: 'Ana Perez' });
@@ -182,6 +194,23 @@ try {
   assert.ok(cash?.headers['idempotency-key']); assert.equal(cash.variables.input.usuarioCajeroId, ADMIN_ID);
   console.log('PASS fixture cash raw input confirmed admin UUID and truthful receipt');
   await page.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  // Independent synthetic QR scenario: reset only the owned fixture, never real billing data.
+  order.estado = 'PENDIENTE'; order.saldoPendienteBs = 100; order.cuotas[0].estado = 'PENDIENTE'; order.cuotas[0].fechaPago = null;
+  await page.goto(`${origin}/erp/billing`);
+  await page.getByRole('button', { name: 'Abrir', exact: true }).click();
+  await page.getByRole('button', { name: '[Cobrar con QR PagoFácil]', exact: true }).click();
+  await visible(page.getByTestId('qr-provider-amount'));
+  await page.getByRole('button', { name: 'Generar QR', exact: true }).click();
+  await visible(page.getByTestId('qr-state').getByText('Estado: GENERADO', { exact: true }));
+  await page.getByRole('button', { name: 'Verificar pago QR', exact: true }).click();
+  await visible(page.getByText('Pago aún no confirmado por PagoFácil.', { exact: true }));
+  assert.equal(await page.getByTestId('qr-paid').count(), 0);
+  qrVerificationPaid = true;
+  await page.getByRole('button', { name: 'Verificar pago QR', exact: true }).click();
+  await visible(page.getByTestId('receipt-preview').getByText(receipt.numeroRecibo, { exact: true }));
+  assert.equal(calls.filter(call => call.name === 'VerificarPagoQrPagoFacil').length, 2);
+  await page.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  console.log('PASS FIXTURE ONLY active QR pending/confirmed receipt and /1000 notice; no real provider payment');
   await page.getByRole('link', { name: 'Agente ERP', exact: true }).click();
   await page.getByRole('textbox', { name: 'Instrucción para el agente' }).fill('Ingresos por método');
   await page.getByRole('button', { name: 'Enviar instrucción', exact: true }).click();

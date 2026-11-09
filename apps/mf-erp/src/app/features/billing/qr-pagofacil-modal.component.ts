@@ -12,7 +12,7 @@ import { FinancialIdentityService } from '../../core/auth/financial-identity.ser
 import { ERP_RUNTIME } from '../../core/runtime/erp-runtime-context';
 import { IDEMPOTENCY_CONTEXT_KEY, OWNER_CONTEXT_KEY } from '../../core/graphql/graphql.provider';
 import { Cuota, OrdenCobro, Recibo, TransaccionQr } from '../../core/graphql/models';
-import { GENERAR_QR_PAGOFACIL, SIMULAR_CONFIRMACION_QR_DEV } from '../../core/graphql/mutations.graphql';
+import { GENERAR_QR_PAGOFACIL, SIMULAR_CONFIRMACION_QR_DEV, VERIFICAR_PAGO_QR_PAGOFACIL } from '../../core/graphql/mutations.graphql';
 import { OBTENER_ORDEN_COBRO_DETALLE } from '../../core/graphql/queries.graphql';
 import { IdempotentAction } from '../../core/offline/idempotent-action';
 import { NetworkStatusService } from '../../core/offline/network-status.service';
@@ -20,7 +20,7 @@ import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
 import { errorMessage, fullName } from './billing-labels';
 import { canCollectPayments } from './finance-permissions';
 
-/** QR confirmation is observed on the matching quota, not an invented transaction-status endpoint. */
+/** Passive quota polling plus explicit provider verification; only MS1 can confirm payment. */
 @Component({
   selector: 'erp-qr-pagofacil-modal',
   imports: [FormsModule, DialogModule, ButtonModule, InputTextModule, BolivianosPipe],
@@ -32,6 +32,8 @@ import { canCollectPayments } from './finance-permissions';
       (visibleChange)="!$event && close()" [style]="{ width: '28rem' }">
       <div class="space-y-3 text-sm">
         <p>Cuota {{ cuota().numeroCuota }} · {{ cuota().montoCuotaBs | bolivianos }}</p>
+        <p data-testid="qr-provider-amount">En modo real, PagoFácil cobra el monto de la cuota / 1000 (mínimo Bs 0,01). La contabilidad y el recibo conservan el monto completo.</p>
+        @if (verificationMessage(); as message) { <p role="status">{{ message }}</p> }
         @if (!qr()) {
           <label class="block">CI/NIT <input pInputText class="w-full" [disabled]="busy()" [(ngModel)]="ciNit" /></label>
           <label class="block">Razón social <input pInputText class="w-full" [disabled]="busy()" [(ngModel)]="razonSocial" /></label>
@@ -55,6 +57,7 @@ import { canCollectPayments } from './finance-permissions';
           @if (!qr()) {
             <p-button type="button" label="Generar QR" [loading]="busy()" [disabled]="!canGenerate()" (onClick)="generate()" />
           } @else if (qr()?.estado === 'GENERADO' && pendingQuota()) {
+            <p-button type="button" label="Verificar pago QR" [loading]="checking()" [disabled]="!network.online() || busy() || checking()" (onClick)="verifyPayment()" />
             <p-button type="button" label="Verificar pago" [loading]="checking()" [disabled]="!network.online() || busy()" (onClick)="check(true)" />
             @if (devMode) {
               <p-button type="button" label="[Simular Pago Confirmado (Dev)]" severity="warn"
@@ -87,6 +90,7 @@ export class QrPagofacilModal implements OnInit {
   protected readonly busy = signal(false);
   protected readonly checking = signal(false);
   protected readonly confirmed = signal(false);
+  protected readonly verificationMessage = signal<string | null>(null);
   protected readonly pendingQuota = signal(true);
   protected readonly canCollect = computed(() => canCollectPayments(this.auth.roles()));
   protected readonly canGenerate = computed(() => this.canCollect() && this.network.online() && !this.busy() && this.pendingQuota() && !!this.ciNit().trim() && !!this.razonSocial().trim());
@@ -178,6 +182,28 @@ export class QrPagofacilModal implements OnInit {
     } catch (error) {
       this.stopPolling();
       if (manual && !this.disposed) this.messages.add({ severity: 'error', summary: 'No se pudo verificar el pago', detail: errorMessage(error) });
+    } finally { this.checking.set(false); }
+  }
+  protected async verifyPayment(): Promise<void> {
+    const qr = this.qr();
+    if (this.disposed || !qr || qr.estado !== 'GENERADO' || !this.pendingQuota() ||
+        this.busy() || this.checking() || this.confirmed() || !this.network.isOnline()) return;
+    this.checking.set(true);
+    this.verificationMessage.set(null);
+    try {
+      this.requireOwner();
+      const result = await firstValueFrom(this.apollo.mutate({
+        mutation: VERIFICAR_PAGO_QR_PAGOFACIL,
+        variables: { pagofacilTransactionId: qr.pagofacilTransactionId },
+        context: { [OWNER_CONTEXT_KEY]: this.owner },
+      }));
+      if (!this.currentOwner()) return;
+      const receipt = result.data?.verificarPagoQrPagoFacil;
+      if (receipt === null) { this.verificationMessage.set('Pago aún no confirmado por PagoFácil.'); return; }
+      if (!receipt?.id) throw new Error('MS1 no devolvió un recibo confirmado.');
+      this.confirm(receipt);
+    } catch (error) {
+      if (this.currentOwner()) this.messages.add({ severity: 'error', summary: 'No se pudo verificar el pago QR', detail: errorMessage(error) });
     } finally { this.checking.set(false); }
   }
   protected async simulate(): Promise<void> {

@@ -13,8 +13,9 @@ import { orderFixture, receiptFixture } from './finance-fixtures.spec';
 const qr = { id: 'qr', cuotaId: 'q', pagofacilTransactionId: 'MOCK-TEST', qrImagenBase64: 'aW1hZ2U=', montoBs: 50, estado: 'GENERADO', fechaExpiracion: null };
 async function setup(roles = ['ADMIN'], expiry: string | null = null) {
   let principal = 'local-cashier';
+  let online = true;
   const generatedQr = { ...qr, fechaExpiracion: expiry };
-  const mutate = vi.fn(({ mutation }: any) => of({ data: mutation === SIMULAR_CONFIRMACION_QR_DEV ? { simularConfirmacionQrDev: receiptFixture } : { generarQrPagoFacil: generatedQr } }));
+  const mutate = vi.fn(({ mutation }: any): any => of({ data: mutation === SIMULAR_CONFIRMACION_QR_DEV ? { simularConfirmacionQrDev: receiptFixture } : { generarQrPagoFacil: generatedQr } }));
   const query = vi.fn((_options: any): any => of({ data: { obtenerOrdenCobroDetalle: { ...orderFixture, cuotas: [{ ...orderFixture.cuotas[0], estado: 'PAGADA', fechaPago: '2026-10-22T10:01:00-04:00' }] } } }));
   const messages = new MessageService();
   const add = vi.spyOn(messages, 'add');
@@ -22,7 +23,7 @@ async function setup(roles = ['ADMIN'], expiry: string | null = null) {
     { provide: MessageService, useValue: messages },
     { provide: Apollo, useValue: { mutate, query } },
     { provide: AuthContextService, useValue: { refresh: () => null, roles: () => roles, requireFinancialUserId: () => 'cashier', principalKey: () => principal } },
-    { provide: NetworkStatusService, useValue: { online: () => true, isOnline: () => true } },
+    { provide: NetworkStatusService, useValue: { online: () => online, isOnline: () => online } },
   ] }).compileComponents();
   const fixture = TestBed.createComponent(QrPagofacilModal);
   fixture.componentRef.setInput('orden', orderFixture);
@@ -30,7 +31,7 @@ async function setup(roles = ['ADMIN'], expiry: string | null = null) {
   const paid = vi.fn();
   fixture.componentInstance.paid.subscribe(paid);
   await fixture.whenStable();
-  return { fixture, mutate, query, paid, add, setPrincipal: (value: string) => { principal = value; } };
+  return { fixture, mutate, query, paid, add, setOnline: (value: boolean) => { online = value; }, setPrincipal: (value: string) => { principal = value; } };
 }
 function button(element: HTMLElement, label: string): HTMLButtonElement | undefined {
   return Array.from(element.querySelectorAll('button')).find(b => b.textContent?.trim() === label);
@@ -226,5 +227,69 @@ describe('hosted QR flow', () => {
     expect(s.mutate).not.toHaveBeenCalled();
     expect(s.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'No se pudo generar el QR' }));
     s.fixture.destroy();
+  });
+});
+
+
+describe('active PagoFácil verification (S19)', () => {
+  async function generated() {
+    const s = await setup();
+    button(s.fixture.nativeElement, 'Generar QR')!.click(); await s.fixture.whenStable();
+    return s;
+  }
+  it('verifies the bound provider transaction, publishes the actual full-amount receipt and preserves the existing passive readback', async () => {
+    const s = await generated();
+    s.mutate.mockReturnValueOnce(of({ data: { verificarPagoQrPagoFacil: receiptFixture } }));
+    expect(s.fixture.nativeElement.textContent).toContain('/ 1000');
+    expect(s.fixture.nativeElement.textContent).toContain('monto completo');
+    const verify = button(s.fixture.nativeElement, 'Verificar pago QR'); expect(verify).toBeDefined();
+    verify!.click(); await s.fixture.whenStable();
+    const options: any = s.mutate.mock.calls[1][0];
+    expect(options.mutation.definitions[0].name.value).toBe('VerificarPagoQrPagoFacil');
+    expect(options.variables).toEqual({ pagofacilTransactionId: 'MOCK-TEST' });
+    expect(options.context).toEqual({ ownerPrincipal: 'local-cashier' });
+    expect(s.paid).toHaveBeenCalledExactlyOnceWith(receiptFixture);
+    expect(s.query).not.toHaveBeenCalled();
+    expect(s.fixture.nativeElement.textContent).toContain('Pago confirmado');
+    s.fixture.destroy();
+  });
+  it('keeps an unconfirmed payment pending without inventing a receipt', async () => {
+    const s = await generated();
+    s.mutate.mockReturnValueOnce(of({ data: { verificarPagoQrPagoFacil: null } }));
+    const verify = button(s.fixture.nativeElement, 'Verificar pago QR'); expect(verify).toBeDefined();
+    verify!.click(); await s.fixture.whenStable();
+    expect(s.paid).not.toHaveBeenCalled();
+    expect(s.fixture.nativeElement.textContent).toContain('Pago aún no confirmado');
+    expect(s.fixture.nativeElement.textContent).toContain('GENERADO');
+    expect(s.add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    s.fixture.destroy();
+  });
+  it('surfaces a provider error without closing or publishing success', async () => {
+    const s = await generated();
+    s.mutate.mockReturnValueOnce(throwError(() => new Error('Proveedor no disponible')));
+    const verify = button(s.fixture.nativeElement, 'Verificar pago QR'); expect(verify).toBeDefined();
+    verify!.click(); await s.fixture.whenStable();
+    expect(s.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'No se pudo verificar el pago QR', detail: 'Proveedor no disponible' }));
+    expect(s.paid).not.toHaveBeenCalled();
+    expect(s.fixture.nativeElement.textContent).toContain('GENERADO'); s.fixture.destroy();
+  });
+  it('ignores a late verification result after a principal change and blocks duplicate submissions', async () => {
+    const s = await generated(), response = new Subject<any>();
+    s.mutate.mockReturnValueOnce(response);
+    const verify = button(s.fixture.nativeElement, 'Verificar pago QR'); expect(verify).toBeDefined();
+    verify!.click(); verify!.click(); await s.fixture.whenStable();
+    expect(s.mutate).toHaveBeenCalledTimes(2);
+    s.setPrincipal('different-cashier');
+    response.next({ data: { verificarPagoQrPagoFacil: receiptFixture } }); response.complete();
+    await Promise.resolve(); await s.fixture.whenStable();
+    expect(s.paid).not.toHaveBeenCalled();
+    expect(s.add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' })); s.fixture.destroy();
+  });
+  it.each(['offline', 'close'])('sends no active verification after %s', async boundary => {
+    const s = await generated();
+    const verify = button(s.fixture.nativeElement, 'Verificar pago QR'); expect(verify).toBeDefined();
+    if (boundary === 'close') button(s.fixture.nativeElement, 'Cerrar')!.click(); else s.setOnline(false);
+    verify!.click(); await s.fixture.whenStable();
+    expect(s.mutate).toHaveBeenCalledTimes(1); expect(s.paid).not.toHaveBeenCalled(); s.fixture.destroy();
   });
 });

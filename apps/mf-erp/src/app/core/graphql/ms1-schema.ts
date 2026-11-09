@@ -90,6 +90,7 @@ type Mutation {
   generarQrPagoFacil(ciNitCliente: String!, cuotaId: UUID!, razonSocialCliente: String!): TransaccionQr!
   registrarEgresoCaja(input: RegistrarEgresoInput!): MovimientoCaja!
   simularConfirmacionQrDev(pagofacilTransactionId: String!): Recibo!
+  verificarPagoQrPagoFacil(pagofacilTransactionId: String!): Recibo
   vincularIdentidadUsuario(input: VincularIdentidadUsuarioInput!): UUID!
 }
 input ActualizarConsultorioInput { codigo: String! estado: String nombre: String! ubicacion: String }

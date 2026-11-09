@@ -129,6 +129,14 @@ export const GENERAR_QR_PAGOFACIL = gql<{ generarQrPagoFacil: TransaccionQr }, G
   }
 `;
 
+export const VERIFICAR_PAGO_QR_PAGOFACIL = gql<
+  { verificarPagoQrPagoFacil: Recibo | null }, { pagofacilTransactionId: string }
+>`
+  mutation VerificarPagoQrPagoFacil($pagofacilTransactionId: String!) {
+    verificarPagoQrPagoFacil(pagofacilTransactionId: $pagofacilTransactionId) { ${RECIBO_FIELDS} }
+  }
+`;
+
 export const SIMULAR_CONFIRMACION_QR_DEV = gql<
   { simularConfirmacionQrDev: Recibo }, { pagofacilTransactionId: string }
 >`
