@@ -1,0 +1,27 @@
+name: Deploy Azure frontends
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-azure
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Deploy over SSH
+        env:
+          AZURE_SSH_KEY: ${{ secrets.AZURE_SSH_KEY }}
+        run: |
+          set -eu
+          umask 077
+          dir=$(mktemp -d)
+          trap 'rm -rf "$dir"' EXIT
+          printf '%s\n' "$AZURE_SSH_KEY" > "$dir/key"
+          chmod 600 "$dir/key"
+          ssh-keyscan -T 10 -H 20.83.242.208 > "$dir/known_hosts"
+          ssh -T -i "$dir/key" -o IdentitiesOnly=yes -o ConnectTimeout=15 -o UserKnownHostsFile="$dir/known_hosts" -o StrictHostKeyChecking=yes -o BatchMode=yes azureuser@20.83.242.208 'cd /home/azureuser/deploy/microfrontends-web && git pull --ff-only && docker compose up -d --build --remove-orphans'

@@ -1,0 +1,21 @@
+name: dental-frontends
+services:
+  shell-web:
+    build:
+      context: ../..
+      dockerfile: deploy/azure/Dockerfile
+      target: shell-web
+    restart: unless-stopped
+    expose: ["80"]
+    networks: [dental-net]
+  mf-erp-web:
+    build:
+      context: ../..
+      dockerfile: deploy/azure/Dockerfile
+      target: mf-erp-web
+    restart: unless-stopped
+    expose: ["80"]
+    networks: [dental-net]
+networks:
+  dental-net:
+    external: true

@@ -5,6 +5,10 @@ trusted `/platform-config.json`. Roll back by restoring the previous manifest;
 keep every referenced release available. A shell rebuild is not required to select
 a compatible remote release.
 
+## Azure/AWS production artifacts
+
+The coordinated HTTPS deployment uses [Azure Shell/ERP](azure-frontend-deployment.md) and [AWS Operations](aws-frontend-deployment.md) source-built static images on external `dental-net`, behind operator-owned TLS edges. Safe `deploy/<cloud>/env.template` files select Compose without containing secrets; the coordinator creates server-only root `.env`. Production config uses the actual ERP hashed CSS discovered during the shell container build. Clinical is a required but explicitly unavailable GCP-later entry, not a reason to weaken the HTTPS/schema contract. CI on main/master or manual dispatch uses dedicated cloud SSH secrets and public-repo fast-forward pulls.
+
 ## Build and publish
 
 Run commands from the directory shown. Root orchestration delegates these same
