@@ -39,6 +39,10 @@ not framework state. Shell owns URLs/history and passes navigation, API, and an
 on-demand token capability. Shadow DOM isolates Vue/React styles, not privileges.
 Each remote is trusted code with host-page capabilities. ERP styles are global.
 
+For the proposed single-clinic staff workspace, configurable roles/settings, and
+patient mobile-client boundary, see the [ERP system design](docs/erp-system-design.md).
+It describes target architecture and prerequisites, not implemented capabilities.
+
 ## Verify
 
 ```sh
