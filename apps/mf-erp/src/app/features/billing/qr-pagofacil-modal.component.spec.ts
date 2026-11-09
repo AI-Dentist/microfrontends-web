@@ -262,6 +262,10 @@ describe('active PagoFácil verification (S19)', () => {
     expect(s.fixture.nativeElement.textContent).toContain('Pago aún no confirmado');
     expect(s.fixture.nativeElement.textContent).toContain('GENERADO');
     expect(s.add).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    button(s.fixture.nativeElement, 'Verificar pago')!.click(); await s.fixture.whenStable();
+    expect(s.paid).toHaveBeenCalledExactlyOnceWith(null);
+    expect(s.fixture.nativeElement.textContent).toContain('Pago confirmado');
+    expect(s.fixture.nativeElement.textContent).not.toContain('Pago aún no confirmado');
     s.fixture.destroy();
   });
   it('surfaces a provider error without closing or publishing success', async () => {

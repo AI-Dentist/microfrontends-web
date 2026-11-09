@@ -94,6 +94,7 @@ it.each([
   const card = s.fixture.nativeElement.querySelector('[data-testid="multichannel-trace"]');
   expect(card).not.toBeNull();
   expect(card.textContent).toContain(mode);
+  if (mode === 'SIMULADO_SIN_N8N') expect(s.text()).not.toContain('n8n: sí');
   expect(card.querySelectorAll('[data-channel]').length).toBe(3);
   for (const channel of channels) {
     const badge = card.querySelector('[data-channel="' + channel.canal + '"]');

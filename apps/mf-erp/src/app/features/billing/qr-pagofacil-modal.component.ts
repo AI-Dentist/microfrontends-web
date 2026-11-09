@@ -33,7 +33,7 @@ import { canCollectPayments } from './finance-permissions';
       <div class="space-y-3 text-sm">
         <p>Cuota {{ cuota().numeroCuota }} · {{ cuota().montoCuotaBs | bolivianos }}</p>
         <p data-testid="qr-provider-amount">En modo real, PagoFácil cobra el monto de la cuota / 1000 (mínimo Bs 0,01). La contabilidad y el recibo conservan el monto completo.</p>
-        @if (verificationMessage(); as message) { <p role="status">{{ message }}</p> }
+        @if (!confirmed() && verificationMessage(); as message) { <p role="status">{{ message }}</p> }
         @if (!qr()) {
           <label class="block">CI/NIT <input pInputText class="w-full" [disabled]="busy()" [(ngModel)]="ciNit" /></label>
           <label class="block">Razón social <input pInputText class="w-full" [disabled]="busy()" [(ngModel)]="razonSocial" /></label>

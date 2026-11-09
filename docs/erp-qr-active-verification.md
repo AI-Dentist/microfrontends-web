@@ -3,7 +3,7 @@
 Generate a QR normally, then click **Verificar pago QR** after paying. This explicit action sends `verificarPagoQrPagoFacil(pagofacilTransactionId: String!): Recibo` through the configured Gateway GraphQL endpoint with the bound transaction ID and current owner context. MS1 queries PagoFácil; localhost does not require a public callback tunnel for this action. No provider secrets enter the browser.
 
 - A non-null confirmed receipt is passed unchanged to the existing receipt view/payment completion output.
-- A null result means **Pago aún no confirmado**: the modal stays pending, emits no receipt and claims no successful payment.
+- A null result means **Pago aún no confirmado**: the modal stays pending, emits no receipt and claims no successful payment. Pending copy disappears if a later passive quota readback confirms payment.
 - Provider errors remain visible without producing success. Repeated clicks while checking, offline sessions and closed/retired views send nothing; a response from an old principal cannot publish a receipt. An expired image alone is never proof of payment; explicit status checks remain available for late bank confirmations.
 - Existing **Verificar pago** reads the ERP quota (passive readback), automatic quota polling and the standalone development simulation remain available without changing their behavior. Active verification is online-only, not queued.
 

@@ -120,7 +120,7 @@ type Command = Readonly<{
                 </section>
               }
               @if (current.accionCrudEjecutada) { <p>Acción: {{ current.accionCrudEjecutada }}</p> }
-              <p>n8n: {{ current.notificacionN8nEnviada ? 'sí' : 'no' }}</p>
+              @if (!current.notificacionMulticanal) { <p>n8n: {{ current.notificacionN8nEnviada ? 'sí' : 'no' }}</p> }
               @if (!current.notificacionMulticanal && current.notificacionN8nEnviada && (current.toolsMcpInvocadas.includes('dispararAlertaCobranzaWhatsapp') || current.toolsMcpInvocadas.includes('dispararAlertaCobranzaN8nTool'))) {
                 <p role="status" data-testid="whatsapp-confirmation" class="rounded border border-green-300 bg-green-50 p-3 text-green-900">Alerta de cobranza WhatsApp enviada mediante n8n.</p>
               }
