@@ -1,5 +1,5 @@
 # Frontend AI, ML, MCP and reports
-Worker scope T6–T8; branch feat/ai-ml-mcp-reports. Canonical requirements: platform-infrastructure/odd/tasks/ai-ml-mcp-reports.md (read in full).
+Worker scope T6–T8 and T11/T12 frontend; branch feat/ai-ml-mcp-reports. Canonical requirements: platform-infrastructure/odd/tasks/ai-ml-mcp-reports.md (read in full).
 
 ## Specs
 - S0: "NO tocar ni reescribir la lógica de colas offline ni idempotencia".
@@ -9,11 +9,18 @@ Worker scope T6–T8; branch feat/ai-ml-mcp-reports. Canonical requirements: pla
 - S15: "BAJO", "MEDIO", "ALTO"; risk filtering and patient/stock clustering.
 - S16: "Do NOT push and do NOT merge"; gateway public routes; four builds.
 
+- S18: "WhatsApp (Meta Test API)", "Telegram Bot", "Gmail"; "ENVIADO" / "SIMULADO"; "Notificar cobro pendiente por WhatsApp, Telegram y Gmail"; additive `notificacionMulticanal` per canonical S17/S18.
+- S19 frontend: "Verificar pago QR"; `verificarPagoQrPagoFacil(pagofacilTransactionId: String!): Recibo`; real provider `/1000` notice without changing full ERP accounting or existing mock/polling.
+
 ## Tasks
 - T6 [done] S12-S13 route:inline commit:9ec2dac
 - T7 [done] S14 route:inline commit:c6a874d
 - T8 [done] S15 route:inline commit:8449d57
 - T9 [done] S0,S16 route:inline commit:6830ec9 (four builds exit0; Angular497/497; Vue105/105; Shell/scripts293 pass+1 Windows symlink skip; React365 pass+15 main-proven pre-existing failures)
+
+- T11 [done] S0,S18 route:inline commit:93ba446 (RED7 failures -> GREEN71/71; 146 authored-line work unit)
+- T12 [done] S0,S19 frontend route:inline commit:65c3001 (behavioral RED7 failures -> GREEN76/76; 160 authored-line work unit)
+- T13 [done] S18,S19 full Angular suite/build/browser route:inline commit:b7093d7 (job-6 full 512/512 PASS; status RED2 -> GREEN38/38; isolated timeout retry 9/9 PASS; prod build and Chromium PASS)
 
 ## Log
 - L1: Original full dispatch and authoritative exact quotes live in canonical coordinator document, Log L1–L21; worker dispatch task_535c74beaed1 / ctx_364567c61a3e. Preserve unrelated pre-existing working tree changes; stage only owned files.
