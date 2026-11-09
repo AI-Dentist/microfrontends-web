@@ -46,6 +46,8 @@ type Command = Readonly<{
             [disabled]="loading() || !canExecute() || !question().trim()">
             <ng-template #icon><svg lucideSend class="size-4"></svg></ng-template>
           </p-button>
+          <p-button type="button" label="Notificar cobro pendiente por WhatsApp, Telegram y Gmail" severity="secondary"
+            [disabled]="loading() || !canExecute()" (onClick)="notifyChannels()" />
           <p-button type="button" label="Monitorea mi negocio" title="[Auditar Negocio Ahora (Autónomo)]" severity="secondary"
             [disabled]="loading() || !canMonitor()" (onClick)="monitor()" />
           <p-button type="button" [label]="speech.listening() ? 'Detener dictado' : 'Dictar instrucción'"
@@ -100,9 +102,26 @@ type Command = Readonly<{
                   <article data-testid="mcp-tool-card" class="rounded border border-sky-200 bg-sky-50 p-3"><strong>{{ tool }}</strong></article>
                 } @empty { <p>Herramientas: ninguna</p> }
               </div>
+              @if (notificationTrace(); as trace) {
+                <section data-testid="multichannel-trace" class="rounded border border-slate-300 p-3" aria-label="Notificación multicanal MCP">
+                  <h3 class="font-semibold">Notificación multicanal</h3>
+                  <span class="rounded bg-slate-100 px-2 py-1" data-testid="notification-mode">{{ trace.mode }}</span>
+                  <div class="mt-3 grid gap-2 sm:grid-cols-3">
+                    @for (channel of trace.channels; track channel.canal) {
+                      <article [attr.data-channel]="channel.canal" class="rounded border p-3">
+                        <strong>{{ channel.label }}</strong>
+                        <p>{{ channel.destino }}</p>
+                        <small>{{ channel.proveedor }}</small>
+                        <span data-status class="block rounded px-2 py-1" [class.bg-amber-100]="channel.status === 'SIMULADO'"
+                          [class.bg-green-100]="channel.status === 'ENVIADO'">{{ channel.status }}</span>
+                      </article>
+                    }
+                  </div>
+                </section>
+              }
               @if (current.accionCrudEjecutada) { <p>Acción: {{ current.accionCrudEjecutada }}</p> }
               <p>n8n: {{ current.notificacionN8nEnviada ? 'sí' : 'no' }}</p>
-              @if (current.notificacionN8nEnviada && (current.toolsMcpInvocadas.includes('dispararAlertaCobranzaWhatsapp') || current.toolsMcpInvocadas.includes('dispararAlertaCobranzaN8nTool'))) {
+              @if (!current.notificacionMulticanal && current.notificacionN8nEnviada && (current.toolsMcpInvocadas.includes('dispararAlertaCobranzaWhatsapp') || current.toolsMcpInvocadas.includes('dispararAlertaCobranzaN8nTool'))) {
                 <p role="status" data-testid="whatsapp-confirmation" class="rounded border border-green-300 bg-green-50 p-3 text-green-900">Alerta de cobranza WhatsApp enviada mediante n8n.</p>
               }
               @if (current.reporteGenerado; as report) { <erp-dynamic-report-viewer [report]="report" /> }
@@ -124,6 +143,25 @@ export class AgentConsoleComponent {
   protected readonly historyError = signal<string | null>(null);
   protected readonly mcpError = signal<string | null>(null);
   protected readonly response = signal<AgenteInteraccionResponse | null>(null);
+  protected readonly notificationTrace = computed(() => {
+    const current = this.response();
+    const payload = current?.notificacionMulticanal;
+    if (!current || (!payload && !current.toolsMcpInvocadas.some(tool =>
+      ['dispararNotificacionMulticanal', 'dispararAlertaCobranzaWhatsapp', 'dispararAlertaCobranzaN8nTool'].includes(tool)))) return null;
+    return {
+      mode: payload?.modoEjecucion ?? 'SIN_CONFIRMACION',
+      channels: [
+        { canal: 'WHATSAPP', label: 'WhatsApp (Meta Test API)' },
+        { canal: 'TELEGRAM', label: 'Telegram Bot' },
+        { canal: 'GMAIL', label: 'Gmail' },
+      ].map(channel => {
+        const result = payload?.resultadosPorCanal.find(item => item.canal === channel.canal);
+        return { ...channel, destino: result?.destino ?? 'Destino no informado', proveedor: result?.proveedor ?? '',
+          status: !result ? 'SIN_CONFIRMACION' : result.estado === 'SIMULADO_OK' || payload?.modoEjecucion === 'SIMULADO_SIN_N8N'
+            ? 'SIMULADO' : result.estado };
+      }),
+    };
+  });
   protected readonly history = signal<AgenteInteraccionResponse[]>([]);
   protected readonly mcp = signal<McpServerStatus | null>(null);
   protected readonly pending = signal<Command | null>(null);
@@ -158,6 +196,7 @@ export class AgentConsoleComponent {
 
   protected toggleMic(): void { if (this.speech.listening()) this.speech.stop(); else this.speech.start(); }
   protected submit(): void { void this.run(this.question(), false); }
+  protected notifyChannels(): void { void this.run('Notificar cobro pendiente por WhatsApp, Telegram y Gmail', false); }
   protected monitor(): void { void this.run('Monitorea mi negocio', true); }
   protected select(entry: AgenteInteraccionResponse): void { this.response.set(entry); }
   protected retry(): void { const command = this.pending(); if (command) void this.send(command); }

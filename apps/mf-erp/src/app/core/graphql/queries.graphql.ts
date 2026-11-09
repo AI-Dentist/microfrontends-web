@@ -134,6 +134,7 @@ export const OBTENER_FLUJO_CAJA = gql<
 export const AGENTE_FIELDS = `
   interaccionId fechaEjecucion instruccionOriginal respuestaNaturalAgente
   toolsMcpInvocadas accionCrudEjecutada notificacionN8nEnviada
+  notificacionMulticanal { exito modoEjecucion resultadosPorCanal { canal proveedor estado destino } }
   reporteGenerado { reporteId consultaSqlEjecutada sqlGenerado titulo resumenAnalitico columnas filas filasJson tipoGraficoSugerido urlDescargaExcel urlDescargaPdf }
 `;
 export const LISTAR_HISTORIAL_AGENTE = gql<{ listarHistorialAgente: AgenteInteraccionResponse[] }, { limite: number }>`

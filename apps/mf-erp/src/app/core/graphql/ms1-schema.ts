@@ -32,7 +32,10 @@ type OrdenCobroItem { cantidad: Int! id: UUID! piezaDental: String precioUnitari
 type Paciente { activo: Boolean! apellidos: String! ciNit: String! direccion: String email: String fechaNacimiento: Date genero: String id: UUID! nombres: String! telefonoWhatsapp: String! }
 type Recibo { ciNitCliente: String! concepto: String! enviadoWhatsapp: Boolean! fechaEmision: DateTime! id: UUID! montoTotalBs: BigDecimal! numeroRecibo: String! pdfUrlS3: String razonSocialCliente: String! }
 type ReporteGenerativoPayload { reporteId: UUID! consultaSqlEjecutada: String! sqlGenerado: String titulo: String resumenAnalitico: String filas: [[String]] columnas: [String!]! filasJson: String! tipoGraficoSugerido: String! urlDescargaExcel: String! urlDescargaPdf: String! }
-type AgenteInteraccionResponse { interaccionId: UUID! fechaEjecucion: DateTime! instruccionOriginal: String! respuestaNaturalAgente: String! toolsMcpInvocadas: [String!]! accionCrudEjecutada: String notificacionN8nEnviada: Boolean! reporteGenerado: ReporteGenerativoPayload }
+type ResultadoCanalNotificacion { canal: String! proveedor: String! estado: String! destino: String }
+type NotificacionMulticanalPayload { exito: Boolean! modoEjecucion: String! resultadosPorCanal: [ResultadoCanalNotificacion!]! }
+type AgenteInteraccionResponse { interaccionId: UUID! fechaEjecucion: DateTime! instruccionOriginal: String! respuestaNaturalAgente: String! toolsMcpInvocadas: [String!]! accionCrudEjecutada: String notificacionN8nEnviada: Boolean! notificacionMulticanal: NotificacionMulticanalPayload reporteGenerado: ReporteGenerativoPayload }
+type RespuestaAgenteErp { interaccionId: UUID! fechaEjecucion: DateTime! instruccionOriginal: String! respuestaNaturalAgente: String! toolsMcpInvocadas: [String!]! accionCrudEjecutada: String notificacionN8nEnviada: Boolean! notificacionMulticanal: NotificacionMulticanalPayload reporteGenerado: ReporteGenerativoPayload }
 type McpServerStatus { activo: Boolean! protocolVersion: String! toolsRegistradas: [McpToolMetadata!]! }
 type McpToolMetadata { nombre: String! categoria: String! descripcion: String! }
 type ResumenFlujoCaja { movimientos: [MovimientoCaja!]! saldoNetoBs: BigDecimal! totalEgresosBs: BigDecimal! totalIngresosBs: BigDecimal! }

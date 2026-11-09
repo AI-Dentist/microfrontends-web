@@ -341,6 +341,12 @@ export type ConfigurarPlanDePagosInput = ConfigurarPlanPagosInput;
 export type CobrarCuotaEnEfectivoInput = CobrarEfectivoInput;
 export type RegistrarEgresoCajaInput = RegistrarEgresoInput;
 
+export interface NotificacionMulticanalPayload {
+  exito: boolean;
+  modoEjecucion: string;
+  resultadosPorCanal: { canal: string; proveedor: string; estado: string; destino: string | null }[];
+}
+
 /** Actual unified MS1 agent response; CRUD summary is a nullable string. */
 export interface AgenteInteraccionResponse {
   interaccionId: UUID;
@@ -350,8 +356,10 @@ export interface AgenteInteraccionResponse {
   toolsMcpInvocadas: string[];
   accionCrudEjecutada: string | null;
   notificacionN8nEnviada: boolean;
+  notificacionMulticanal?: NotificacionMulticanalPayload | null;
   reporteGenerado: ReporteGenerativoPayload | null;
 }
+export type RespuestaAgenteErp = AgenteInteraccionResponse;
 export interface McpServerStatus {
   activo: boolean;
   protocolVersion: string;

@@ -75,6 +75,54 @@ it('confirms WhatsApp only when n8n delivery and the collection tool are both re
   expect(s.fixture.nativeElement.querySelector('[data-testid="whatsapp-confirmation"]')).toBeNull();
 });
 
+it.each([
+  ['N8N_LIVE', 'ENVIADO', 'ENVIADO'],
+  ['SIMULADO_SIN_N8N', 'SIMULADO_OK', 'SIMULADO'],
+  ['N8N_LIVE', 'SIMULADO_OK', 'SIMULADO'],
+])('renders three distinct channel destinations and truthful status for %s/%s', async (mode, state, label) => {
+  const s = await setup();
+  const channels = [
+    { canal: 'WHATSAPP', proveedor: 'META_CLOUD_TEST_NUMBER', destino: '+59170012345', estado: state },
+    { canal: 'TELEGRAM', proveedor: 'TELEGRAM_BOT_API', destino: 'Chat Clínica', estado: state },
+    { canal: 'GMAIL', proveedor: 'GMAIL_SMTP', destino: 'paciente@example.invalid', estado: state },
+  ];
+  s.mutate.mockReturnValue(of({ data: { ejecutarAgenteErp: { ...reply,
+    toolsMcpInvocadas: ['dispararNotificacionMulticanal'], notificacionN8nEnviada: true,
+    notificacionMulticanal: { exito: true, modoEjecucion: mode, resultadosPorCanal: channels },
+  } } }));
+  await s.enter(); await s.submit();
+  const card = s.fixture.nativeElement.querySelector('[data-testid="multichannel-trace"]');
+  expect(card).not.toBeNull();
+  expect(card.textContent).toContain(mode);
+  expect(card.querySelectorAll('[data-channel]').length).toBe(3);
+  for (const channel of channels) {
+    const badge = card.querySelector('[data-channel="' + channel.canal + '"]');
+    expect(badge.textContent).toContain(channel.destino);
+    expect(badge.querySelector('[data-status]').textContent.trim()).toBe(label);
+  }
+  for (const name of ['WhatsApp (Meta Test API)', 'Telegram Bot', 'Gmail']) expect(card.textContent).toContain(name);
+  expect(s.fixture.nativeElement.querySelector('[data-testid="whatsapp-confirmation"]')).toBeNull();
+});
+
+it.each(['dispararNotificacionMulticanal', 'dispararAlertaCobranzaWhatsapp'])('does not invent a channel send when only %s was invoked', async tool => {
+  const s = await setup();
+  s.mutate.mockReturnValue(of({ data: { ejecutarAgenteErp: { ...reply, toolsMcpInvocadas: [tool] } } }));
+  await s.enter(); await s.submit();
+  const badges = s.fixture.nativeElement.querySelectorAll('[data-channel]');
+  expect(badges.length).toBe(3);
+  for (const badge of badges) expect(badge.textContent).toContain('SIN_CONFIRMACION');
+});
+
+it('sends the exact multichannel suggestion in one deliberate click without autonomous mode', async () => {
+  const s = await setup();
+  const instruction = 'Notificar cobro pendiente por WhatsApp, Telegram y Gmail';
+  await s.click(instruction);
+  expect(s.mutate).toHaveBeenCalledOnce();
+  expect(s.mutate.mock.calls[0][0].variables).toEqual({ instruccion: instruction, modoAutonomoMonitoreo: false });
+  s.roleSignal.set(['ODONTOLOGO']); await s.fixture.whenStable();
+  await s.click(instruction); expect(s.mutate).toHaveBeenCalledOnce();
+});
+
 it('sends the exact autonomous instruction only for authorized roles', async () => {
   const s = await setup(['CAJERO']);
   await s.click('Monitorea mi negocio');

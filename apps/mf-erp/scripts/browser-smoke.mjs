@@ -39,6 +39,16 @@ const company = { id: id(10), nombreComercial: 'Clínica fixture', nit: '123', r
 // BARRAS is controlled renderer evidence only. Actual local backend has no AI provider.
 const report = { reporteId: id(11), titulo: 'Ingresos fixture Bs', resumenAnalitico: 'QR lidera los ingresos ficticios.', sqlGenerado: 'SELECT metodo, monto FROM fixture', consultaSqlEjecutada: 'SELECT metodo, monto FROM fixture', columnas: ['Metodo', 'Monto'], filas: [['EFECTIVO', '100'], ['QR', '200']], filasJson: JSON.stringify([['EFECTIVO', 100], ['QR', 200]]), tipoGraficoSugerido: 'BARRAS', urlDescargaExcel: `/api/v1/reports/export/${id(11)}/xlsx`, urlDescargaPdf: `/api/v1/reports/export/${id(11)}/pdf` };
 let reportUnavailable = false;
+let multichannelMode = 'SIMULADO_SIN_N8N';
+const multichannelInstruction = 'Notificar cobro pendiente por WhatsApp, Telegram y Gmail';
+function notificationFixture() {
+  const estado = multichannelMode === 'N8N_LIVE' ? 'ENVIADO' : 'SIMULADO_OK';
+  return { exito: true, modoEjecucion: multichannelMode, resultadosPorCanal: [
+    { canal: 'WHATSAPP', proveedor: 'META_CLOUD_TEST_NUMBER', estado, destino: '+59170012345' },
+    { canal: 'TELEGRAM', proveedor: 'TELEGRAM_BOT_API', estado, destino: 'Chat Clínica' },
+    { canal: 'GMAIL', proveedor: 'GMAIL_SMTP', estado, destino: 'patient@example.invalid' },
+  ] };
+}
 const businessError = (message, classification) => ({ errors: [{ message, extensions: { classification } }] });
 function response(name, variables) {
   const reads = {
@@ -55,7 +65,7 @@ function response(name, variables) {
     ObtenerEstadoServidorMcp: { obtenerEstadoServidorMcp: { activo: true, protocolVersion: '2025-03-26', toolsRegistradas: [] } },
   };
   if (reads[name]) return reads[name];
-  if (name === 'EjecutarAgenteErp') return { ejecutarAgenteErp: { interaccionId: id(14), fechaEjecucion: instant, instruccionOriginal: variables.instruccion, respuestaNaturalAgente: 'FIXTURE: ingresos por método de pago', toolsMcpInvocadas: variables.modoAutonomoMonitoreo ? ['auditarSaludNegocio', 'dispararAlertaCobranzaWhatsapp'] : ['generarReporteDinamicoSqlTool'], accionCrudEjecutada: null, notificacionN8nEnviada: !!variables.modoAutonomoMonitoreo, reporteGenerado: report } };
+  if (name === 'EjecutarAgenteErp') return { ejecutarAgenteErp: { interaccionId: id(14), fechaEjecucion: instant, instruccionOriginal: variables.instruccion, respuestaNaturalAgente: 'FIXTURE: ingresos por método de pago', toolsMcpInvocadas: variables.modoAutonomoMonitoreo ? ['auditarSaludNegocio', 'dispararAlertaCobranzaWhatsapp'] : ['generarReporteDinamicoSqlTool'], accionCrudEjecutada: null, notificacionN8nEnviada: !!variables.modoAutonomoMonitoreo, notificacionMulticanal: variables.instruccion === multichannelInstruction ? notificationFixture() : null, reporteGenerado: report } };
   if (name === 'CrearPaciente') {
     const created = { id: id(13), ...variables.input, activo: true };
     patients.push(created); return { crearPaciente: created };
@@ -194,6 +204,18 @@ try {
   assert.equal(await page.getByTestId('mcp-tool-card').count(), 2);
   assert.ok(calls.some(call => call.name === 'EjecutarAgenteErp' && call.variables.modoAutonomoMonitoreo === true));
   console.log('PASS FIXTURE ONLY canonical title/summary/rows, interactive BARRAS/LINEAS/TORTA, MCP cards and n8n confirmation; not actual backend AI evidence');
+  for (const mode of ['SIMULADO_SIN_N8N', 'N8N_LIVE']) {
+    multichannelMode = mode;
+    await page.getByRole('button', { name: multichannelInstruction, exact: true }).click();
+    await visible(page.getByTestId('notification-mode').getByText(mode, { exact: true }));
+    const channels = page.getByTestId('multichannel-trace').locator('[data-channel]');
+    assert.equal(await channels.count(), 3);
+    for (const channel of ['WHATSAPP', 'TELEGRAM', 'GMAIL']) {
+      assert.equal((await page.locator(`[data-channel="${channel}"] [data-status]`).textContent()).trim(), mode === 'N8N_LIVE' ? 'ENVIADO' : 'SIMULADO');
+    }
+    assert.equal(await page.getByTestId('whatsapp-confirmation').count(), 0);
+  }
+  console.log('PASS FIXTURE ONLY three channel badges and quick action in simulated/live modes; no real notification sent');
   reportUnavailable = true;
   await page.getByRole('textbox', { name: 'Instrucción para el agente' }).fill('Proveedor no disponible');
   await page.getByRole('button', { name: 'Enviar instrucción', exact: true }).click();
