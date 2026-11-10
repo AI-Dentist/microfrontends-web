@@ -43,6 +43,14 @@ For the proposed single-clinic staff workspace, configurable roles/settings, and
 patient mobile-client boundary, see the [ERP system design](docs/erp-system-design.md).
 It describes target architecture and prerequisites, not implemented capabilities.
 
+## Local AI availability
+
+ERP's standalone browser-local AI implementation is retained. In the Shell-hosted ERP,
+automatic layout initialization is disabled and the badge reports it disabled; existing
+lazy service calls are not proof of verified hosted inference. See the
+[mode-specific behavior and evidence limits](docs/ai-local-hosted.md). This documentation
+does not enable AI or change offline/accounting behavior.
+
 ## Verify
 
 ```sh

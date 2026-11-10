@@ -88,7 +88,7 @@ not claim patient endpoints or a mobile implementation already exist.
 | Angular ERP / MS1 | Financial dashboard in Bs, expenses, billing, cash, installments, QR payment and receipts; patients, dentists, consultorios, clinic and tariff master catalogs. |
 | Vue Operations / MS3 | Appointments, professional/consultorio schedules and inventory/stock alerts. |
 | React Clinical / MS2 | History, antecedents, consultations, odontogram and studies; current study content is text-oriented, not proven image analysis. |
-| Existing ERP advanced tools | Preserve local AI, agents, MCP and reports as secondary supported modules; no expansion or claim of backend ML. |
+| Existing ERP advanced tools | Preserve standalone local AI, agents, MCP and reports; hosted automatic local-AI initialization is disabled, not verified as equivalent standalone support. See [mode-specific limits](ai-local-hosted.md). No runtime expansion or claim of backend ML. |
 
 Patients, their histories, appointments, invoices and legal audit records remain.
 A person who is both patient and employee may enter only through an explicitly
@@ -429,8 +429,10 @@ These are future release checks, not tests executed by this documentation change
    prove patient registration, agenda, clinical care, billing/cash and receipts.
 4. **Offline after online correctness:** device policy, one shell PWA, owner-bound
    queues, TTL-aware reconciliation and release-cache recovery drills.
-5. **Preserve advanced modules:** retain supported reports/local AI/agent/MCP
-   behind existing capability and permission boundaries; do not expand scope.
+5. **Preserve advanced modules:** retain supported reports/agent/MCP and the existing
+   standalone local-AI implementation behind existing boundaries. Hosted automatic local-AI
+   initialization is disabled; lazy calls do not prove hosted inference readiness. Do not
+   enable runtime features or expand scope as part of documenting this distinction.
 
 ## 11. Actual prerequisites, limitations and non-goals
 

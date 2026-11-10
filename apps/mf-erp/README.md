@@ -1,5 +1,17 @@
 # ERP standalone and federated routes
 
+## Browser-local AI by runtime mode
+
+Standalone keeps its existing automatic layout startup and browser-local tariff search /
+expense-classification implementation, subject to worker/model availability. Shell-hosted
+layout startup skips `ai.start()` via `if (!this.runtime.hosted)`, and its badge reports
+`IA Navegador deshabilitada en este entorno`. Existing consumers can still request lazy
+service startup; this does not establish verified hosted AI or a service-wide startup ban.
+See [the source-backed capability limits](../../docs/ai-local-hosted.md). This correction
+changes documentation only, not AI, offline, Dexie, idempotency or accounting behavior.
+
+## Standalone and federation entrypoints
+
 Run the existing standalone application with `pnpm start`; `pnpm build` publishes
 Native Federation `remoteEntry.json` exposing `./Routes`.
 

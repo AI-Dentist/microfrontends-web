@@ -211,12 +211,16 @@ revives. Standalone keeps `environment.graphqlUrl` and the stored token.
 consumers resolve the hosted instances instead of root-scoped ones.
 No AI or agent activation is part of this path.
 
-**Local AI.** A hosted scope never starts the browser-local AI: `ErpLayout` skips `start()`,
-so no worker is created and no model is downloaded from an external provider. The tariff
-semantic search shows "Búsqueda semántica no disponible en este entorno" and the expense
-category stays a manual choice; no fake AI results are produced. The hosted status badge
-reads "IA Navegador deshabilitada en este entorno" rather than suggesting startup is pending.
-Standalone retains its existing startup and all local AI status labels.
+**Local AI.** Automatic layout initialization is disabled in a hosted scope:
+`ErpLayout.ngOnInit()` calls `ai.start()` only under `if (!this.runtime.hosted)`.
+The hosted badge always reads "IA Navegador deshabilitada en este entorno"; it does not
+report actual worker readiness. Standalone retains its automatic startup, service status
+labels and browser-local search/classification implementation. Current tariff/expense
+consumers still have on-demand service calls, and the service can lazily start or retry
+on reconnect; the layout guard alone does not prohibit every worker/download path.
+Do not claim either working hosted/standalone parity or a service-wide hosted startup ban.
+See [mode-specific behavior and evidence limits](ai-local-hosted.md). This is documentation
+only: no AI, offline, Dexie, Idempotency-Key or runtime behavior is enabled or changed.
 
 ## Remaining stages
 

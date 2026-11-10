@@ -64,6 +64,15 @@ Dependency pruning is disabled because its Sheriff scanner cannot traverse the
 compile-time contract outside this standalone workspace. Unused optional Angular
 animation entrypoints are skipped rather than installing an unused runtime.
 
+## ERP local-AI limitation
+
+The Shell-hosted ERP skips automatic local-AI layout startup and displays
+`IA Navegador deshabilitada en este entorno`. Standalone retains its existing startup
+and inference implementation. Existing tariff/expense consumers still have lazy service
+calls, so this is neither a guarantee of working hosted inference nor a prohibition of
+all hosted worker/download paths. See [mode-specific source evidence](../../docs/ai-local-hosted.md).
+No model or runtime feature is enabled by these documentation changes.
+
 ## Lifecycle and failures
 
 Module pages create a host-owned ShadowRoot, load and await CSS inside it, and
