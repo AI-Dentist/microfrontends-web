@@ -22,7 +22,8 @@ async function setup(roles = ['ADMIN']) {
   const query = vi.fn((options: any) => of({ data: options.query.definitions[0].name.value === 'ListarHistorialAgente'
     ? { listarHistorialAgente: [reply] }
     : { obtenerEstadoServidorMcp: { activo: true, protocolVersion: '1', toolsRegistradas: [] } } }));
-  const speech = { supported: signal(false), listening: signal(false), transcript: signal(''), error: signal<string | null>(null) };
+  const speech = { supported: signal(false), listening: signal(false), transcript: signal(''), error: signal<string | null>(null),
+    completed: signal<{ id: number; text: string } | null>(null) };
   await TestBed.configureTestingModule({ imports: [AiReportConsole], providers: [
     { provide: Apollo, useValue: { query, mutate } },
     { provide: AuthContextService, useValue: { roles: roleSignal, principalKey, refresh: () => null } },
@@ -155,7 +156,7 @@ it('MCP failure does not prevent an otherwise authorized command', async () => {
   expect(s.text()).toContain('Forbidden');
 });
 
-it('prefills live speech but never submits; unsupported and permission errors remain visible', async () => {
+it('prefills live speech without submitting; unsupported and permission errors remain visible', async () => {
   const s = await setup();
   expect(s.text()).toContain('no soporta');
   s.speech.supported.set(true); s.speech.listening.set(true); s.speech.transcript.set('Cobrar cuota');
@@ -164,6 +165,32 @@ it('prefills live speech but never submits; unsupported and permission errors re
   expect(s.mutate).not.toHaveBeenCalled();
   s.speech.error.set('Permiso de micrófono denegado.'); await s.fixture.whenStable();
   expect(s.text()).toContain('Permiso de micrófono denegado.');
+  expect(s.mutate).not.toHaveBeenCalled();
+});
+
+it('submits a completed dictation once through the guarded agent path and keeps it editable', async () => {
+  const s = await setup();
+  s.speech.supported.set(true); s.speech.listening.set(true); s.speech.transcript.set('Cobrar cuota');
+  await s.fixture.whenStable();
+  s.speech.listening.set(false);
+  const completion = { id: 1, text: 'Cobrar cuota' };
+  s.speech.completed.set(completion);
+  await s.fixture.whenStable();
+  expect(s.mutate).toHaveBeenCalledOnce();
+  expect(s.mutate.mock.calls[0][0].variables).toEqual({ instruccion: 'Cobrar cuota', modoAutonomoMonitoreo: false });
+  expect(s.mutate.mock.calls[0][0].context.idempotencyKey).toEqual(expect.any(String));
+  s.speech.completed.set({ ...completion }); await s.fixture.whenStable();
+  expect(s.mutate).toHaveBeenCalledOnce();
+  const textarea = s.fixture.nativeElement.querySelector('textarea, input') as HTMLTextAreaElement;
+  expect(textarea.value).toBe('Cobrar cuota');
+  expect(textarea.disabled).toBe(false);
+});
+
+it('does not auto-submit a completed dictation for a role that cannot execute instructions', async () => {
+  const s = await setup();
+  s.roleSignal.set(['ODONTOLOGO']); await s.fixture.whenStable();
+  s.speech.completed.set({ id: 7, text: 'Cobrar cuota' }); await s.fixture.whenStable();
+  expect(s.mutate).not.toHaveBeenCalled();
 });
 
 it('keeps an uncertain command immutable across edited text, double-click and explicit technical retry', async () => {

@@ -39,6 +39,7 @@ async function setup(roles = ['ADMIN']) {
     listening: signal(false),
     transcript: signal(''),
     error: signal<string | null>(null),
+    completed: signal<{ id: number; text: string } | null>(null),
   };
 
   const mockManualService = {

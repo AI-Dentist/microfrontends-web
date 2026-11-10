@@ -26,6 +26,8 @@ type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
 export const SPEECH_LANG = 'es-BO';
 
+export type VoiceCompletion = Readonly<{ id: number; text: string }>;
+
 const ERROR_MESSAGES: Record<string, string> = {
   'not-allowed': 'Permiso de micrófono denegado. Habilítalo en el navegador para dictar.',
   'service-not-allowed': 'Permiso de micrófono denegado. Habilítalo en el navegador para dictar.',
@@ -47,11 +49,13 @@ function resolveCtor(): SpeechRecognitionCtor | null {
 export class SpeechRecognitionService {
   private readonly ctor = resolveCtor();
   private recognition: SpeechRecognitionLike | null = null;
+  private completionSeq = 0;
 
   readonly supported = signal(this.ctor !== null);
   readonly listening = signal(false);
   readonly transcript = signal('');
   readonly error = signal<string | null>(null);
+  readonly completed = signal<VoiceCompletion | null>(null);
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.cancel());
@@ -63,6 +67,9 @@ export class SpeechRecognitionService {
     }
     this.error.set(null);
     this.transcript.set('');
+    this.completed.set(null);
+    let hadError = false;
+    let completedThisRun = false;
     const recognition = new this.ctor();
     recognition.lang = SPEECH_LANG;
     recognition.interimResults = true;
@@ -77,10 +84,21 @@ export class SpeechRecognitionService {
     };
     recognition.onerror = (event) => {
       if (this.recognition !== recognition) return;
+      hadError = true;
       this.error.set(ERROR_MESSAGES[event.error] ?? `Error de reconocimiento de voz (${event.error}).`);
       this.listening.set(false);
     };
-    recognition.onend = () => { if (this.recognition === recognition) this.listening.set(false); };
+    recognition.onend = () => {
+      if (this.recognition !== recognition) return;
+      this.listening.set(false);
+      if (!hadError && !completedThisRun) {
+        const text = this.transcript().trim();
+        if (text.length > 0) {
+          completedThisRun = true;
+          this.completed.set({ id: ++this.completionSeq, text });
+        }
+      }
+    };
     this.recognition = recognition;
     try {
       recognition.start();
@@ -98,6 +116,7 @@ export class SpeechRecognitionService {
     this.listening.set(false);
     this.transcript.set('');
     this.error.set(null);
+    this.completed.set(null);
   }
 
   stop(): void {

@@ -200,12 +200,14 @@ export class AgentConsoleComponent {
   private readonly identity = computed(() => JSON.stringify([this.auth.principalKey(), this.auth.roles()]));
   private session = 0;
   private read = 0;
+  private lastCompletedVoiceId = 0;
 
   constructor() {
     effect(() => {
       this.identity();
       untracked(() => {
         this.session++;
+        this.lastCompletedVoiceId = this.speech.completed?.()?.id ?? 0;
         this.mode.set('agent');
         this.loading.set(false); this.pending.set(null); this.question.set('');
         this.response.set(null); this.history.set([]); this.mcp.set(null);
@@ -218,6 +220,20 @@ export class AgentConsoleComponent {
     effect(() => {
       const text = this.speech.transcript();
       if (text) this.question.set(text); // Keep final text even if onend already set listening=false.
+    });
+    effect(() => {
+      const completion = this.speech.completed?.();
+      if (!completion || completion.id === this.lastCompletedVoiceId) return;
+      this.lastCompletedVoiceId = completion.id;
+      untracked(() => {
+        if (this.mode() !== 'agent') return;
+        if (completion.text) {
+          this.question.set(completion.text);
+        }
+        if (this.canExecute()) {
+          void this.run(completion.text, false);
+        }
+      });
     });
   }
 
