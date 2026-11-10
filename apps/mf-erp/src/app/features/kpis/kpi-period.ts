@@ -37,12 +37,15 @@ function parseUtcDate(value: string): { year: number; month: number; day: number
 }
 
 /**
- * Returns the current month (from 1st to last day) using local calendar values.
+ * Returns the current month (from 1st to last day) in the America/La_Paz calendar (fixed UTC-4),
+ * independent of the client browser's local timezone.
  */
 export function defaultKpiPeriod(now: Date = new Date()): KpiPeriod {
-  const year = now.getFullYear();
-  const month = now.getMonth(); // 0-indexed
-  const lastDay = new Date(year, month + 1, 0).getDate();
+  const laPazOffsetMillis = -4 * 60 * 60 * 1000;
+  const laPazDate = new Date(now.getTime() + laPazOffsetMillis);
+  const year = laPazDate.getUTCFullYear();
+  const month = laPazDate.getUTCMonth(); // 0-indexed
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
   const pad = (n: number) => String(n).padStart(2, '0');
   return {
     desde: `${year}-${pad(month + 1)}-01`,

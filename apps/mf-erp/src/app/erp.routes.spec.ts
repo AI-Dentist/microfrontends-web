@@ -66,7 +66,7 @@ describe('ERP canonical navigation contract', () => {
     expect(ERP_ROUTES[0].providers?.length).toBeGreaterThan(0);
     const children = ERP_ROUTES[0].children!;
     expect(children.find(r => r.path === '')?.redirectTo).toBe('dashboard');
-    for (const path of ['dashboard', 'billing', 'agent-console']) {
+    for (const path of ['dashboard', 'billing', 'agent-console', 'kpis', 'kpis/:kpi']) {
       expect(typeof children.find(r => r.path === path)?.loadComponent).toBe('function');
     }
     const catalog = children.find(r => r.path === 'catalogs')!;
@@ -87,6 +87,8 @@ describe('ERP canonical navigation contract', () => {
       ['', 'dashboard', 'Flujo de caja'],
       ['/cash-flow', 'dashboard', 'Flujo de caja'],
       ['/reports', 'agent-console', 'Agente ERP'],
+      ['/kpis', 'kpis', 'KPIs ejecutivos'],
+      ['/kpis/ingresos', 'kpis/ingresos', 'Detalle de KPI'],
       ['/billing', 'billing', 'Órdenes de cobro'],
       ['/catalogs', 'catalogs', 'Catálogos'],
       ['/catalogs/patients', 'catalogs/patients', 'Pacientes'],

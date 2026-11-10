@@ -10,6 +10,8 @@ import { OfflineSyncService } from './offline/offline-sync.service';
 import { ReceiptPdfService } from '../shared/components/receipt-preview-modal/receipt-pdf.service';
 import { FinancialIdentityService } from './auth/financial-identity.service';
 import { ReportExportService } from '../features/generative-reports/report-export.service';
+import { KpiAgendaService } from '../features/kpis/kpi-agenda.service';
+import { KpiDataLoaderService } from '../features/kpis/kpi-data-loader.service';
 
 /**
  * Everything the ERP needs, provided on the federated route so the Application Shell
@@ -26,6 +28,10 @@ export function provideErp(config: ErpGraphqlConfig = {}): (Provider | Environme
     ReceiptPdfService,
     FinancialIdentityService,
     ReportExportService,
+    // KPI reads use the route's runtime, host token and Apollo; the loader state is shared
+    // by the KPI grid and drill-down within one ERP mount.
+    KpiAgendaService,
+    KpiDataLoaderService,
     providePrimeNG({
       ripple: true,
       theme: {

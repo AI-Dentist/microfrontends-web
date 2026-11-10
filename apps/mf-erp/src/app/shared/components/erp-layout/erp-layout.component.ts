@@ -14,6 +14,7 @@ export interface ErpNavItem {
 // Relative links so they work both standalone (/erp/...) and inside the shell.
 export const ERP_NAV_ITEMS: ErpNavItem[] = [
   { path: 'dashboard', label: 'Dashboard' },
+  { path: 'kpis', label: 'KPIs' },
   { path: 'billing', label: 'Cobros' },
   { path: 'agent-console', label: 'Agente ERP' },
   { path: 'catalogs', label: 'Catálogos' },

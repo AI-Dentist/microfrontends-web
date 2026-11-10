@@ -50,12 +50,13 @@ describe('ERP shared standalone/federated frame', () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  it('renders one minimal sidebar with the four canonical relative destinations', () => {
+  it('renders one minimal sidebar with the canonical relative destinations including KPIs', () => {
     const f = render();
     const sidebars = f.nativeElement.querySelectorAll('aside');
     expect(sidebars.length).toBe(1);
     const links = [...sidebars[0].querySelectorAll('a')] as HTMLAnchorElement[];
-    expect(links.map(a => a.getAttribute('href'))).toEqual(['/dashboard', '/billing', '/agent-console', '/catalogs']);
+    expect(links.map(a => a.getAttribute('href'))).toEqual(['/dashboard', '/kpis', '/billing', '/agent-console', '/catalogs']);
+    expect(links.find(a => a.getAttribute('href') === '/kpis')?.textContent?.trim()).toBe('KPIs');
   });
 
   it('updates network and queue badges and preserves manual safe synchronization', () => {

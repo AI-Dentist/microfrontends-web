@@ -24,6 +24,16 @@ export function createErpRoutes(config: ErpGraphqlConfig = {}): Routes {
         loadComponent: () => import('./features/cash-flow/cash-flow-dashboard.component').then((m) => m.CashFlowDashboard),
       },
       {
+        path: 'kpis',
+        title: 'KPIs ejecutivos',
+        loadComponent: () => import('./features/kpis/kpi-grid.component').then((m) => m.KpiGridComponent),
+      },
+      {
+        path: 'kpis/:kpi',
+        title: 'Detalle de KPI',
+        loadComponent: () => import('./features/kpis/kpi-drill-down.component').then((m) => m.KpiDrillDownComponent),
+      },
+      {
         path: 'billing',
         title: 'Órdenes de cobro',
         loadComponent: () => import('./features/billing/billing-inbox.component').then((m) => m.BillingInbox),

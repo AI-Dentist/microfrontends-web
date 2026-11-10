@@ -16,10 +16,26 @@ describe('KPI period utilities', () => {
       hasta: '2026-11-30',
     });
 
-    const leapFeb = new Date(2024, 1, 5); // February 5, 2024 (leap year)
+    const leapFeb = new Date(Date.UTC(2024, 1, 5, 12, 0, 0)); // February 5, 2024 (leap year)
     expect(defaultKpiPeriod(leapFeb)).toEqual({
       desde: '2024-02-01',
       hasta: '2024-02-29',
+    });
+  });
+
+  it('computes default period using the America/La_Paz calendar (fixed UTC-4) at UTC midnight/month boundary', () => {
+    // 2026-11-01T02:30:00Z is 2026-10-31 22:30:00 in America/La_Paz (-04:00)
+    const utcBoundary = new Date('2026-11-01T02:30:00Z');
+    expect(defaultKpiPeriod(utcBoundary)).toEqual({
+      desde: '2026-10-01',
+      hasta: '2026-10-31',
+    });
+
+    // 2026-11-01T04:00:00Z is exactly 2026-11-01 00:00:00 in America/La_Paz (-04:00)
+    const monthStart = new Date('2026-11-01T04:00:00Z');
+    expect(defaultKpiPeriod(monthStart)).toEqual({
+      desde: '2026-11-01',
+      hasta: '2026-11-30',
     });
   });
 
