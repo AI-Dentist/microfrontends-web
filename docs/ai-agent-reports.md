@@ -6,5 +6,6 @@
 - Microphone dictation uses `SpeechRecognition` / `webkitSpeechRecognition` with `es-BO`, transcribes into the instruction and never sends it automatically. Unsupported browsers and permission failures preserve manual entry. Browser speech may use an external provider.
 - Reports display `titulo`, `resumenAnalitico`, `columnas` and `filas`, falling back to legacy `filasJson`. New `sqlGenerado` is requested alongside legacy `consultaSqlEjecutada`. Apache ECharts supports interactive Barras/Líneas/Torta selection. Existing table-only suggestions remain table-only until a chart is explicitly selected.
 - Excel (.xlsx) and PDF (.pdf) retain the authenticated same-origin Gateway export alias `/api/v1/reports/export/{reporteId}/{format}`. Every download reads the active Bearer token. Redirects, unrelated report IDs and third-party export URLs are rejected; exports require ADMIN as before.
+- **Constructor manual**: Permite a usuarios `ADMIN` cambiar a modo de generación manual basada en catálogo de entidades (MS1/MS3), selección de columnas, filtros por estado/fecha, previsualización tabular y exportación autenticada. Ver [Constructor manual de reportes](manual-report-builder.md).
 
 No queue, offline workspace, service-worker or idempotency logic is modified.

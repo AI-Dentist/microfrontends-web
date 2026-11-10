@@ -12,6 +12,7 @@ import { AuthContextService } from '../../core/auth/auth-context.service';
 import { NetworkStatusService } from '../../core/offline/network-status.service';
 import { describeError } from '../../core/offline/mutation-errors';
 import { DynamicReportViewer } from '../generative-reports/dynamic-report-viewer.component';
+import { ManualReportBuilderComponent } from '../generative-reports/manual-report-builder.component';
 import { SpeechRecognitionService } from '../generative-reports/speech-recognition.service';
 
 export const HISTORY_LIMIT = 20;
@@ -23,17 +24,40 @@ type Command = Readonly<{
 /** One backend entry point; no SQL/CRUD interpretation or autonomous loop in the browser. */
 @Component({
   selector: 'erp-agent-console',
-  imports: [FormsModule, ButtonModule, TextareaModule, DynamicReportViewer, LucideMic, LucideMicOff, LucideSend],
+  imports: [FormsModule, ButtonModule, TextareaModule, DynamicReportViewer, ManualReportBuilderComponent, LucideMic, LucideMicOff, LucideSend],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="flex flex-col gap-4 p-4">
-      <header>
-        <h1 class="text-xl font-semibold text-slate-800">Co-Piloto & Monitor de Negocio ERP</h1>
-        <p class="text-sm text-slate-600">Las instrucciones se envían a MS1 con tu identidad y permisos.
-          Las instrucciones pueden ejecutar acciones: revisa el texto antes de enviarlo.
-          El dictado depende del navegador y puede requerir conexión y su proveedor de voz.</p>
-        <p class="text-sm text-slate-600">El monitoreo no ejecuta CRUD, pero puede enviar alertas n8n según la configuración de MS1.</p>
+      <header class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 class="text-xl font-semibold text-slate-800">Co-Piloto & Monitor de Negocio ERP</h1>
+          <p class="text-sm text-slate-600">Las instrucciones se envían a MS1 con tu identidad y permisos.
+            Las instrucciones pueden ejecutar acciones: revisa el texto antes de enviarlo.
+            El dictado depende del navegador y puede requerir conexión y su proveedor de voz.</p>
+          <p class="text-sm text-slate-600">El monitoreo no ejecuta CRUD, pero puede enviar alertas n8n según la configuración de MS1.</p>
+        </div>
+        @if (isAdmin()) {
+          @if (mode() === 'agent') {
+            <p-button
+              type="button"
+              label="Constructor manual"
+              severity="secondary"
+              [disabled]="loading() || pending() !== null"
+              (onClick)="openManualMode()"
+            />
+          } @else {
+            <p-button
+              type="button"
+              label="Volver al agente"
+              severity="secondary"
+              (onClick)="returnToAgentMode()"
+            />
+          }
+        }
       </header>
+      @if (mode() === 'manual' && isAdmin()) {
+        <erp-manual-report-builder />
+      } @else {
       @if (!canExecute()) { <p role="alert">Tu rol permite consultar el historial, no ejecutar instrucciones.</p> }
       <form class="flex flex-col gap-3" (submit)="$event.preventDefault(); submit()">
         <label class="font-medium">Instrucción para el agente
@@ -129,6 +153,7 @@ type Command = Readonly<{
           }
         </main>
       </div>
+      }
     </section>
   `,
 })
@@ -165,6 +190,7 @@ export class AgentConsoleComponent {
   protected readonly history = signal<AgenteInteraccionResponse[]>([]);
   protected readonly mcp = signal<McpServerStatus | null>(null);
   protected readonly pending = signal<Command | null>(null);
+  protected readonly mode = signal<'agent' | 'manual'>('agent');
   protected readonly isAdmin = computed(() => this.auth.roles().includes('ADMIN'));
   protected readonly canExecute = computed(() => !!this.auth.principalKey() &&
     this.auth.roles().some((role) => ['ADMIN', 'CAJERO', 'RECEPCIONISTA'].includes(role)));
@@ -180,6 +206,7 @@ export class AgentConsoleComponent {
       this.identity();
       untracked(() => {
         this.session++;
+        this.mode.set('agent');
         this.loading.set(false); this.pending.set(null); this.question.set('');
         this.response.set(null); this.history.set([]); this.mcp.set(null);
         this.errorMessage.set(null); this.historyError.set(null); this.mcpError.set(null);
@@ -192,6 +219,15 @@ export class AgentConsoleComponent {
       const text = this.speech.transcript();
       if (text) this.question.set(text); // Keep final text even if onend already set listening=false.
     });
+  }
+
+  protected openManualMode(): void {
+    if (this.loading() || this.pending() !== null || !this.isAdmin()) return;
+    this.mode.set('manual');
+  }
+
+  protected returnToAgentMode(): void {
+    this.mode.set('agent');
   }
 
   protected toggleMic(): void { if (this.speech.listening()) this.speech.stop(); else this.speech.start(); }

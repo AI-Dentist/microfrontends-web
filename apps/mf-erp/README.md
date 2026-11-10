@@ -19,6 +19,16 @@ use the MS1 query `obtenerKpisFinancieros`; agenda and stock KPIs use MS3
 without it, hosted mounts use the same-origin Gateway and standalone uses
 `environment.agendaApiUrl`. See [Executive KPIs](../../docs/executive-kpis.md).
 
+## Manual Report Builder
+
+Within `/erp/agent-console`, ADMIN users can toggle to **Constructor manual** mode.
+This provides interactive entity exploration (`citas`, `pacientes`, `cuotas`, `pagos`,
+`egresos`, `servicios`, `insumos`), column selection in server metadata order,
+conditional status/date filtering (with explicit `America/La_Paz` boundaries),
+tabular preview with 500-row cap warning (`filasTruncadas`), and authenticated
+PDF/XLSX downloads via `ReportExportService`. Returning to agent mode preserves
+active commands, text and interaction history. See [Manual Report Builder](../../docs/manual-report-builder.md).
+
 ## Standalone and federation entrypoints
 
 Run the existing standalone application with `pnpm start`; `pnpm build` publishes
