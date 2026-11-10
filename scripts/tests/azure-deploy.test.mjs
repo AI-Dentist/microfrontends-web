@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { validateConfig } from '../../apps/shell/src/runtime-config.mjs';
 import { createRemoteSession } from '../../apps/shell/src/remote-runtime.mjs';
 const read = path => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 const origin = 'https://20-83-242-208.sslip.io';
 function fixture(t, styles = ['styles-REAL123.css']) {
-  const root = mkdtempSync(resolve('.git/deploy-fixture-'));
+  const root = mkdtempSync(resolve(tmpdir(), 'deploy-fixture-'));
   const erp = resolve(root, 'erp'), shell = resolve(root, 'shell');
   mkdirSync(erp); mkdirSync(shell);
   writeFileSync(resolve(erp, 'remoteEntry.json'), '{}');
@@ -30,7 +31,9 @@ test('container manifest generation discovers the actual hashed stylesheet and k
   assert.equal(config.remotes[1].entry, 'https://100-60-248-245.sslip.io/remotes/operations/remote.js');
   assert.equal(config.remotes[1].styles, 'https://100-60-248-245.sslip.io/remotes/operations/remote.css');
   assert.deepEqual(raw.remotes.map(r => r.apiBaseUrl), ['/api/erp/graphql', '/api/agendamiento', '/api/expediente']);
-  assert.equal(raw.oidc, undefined, 'no invented issuer or auth bypass before GCP');
+  assert.equal(config.remotes[2].entry, 'https://35-237-1-132.sslip.io/remotes/clinical/remote.js');
+  assert.equal(config.remotes[2].styles, 'https://35-237-1-132.sslip.io/remotes/clinical/remote.css');
+  assert.deepEqual(raw.oidc, { issuer: 'https://auth.35-237-1-132.sslip.io/realms/dental-erp', clientId: 'mf-erp', redirectUri: `${origin}/auth/callback`, postLogoutRedirectUri: `${origin}/`, scopes: ['openid', 'profile'], apiAudiences: ['ms-erp', 'ms2-clinico-ia', 'ms3-agenda-stock'] });
   const insecure = structuredClone(raw); insecure.remotes[0].entry = insecure.remotes[0].entry.replace('https:', 'http:');
   assert.throws(() => validateConfig(insecure, origin), /requires HTTPS/);
 });
@@ -59,7 +62,7 @@ test('required Clinical remote fails in its own session; shell and healthy remot
     events[remote.id] = [];
     const session = createRemoteSession({ container: {},
       loadModule: async () => {
-        if (remote.id === 'clinical') { assert.equal(remote.entry, `${origin}/remotes/clinical/remote.js`); throw Error('HTTP 503: GCP pending'); }
+        if (remote.id === 'clinical') { assert.equal(remote.entry, 'https://35-237-1-132.sslip.io/remotes/clinical/remote.js'); throw Error('HTTP 503: GCP pending'); }
         return { contractVersion: 1, mount: async () => ({ update: c => updates.push(c.path), unmount() {} }) };
       }, loadStyle: async () => () => {}, onState: state => events[remote.id].push(state) });
     sessions.push(session); await session.start({ contractVersion: 1, basePath: remote.basePath, path: remote.basePath });

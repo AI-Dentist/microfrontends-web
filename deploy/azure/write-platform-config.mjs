@@ -5,8 +5,9 @@ import { validateConfig } from '../../apps/shell/src/runtime-config.mjs';
 
 const azure = 'https://20-83-242-208.sslip.io';
 const aws = 'https://100-60-248-245.sslip.io';
+const gcp = 'https://35-237-1-132.sslip.io';
 
-/** Build-time, operator-owned config. No inferred issuer, credentials or dev auth. */
+/** Build-time, operator-owned config. No credentials or dev auth. */
 export async function writeProductionConfig(erpDirectory, shellDirectory) {
   const styles = (await readdir(erpDirectory, { withFileTypes: true }))
     .filter(entry => entry.isFile() && /^styles-[A-Za-z0-9_-]+\.css$/.test(entry.name))
@@ -15,6 +16,9 @@ export async function writeProductionConfig(erpDirectory, shellDirectory) {
   await access(resolve(erpDirectory, 'remoteEntry.json'));
   const config = {
     schemaVersion: 1,
+    oidc: { issuer: 'https://auth.35-237-1-132.sslip.io/realms/dental-erp', clientId: 'mf-erp',
+      redirectUri: azure + '/auth/callback', postLogoutRedirectUri: azure + '/',
+      scopes: ['openid', 'profile'], apiAudiences: ['ms-erp', 'ms2-clinico-ia', 'ms3-agenda-stock'] },
     remotes: [
       { id: 'erp', label: 'ERP', basePath: '/erp', kind: 'native-federation',
         entry: azure + '/remotes/erp/remoteEntry.json',
@@ -23,7 +27,7 @@ export async function writeProductionConfig(erpDirectory, shellDirectory) {
         entry: aws + '/remotes/operations/remote.js', styles: aws + '/remotes/operations/remote.css',
         apiBaseUrl: '/api/agendamiento', serviceBaseUrls: { erp: '/api/erp/graphql' } },
       { id: 'clinical', label: 'Clinical', basePath: '/clinical', kind: 'module',
-        entry: azure + '/remotes/clinical/remote.js', styles: azure + '/remotes/clinical/remote.css',
+        entry: gcp + '/remotes/clinical/remote.js', styles: gcp + '/remotes/clinical/remote.css',
         apiBaseUrl: '/api/expediente',
         serviceBaseUrls: { agenda: '/api/agendamiento', erp: '/api/erp/graphql' } },
     ],

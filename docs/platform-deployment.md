@@ -7,7 +7,13 @@ a compatible remote release.
 
 ## Azure/AWS production artifacts
 
-The coordinated HTTPS deployment uses [Azure Shell/ERP](azure-frontend-deployment.md) and [AWS Operations](aws-frontend-deployment.md) source-built static images on external `dental-net`, behind operator-owned TLS edges. Safe `deploy/<cloud>/env.template` files select Compose without containing secrets; the coordinator creates server-only root `.env`. Production config uses the actual ERP hashed CSS discovered during the shell container build. Clinical is a required but explicitly unavailable GCP-later entry, not a reason to weaken the HTTPS/schema contract. CI on main/master or manual dispatch uses dedicated cloud SSH secrets and public-repo fast-forward pulls.
+The coordinated HTTPS deployment uses [Azure Shell/ERP](azure-frontend-deployment.md) and [AWS Operations](aws-frontend-deployment.md) source-built static images on external `dental-net`, behind operator-owned TLS edges. Safe `deploy/<cloud>/env.template` files select Compose without containing secrets; the coordinator creates server-only root `.env`. Production config uses the actual ERP hashed CSS discovered during the shell container build. Azure and AWS CI on main/master or manual dispatch use dedicated cloud SSH secrets and public-repo fast-forward pulls.
+
+## GCP clinical remote
+
+The `docker.io/dental/mf3-react-henry:prod` image listens on port 8080 and serves `/remotes/clinical/remote.js`, `/remotes/clinical/remote.css` and their assets; `/health` returns 200. It sends `Access-Control-Allow-Origin: https://20-83-242-208.sslip.io`; the GCP edge must not add a second Access-Control-Allow-Origin. Nginx default ETag and Last-Modified apply, with no Cache-Control header. The GCP workflow deploys on pushes to main using `GCP_SSH_KEY`, imports the image into K3s and restarts the deployment.
+
+The shell selects `https://35-237-1-132.sslip.io/remotes/clinical/` and OIDC issuer `https://auth.35-237-1-132.sslip.io/realms/dental-erp`, client `mf-erp`, scopes `openid profile`, and audiences `ms-erp`, `ms2-clinico-ia`, `ms3-agenda-stock`. Register the exact callback `https://20-83-242-208.sslip.io/auth/callback` and post-logout URI `https://20-83-242-208.sslip.io/` for that client in the realm.
 
 ## Build and publish
 
@@ -36,7 +42,7 @@ No install, build, browser provisioning, or backend setup occurs inside the smok
 
 ## Trusted runtime configuration
 
-Schema v1 accepts only `{schemaVersion: 1, remotes: [...]}` with exactly one ERP,
+Schema v1 accepts `{schemaVersion: 1, remotes: [...], oidc?: {...}}` with exactly one ERP,
 Operations and Clinical entry. The [contract](../packages/mfe-contract/README.md)
 is authoritative for field validation; unknown fields, credentials, fragments,
 unsafe schemes and incompatible ID/kind/basePath combinations reject visibly.
