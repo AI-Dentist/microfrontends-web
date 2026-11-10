@@ -1,0 +1,21 @@
+name: Deploy GCP frontend
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        env:
+          GCP_SSH_KEY: ${{ secrets.GCP_SSH_KEY }}
+        run: |
+          set -eu
+          umask 077
+          dir=$(mktemp -d)
+          trap 'rm -rf "$dir"' EXIT
+          printf '%s\n' "$GCP_SSH_KEY" > "$dir/key"
+          chmod 600 "$dir/key"
+          ssh -i "$dir/key" -o UserKnownHostsFile="$dir/known_hosts" -o StrictHostKeyChecking=accept-new -o BatchMode=yes gcpuser@35.237.1.132 'cd ~/deploy/microfrontends-web && git pull --ff-only && docker build -f deploy/gcp/Dockerfile -t docker.io/dental/mf3-react-henry:prod . && docker save docker.io/dental/mf3-react-henry:prod | sudo k3s ctr images import - && sudo k3s kubectl -n dental-erp-prod rollout restart deployment/mf3-react-henry'
