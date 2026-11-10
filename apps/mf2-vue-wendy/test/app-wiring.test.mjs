@@ -315,3 +315,342 @@ test('S10 empty patient provenance arrays preserve the cluster without inventing
   const row = s.container.querySelector('tbody tr'); assert.match(row.textContent, /Frecuente y Puntual/);
   for (const selector of ['[data-estimated]', '[data-prediction-imputed]', '[data-cluster-imputed]', '[data-cluster-estimated]']) assert.equal(row.querySelector(selector), null);
 });
+
+const spendingClusterPayload = patientOverrides => ({
+  success: true,
+  data: {
+    pacientes: {
+      distribucion: { 'Frecuente y Puntual': 1 },
+      asignaciones: [{
+        paciente_id: 'pa-uuid',
+        cluster: 'Frecuente y Puntual',
+        ...patientOverrides,
+      }],
+    },
+    insumos: { distribucion: { 'Alta Rotación Crítica': 1 }, asignaciones: [] },
+    datosEntrenamientoSinteticos: true,
+  },
+});
+
+test('S2/S4 patient cluster spending shows verified real amount and estimated alongside real for observed positive', { skip }, async t => {
+  const clusters = spendingClusterPayload({
+    gasto_total_real: 240,
+    gasto_total_estimado: 180,
+    gasto_moneda: 'BOB',
+    gasto_origen: 'real_ms1_pagado',
+    gasto_real_observado: true,
+    featuresEstimadas: ['gasto_total_estimado'],
+    featuresImputadas: [],
+  });
+  const cita = { id: 'c-pos', paciente_id: 'pa-uuid', odontologo_id: 'od-uuid', consultorio_id: 'co-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' };
+  const s = host(t, { clusters, citas: [cita] });
+  t.after(() => s.instance.unmount());
+  await settle();
+
+  const row = s.container.querySelector('tbody tr');
+  assert.match(s.container.textContent, /Datos sintéticos/);
+  assert.equal(row.querySelector('[data-spending-unavailable]'), null);
+
+  const realEl = row.querySelector('[data-spending-real]');
+  assert.ok(realEl, 'must render real spending element');
+  assert.equal(realEl.textContent.trim(), 'Gasto real verificado: 240 Bs');
+
+  const estEl = row.querySelector('[data-spending-estimated]');
+  assert.ok(estEl, 'must render estimated spending element alongside real');
+  assert.equal(estEl.textContent.trim(), 'Gasto estimado (referencia): 180 Bs');
+
+  const clusterEst = row.querySelector('[data-cluster-estimated]');
+  assert.ok(clusterEst, 'featuresEstimadas badge preserved');
+  assert.match(clusterEst.textContent, /gasto_total_estimado/);
+
+  assert.equal(s.calls.filter(c => c.url === `${MS3}/ml/clusters`).length, 1, 'request count unchanged');
+});
+
+test('S2/S4 patient cluster spending shows verified real zero amount and estimated reference for observed zero', { skip }, async t => {
+  const clusters = spendingClusterPayload({
+    gasto_total_real: 0,
+    gasto_total_estimado: 120,
+    gasto_moneda: 'BOB',
+    gasto_origen: 'real_ms1_pagado',
+    gasto_real_observado: true,
+    featuresEstimadas: ['gasto_total_estimado'],
+  });
+  const cita = { id: 'c-zero', paciente_id: 'pa-uuid', odontologo_id: 'od-uuid', consultorio_id: 'co-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' };
+  const s = host(t, { clusters, citas: [cita] });
+  t.after(() => s.instance.unmount());
+  await settle();
+
+  const row = s.container.querySelector('tbody tr');
+  const realEl = row.querySelector('[data-spending-real]');
+  assert.ok(realEl, 'must render real spending element for zero');
+  assert.equal(realEl.textContent.trim(), 'Gasto real verificado: 0 Bs');
+
+  const estEl = row.querySelector('[data-spending-estimated]');
+  assert.ok(estEl, 'must render estimated spending element');
+  assert.equal(estEl.textContent.trim(), 'Gasto estimado (referencia): 120 Bs');
+  assert.equal(row.querySelector('[data-spending-unavailable]'), null);
+});
+
+test('S2/S4 patient cluster spending falls back to estimated reference without nominal real when unobserved', { skip }, async t => {
+  const clusters = spendingClusterPayload({
+    gasto_total_real: null,
+    gasto_total_estimado: 180,
+    gasto_moneda: 'BOB',
+    gasto_origen: 'estimado_fallback',
+    gasto_real_observado: false,
+    featuresEstimadas: ['gasto_total_estimado'],
+  });
+  const cita = { id: 'c-fb', paciente_id: 'pa-uuid', odontologo_id: 'od-uuid', consultorio_id: 'co-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' };
+  const s = host(t, { clusters, citas: [cita] });
+  t.after(() => s.instance.unmount());
+  await settle();
+
+  const row = s.container.querySelector('tbody tr');
+  assert.equal(row.querySelector('[data-spending-real]'), null, 'never nominal as real');
+
+  const estEl = row.querySelector('[data-spending-estimated]');
+  assert.ok(estEl, 'must render estimated reference amount');
+  assert.equal(estEl.textContent.trim(), 'Gasto estimado (referencia): 180 Bs');
+  assert.equal(row.querySelector('[data-spending-unavailable]'), null);
+});
+
+test('S2/S4 legacy cluster payload without spending fields safely renders explicit unavailable without invented zero', { skip }, async t => {
+  const clusters = {
+    success: true,
+    data: {
+      pacientes: {
+        distribucion: { 'Frecuente y Puntual': 1 },
+        asignaciones: [{
+          paciente_id: 'pa-uuid',
+          cluster: 'Frecuente y Puntual',
+        }],
+      },
+      insumos: { distribucion: {}, asignaciones: [] },
+      datosSinteticos: true,
+    },
+  };
+  const cita = { id: 'c-leg', paciente_id: 'pa-uuid', odontologo_id: 'od-uuid', consultorio_id: 'co-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' };
+  const s = host(t, { clusters, citas: [cita] });
+  t.after(() => s.instance.unmount());
+  await settle();
+
+  const row = s.container.querySelector('tbody tr');
+  assert.equal(row.querySelector('[data-spending-real]'), null);
+  assert.equal(row.querySelector('[data-spending-estimated]'), null);
+
+  const unavailEl = row.querySelector('[data-spending-unavailable]');
+  assert.ok(unavailEl, 'must render explicit unavailable element');
+  assert.equal(unavailEl.textContent.trim(), 'Gasto no disponible');
+  assert.doesNotMatch(row.textContent, /0\s*Bs/, 'never invented zero');
+});
+
+test('S2/S4 corrupted/invalid spending payloads safely fall back without string coercion or currency forgery', { skip }, async t => {
+  // Case A: negative real amount falls back to estimated
+  {
+    const s = host(t, {
+      clusters: spendingClusterPayload({
+        gasto_total_real: -50,
+        gasto_total_estimado: 180,
+        gasto_moneda: 'BOB',
+        gasto_origen: 'real_ms1_pagado',
+        gasto_real_observado: true,
+      }),
+      citas: [{ id: 'c-neg', paciente_id: 'pa-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' }],
+    });
+    await settle();
+    const row = s.container.querySelector('tbody tr');
+    assert.equal(row.querySelector('[data-spending-real]'), null);
+    assert.equal(row.querySelector('[data-spending-estimated]').textContent.trim(), 'Gasto estimado (referencia): 180 Bs');
+    s.instance.unmount();
+  }
+
+  // Case B: non-finite real amount (Infinity) falls back to estimated
+  {
+    const s = host(t, {
+      clusters: spendingClusterPayload({
+        gasto_total_real: Infinity,
+        gasto_total_estimado: 180,
+        gasto_moneda: 'BOB',
+        gasto_origen: 'real_ms1_pagado',
+        gasto_real_observado: true,
+      }),
+      citas: [{ id: 'c-inf', paciente_id: 'pa-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' }],
+    });
+    await settle();
+    const row = s.container.querySelector('tbody tr');
+    assert.equal(row.querySelector('[data-spending-real]'), null);
+    assert.equal(row.querySelector('[data-spending-estimated]').textContent.trim(), 'Gasto estimado (referencia): 180 Bs');
+    s.instance.unmount();
+  }
+
+  // Case C: string real amount is not coerced; falls back to estimated
+  {
+    const s = host(t, {
+      clusters: spendingClusterPayload({
+        gasto_total_real: '240',
+        gasto_total_estimado: 180,
+        gasto_moneda: 'BOB',
+        gasto_origen: 'real_ms1_pagado',
+        gasto_real_observado: true,
+      }),
+      citas: [{ id: 'c-str', paciente_id: 'pa-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' }],
+    });
+    await settle();
+    const row = s.container.querySelector('tbody tr');
+    assert.equal(row.querySelector('[data-spending-real]'), null);
+    assert.equal(row.querySelector('[data-spending-estimated]').textContent.trim(), 'Gasto estimado (referencia): 180 Bs');
+    s.instance.unmount();
+  }
+
+  // Case D: string observed flag ("true") is not coerced; falls back to estimated
+  {
+    const s = host(t, {
+      clusters: spendingClusterPayload({
+        gasto_total_real: 240,
+        gasto_total_estimado: 180,
+        gasto_moneda: 'BOB',
+        gasto_origen: 'real_ms1_pagado',
+        gasto_real_observado: 'true',
+      }),
+      citas: [{ id: 'c-strobs', paciente_id: 'pa-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' }],
+    });
+    await settle();
+    const row = s.container.querySelector('tbody tr');
+    assert.equal(row.querySelector('[data-spending-real]'), null);
+    assert.equal(row.querySelector('[data-spending-estimated]').textContent.trim(), 'Gasto estimado (referencia): 180 Bs');
+    s.instance.unmount();
+  }
+
+  // Case E: mismatched currency ('USD') -> no currency forgery, rejected -> unavailable
+  {
+    const s = host(t, {
+      clusters: spendingClusterPayload({
+        gasto_total_real: 240,
+        gasto_total_estimado: 180,
+        gasto_moneda: 'USD',
+        gasto_origen: 'real_ms1_pagado',
+        gasto_real_observado: true,
+      }),
+      citas: [{ id: 'c-curr', paciente_id: 'pa-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' }],
+    });
+    await settle();
+    const row = s.container.querySelector('tbody tr');
+    assert.equal(row.querySelector('[data-spending-real]'), null);
+    assert.equal(row.querySelector('[data-spending-estimated]'), null);
+    assert.equal(row.querySelector('[data-spending-unavailable]').textContent.trim(), 'Gasto no disponible');
+    assert.doesNotMatch(row.textContent, /Bs/, 'no currency forgery');
+    s.instance.unmount();
+  }
+
+  // Case F: mismatched origin ('estimado_fallback' with real_observado: true) -> falls back to estimated
+  {
+    const s = host(t, {
+      clusters: spendingClusterPayload({
+        gasto_total_real: 240,
+        gasto_total_estimado: 180,
+        gasto_moneda: 'BOB',
+        gasto_origen: 'estimado_fallback',
+        gasto_real_observado: true,
+      }),
+      citas: [{ id: 'c-orig', paciente_id: 'pa-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' }],
+    });
+    await settle();
+    const row = s.container.querySelector('tbody tr');
+    assert.equal(row.querySelector('[data-spending-real]'), null);
+    assert.equal(row.querySelector('[data-spending-estimated]').textContent.trim(), 'Gasto estimado (referencia): 180 Bs');
+    s.instance.unmount();
+  }
+
+  // Case G: invalid estimate (negative -100, real unobserved) -> explicit unavailable, no invented zero
+  {
+    const s = host(t, {
+      clusters: spendingClusterPayload({
+        gasto_total_real: null,
+        gasto_total_estimado: -100,
+        gasto_moneda: 'BOB',
+        gasto_origen: 'estimado_fallback',
+        gasto_real_observado: false,
+      }),
+      citas: [{ id: 'c-innest', paciente_id: 'pa-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' }],
+    });
+    await settle();
+    const row = s.container.querySelector('tbody tr');
+    assert.equal(row.querySelector('[data-spending-real]'), null);
+    assert.equal(row.querySelector('[data-spending-estimated]'), null);
+    assert.equal(row.querySelector('[data-spending-unavailable]').textContent.trim(), 'Gasto no disponible');
+    assert.doesNotMatch(row.textContent, /0\s*Bs/, 'never invented zero');
+    s.instance.unmount();
+  }
+});
+
+test('S2/S4 incomplete metadata with observed true falls back safely to exact estimated output (never nominal real)', { skip }, async t => {
+  // Subcase 1: Missing gasto_origen with observed=true and valid real/estimate
+  {
+    const s = host(t, {
+      clusters: spendingClusterPayload({
+        gasto_total_real: 240,
+        gasto_total_estimado: 180,
+        gasto_moneda: 'BOB',
+        gasto_real_observado: true,
+      }),
+      citas: [{ id: 'c-incomp-orig', paciente_id: 'pa-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' }],
+    });
+    await settle();
+    const row = s.container.querySelector('tbody tr');
+    assert.equal(row.querySelector('[data-spending-real]'), null, 'no real element when origin missing');
+    assert.equal(row.querySelector('[data-spending-estimated]').textContent.trim(), 'Gasto estimado (referencia): 180 Bs');
+    assert.equal(row.querySelector('[data-spending-unavailable]'), null);
+    s.instance.unmount();
+  }
+
+  // Subcase 2: Missing gasto_moneda with observed=true and valid real/estimate
+  {
+    const s = host(t, {
+      clusters: spendingClusterPayload({
+        gasto_total_real: 240,
+        gasto_total_estimado: 180,
+        gasto_origen: 'real_ms1_pagado',
+        gasto_real_observado: true,
+      }),
+      citas: [{ id: 'c-incomp-curr', paciente_id: 'pa-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' }],
+    });
+    await settle();
+    const row = s.container.querySelector('tbody tr');
+    assert.equal(row.querySelector('[data-spending-real]'), null, 'no real element when currency missing');
+    assert.equal(row.querySelector('[data-spending-estimated]').textContent.trim(), 'Gasto estimado (referencia): 180 Bs');
+    assert.equal(row.querySelector('[data-spending-unavailable]'), null);
+    s.instance.unmount();
+  }
+});
+
+test('S2/S4 legacy payload with only numeric gasto_total_estimado renders exact estimated output, never real', { skip }, async t => {
+  const legacyClusters = {
+    success: true,
+    data: {
+      pacientes: {
+        distribucion: { 'Frecuente y Puntual': 1 },
+        asignaciones: [{
+          paciente_id: 'pa-uuid',
+          cluster: 'Frecuente y Puntual',
+          gasto_total_estimado: 180,
+        }],
+      },
+      insumos: { distribucion: {}, asignaciones: [] },
+      datosSinteticos: true,
+    },
+  };
+  const s = host(t, {
+    clusters: legacyClusters,
+    citas: [{ id: 'c-legacy-est', paciente_id: 'pa-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00' }],
+  });
+  t.after(() => s.instance.unmount());
+  await settle();
+
+  const row = s.container.querySelector('tbody tr');
+  assert.equal(row.querySelector('[data-spending-real]'), null, 'never nominal as real');
+  const estEl = row.querySelector('[data-spending-estimated]');
+  assert.ok(estEl, 'must render estimated reference amount');
+  assert.equal(estEl.textContent.trim(), 'Gasto estimado (referencia): 180 Bs');
+  assert.equal(row.querySelector('[data-spending-unavailable]'), null);
+  assert.equal(s.calls.filter(c => c.url === `${MS3}/ml/clusters`).length, 1);
+});

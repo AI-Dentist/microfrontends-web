@@ -175,3 +175,39 @@ real-browser standalone/Shadow DOM mount-update-unmount verification.
 ## ML feature provenance (S10)
 
 Appointment predictions with non-empty `featuresImputadas` show **Estimated** next to the no-show risk and list the returned feature names. Empty or absent arrays do not invent an estimate marker. Patient and stock cluster assignments separately list `featuresImputadas` and `featuresEstimadas`; these are provenance labels, not measured clinical or financial facts. The published MS3 `stock.asignaciones` contract is supported alongside the legacy `insumos.asignaciones` alias. Existing synthetic-data notes remain visible for legacy `datosSinteticos` and current `datosEntrenamientoSinteticos` payloads (including per-appointment flags). No additional requests, endpoint changes, offline or idempotency changes are involved.
+
+## Patient cluster spending display (S2 & S4)
+
+Patient cluster assignments in `clusters.pacientes.asignaciones[]` include financial provenance fields from MS3 (`PatientAssignment` / `_cluster_patient_single`):
+
+| Field | Type | Role |
+|-------|------|------|
+| `gasto_total_real` | `number \| null` | Verified financial total in BOB when observed; null on fallback |
+| `gasto_total_estimado` | `number \| null` | Estimated spending baseline (`Optional[float]` in MS3 source; citas × 60 Bs) |
+| `gasto_moneda` | `string` | Bolivian Bolivianos (`"BOB"` in valid payloads); strictly validated by browser to prevent currency forgery |
+| `gasto_origen` | `string` | Provenance identifier (`"estimado"` default in MS3 source, `"real_ms1_pagado"` for verified cash, or `"estimado_fallback"`) |
+| `gasto_real_observado` | `boolean` | MS3-reported observation flag; browser applies consistency checks before treating as real |
+
+### Display and validation rules
+
+1. **Observed real spending (`gasto_real_observado === true`):**
+   - Treated as real only when `gasto_total_real` is a finite non-negative number, `gasto_moneda === "BOB"`, and `gasto_origen === "real_ms1_pagado"`.
+   - Displayed with explicit verified label: `Gasto real verificado: <amount> Bs` (including observed zero `0 Bs`).
+   - If `gasto_total_estimado` is also present and finite, it remains displayed alongside real as reference: `Gasto estimado (referencia): <amount> Bs`.
+   - `featuresEstimadas` preserves `"gasto_total_estimado"`.
+
+2. **Fallback / unobserved spending (`gasto_real_observado === false` or unverified):**
+   - Displays reference estimate: `Gasto estimado (referencia): <amount> Bs` (supports both `"estimado"` and `"estimado_fallback"` origins).
+   - Never presents estimated amounts as real or verified.
+
+3. **Legacy and invalid payloads:**
+   - Strict numeric validation: string amounts and string booleans are rejected without coercion.
+   - Missing origin or currency, mismatched values, or incomplete metadata safely fall back to estimated (when estimate is valid) or render `Gasto no disponible`.
+   - Legacy payloads with only numeric `gasto_total_estimado` and no new provenance fields display exact estimated reference (`Gasto estimado (referencia): <amount> Bs`), never nominal real.
+   - If estimate is also invalid, absent, or null, renders `Gasto no disponible` without inventing a zero.
+   - Client performs no client-side financial computations, ledger derivations, or auth-policy changes.
+
+### Remaining proof limits
+
+- All frontend test assertions use synthetic fixtures only; authenticated MS1/MS3 financial verification remains ongoing by respective backend owners.
+- Server-side role, access, and complete payment history evidence govern real versus fallback determination; the browser does not independently certify financial settlements.

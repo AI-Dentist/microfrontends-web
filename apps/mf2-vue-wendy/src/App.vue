@@ -67,6 +67,17 @@
                 <p>{{ clusterDe('pacientes', 'paciente_id', c.paciente_id) }}</p>
                 <p v-if="clusterAssignment('pacientes', 'paciente_id', c.paciente_id)?.featuresImputadas?.length" data-cluster-imputed>Variables imputadas: {{ clusterAssignment('pacientes', 'paciente_id', c.paciente_id).featuresImputadas.join(', ') }}</p>
                 <p v-if="clusterAssignment('pacientes', 'paciente_id', c.paciente_id)?.featuresEstimadas?.length" data-cluster-estimated>Variables estimadas: {{ clusterAssignment('pacientes', 'paciente_id', c.paciente_id).featuresEstimadas.join(', ') }}</p>
+                <div v-if="clusterAssignment('pacientes', 'paciente_id', c.paciente_id)" data-spending>
+                  <p v-if="patientSpending(c.paciente_id).hasReal" data-spending-real>
+                    Gasto real verificado: {{ patientSpending(c.paciente_id).realAmount }} Bs
+                  </p>
+                  <p v-if="patientSpending(c.paciente_id).hasEstimated" data-spending-estimated>
+                    Gasto estimado (referencia): {{ patientSpending(c.paciente_id).estimatedAmount }} Bs
+                  </p>
+                  <p v-if="patientSpending(c.paciente_id).isUnavailable" data-spending-unavailable>
+                    Gasto no disponible
+                  </p>
+                </div>
               </td>
               <td>
                 <CitaAcciones :cita="c" :stock="stock" :busy="enviando || stockBusy"
@@ -180,6 +191,7 @@ import CitaForm from './components/CitaForm.vue';
 import CitaAcciones from './components/CitaAcciones.vue';
 import HorarioForm from './components/HorarioForm.vue';
 import MovimientoForm from './components/MovimientoForm.vue';
+import { resolvePatientSpending } from './utils/spending.js';
 
 const props = defineProps({ context: Object });
 const hosted = computed(() => !!props.context);
@@ -217,6 +229,7 @@ const citasFiltradas = computed(() => soloAltoRiesgo.value ? citas.value.filter(
 // Current MS3 names stock assignments `stock`; retain the previously published `insumos` alias.
 const clusterAssignment = (group, key, id) => (clusters.value?.[group] ?? (group === 'stock' ? clusters.value?.insumos : null))?.asignaciones?.find(item => item[key] === id);
 const clusterDe = (group, key, id) => clusterAssignment(group, key, id)?.cluster ?? 'Sin segmento';
+const patientSpending = pacienteId => resolvePatientSpending(clusterAssignment('pacientes', 'paciente_id', pacienteId));
 async function cargarClusters() {
   const service = ms3Service.value;
   clusters.value = null; mlError.value = '';
