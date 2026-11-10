@@ -6,6 +6,7 @@
 // Additive identity operations (obtenerMiUsuarioId, vincularIdentidadUsuario, VincularIdentidadUsuarioInput)
 // mirror platform-infrastructure/contracts/graphql/ms1-erp.graphql; other definitions are unchanged.
 // Additive executive KPIs (obtenerKpisFinancieros and types) mirror platform-infrastructure/odd/tasks/executive-kpis.md S5 pending backend T1.
+// Additive manual reporting operations (listarEntidadesReporte, generarReporteManual and types) mirror platform-infrastructure/odd/tasks/report-builder.md S2 pending backend T1.
 // Whitespace/descriptions compacted below; names, types, defaults and nullability preserved.
 // Refresh deliberately from the backend source; never change this to accommodate frontend documents.
 export const MS1_SCHEMA_SDL = `
@@ -32,7 +33,9 @@ type OrdenCobro { cantidadCuotas: Int! consultaExternaId: UUID createdAt: DateTi
 type OrdenCobroItem { cantidad: Int! id: UUID! piezaDental: String precioUnitarioBs: BigDecimal! servicio: ServicioOdontologico! subtotalBs: BigDecimal! }
 type Paciente { activo: Boolean! apellidos: String! ciNit: String! direccion: String email: String fechaNacimiento: Date genero: String id: UUID! nombres: String! telefonoWhatsapp: String! }
 type Recibo { ciNitCliente: String! concepto: String! enviadoWhatsapp: Boolean! fechaEmision: DateTime! id: UUID! montoTotalBs: BigDecimal! numeroRecibo: String! pdfUrlS3: String razonSocialCliente: String! }
-type ReporteGenerativoPayload { reporteId: UUID! consultaSqlEjecutada: String! sqlGenerado: String titulo: String resumenAnalitico: String filas: [[String]] columnas: [String!]! filasJson: String! tipoGraficoSugerido: String! urlDescargaExcel: String! urlDescargaPdf: String! }
+type ReporteGenerativoPayload { reporteId: UUID! consultaSqlEjecutada: String! sqlGenerado: String titulo: String resumenAnalitico: String filas: [[String]] columnas: [String!]! filasJson: String! tipoGraficoSugerido: String! urlDescargaExcel: String! urlDescargaPdf: String! filasTruncadas: Boolean }
+type EntidadReporte { clave: String! nombre: String! origen: String! columnas: [ColumnaReporte!]! filtrosEstado: [String!]! filtroFecha: Boolean! }
+type ColumnaReporte { clave: String! etiqueta: String! tipo: String! }
 type ResultadoCanalNotificacion { canal: String! proveedor: String! estado: String! destino: String }
 type NotificacionMulticanalPayload { exito: Boolean! modoEjecucion: String! resultadosPorCanal: [ResultadoCanalNotificacion!]! }
 type AgenteInteraccionResponse { interaccionId: UUID! fechaEjecucion: DateTime! instruccionOriginal: String! respuestaNaturalAgente: String! toolsMcpInvocadas: [String!]! accionCrudEjecutada: String notificacionN8nEnviada: Boolean! notificacionMulticanal: NotificacionMulticanalPayload reporteGenerado: ReporteGenerativoPayload }
@@ -67,6 +70,7 @@ type Query {
   listarRoles: [Rol!]!
   listarServiciosOdontologicos(especialidadId: UUID): [ServicioOdontologico!]!
   listarUsuarios: [Usuario!]!
+  listarEntidadesReporte: [EntidadReporte!]!
   obtenerConfiguracionEmpresa: EmpresaConfig!
   obtenerFlujoCaja(fechaFin: DateTime!, fechaInicio: DateTime!): ResumenFlujoCaja!
   obtenerKpisFinancieros(fechaFin: DateTime!, fechaInicio: DateTime!): KpisFinancieros!
@@ -99,6 +103,7 @@ type Mutation {
   eliminarPaciente(id: UUID!): Boolean!
   eliminarServicioOdontologico(id: UUID!): Boolean!
   generarQrPagoFacil(ciNitCliente: String!, cuotaId: UUID!, razonSocialCliente: String!): TransaccionQr!
+  generarReporteManual(input: ReporteManualInput!): ReporteGenerativoPayload!
   registrarEgresoCaja(input: RegistrarEgresoInput!): MovimientoCaja!
   simularConfirmacionQrDev(pagofacilTransactionId: String!): Recibo!
   verificarPagoQrPagoFacil(pagofacilTransactionId: String!): Recibo
@@ -121,6 +126,7 @@ input CrearUsuarioInput { email: String! nombreCompleto: String! password: Strin
 input CrearUsuarioConIdentidadInput { keycloakSubject: String! odontologoId: UUID usuario: CrearUsuarioInput! }
 input EmpresaConfigInput { direccion: String! emailContacto: String nit: String! nombreComercial: String! razonSocial: String! telefonoContacto: String! }
 input OrdenCobroItemInput { cantidad: Int! piezaDental: String servicioId: UUID! }
+input ReporteManualInput { entidad: String! columnas: [String!]! fechaInicio: DateTime fechaFin: DateTime estado: String }
 input VincularIdentidadUsuarioInput { keycloakSubject: String! usuarioId: UUID! }
 input RegistrarEgresoInput { categoria: String! descripcion: String! metodoPago: MetodoPago! montoBs: BigDecimal! usuarioCajeroId: UUID! }
 `;

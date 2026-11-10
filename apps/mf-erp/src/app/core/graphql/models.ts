@@ -193,6 +193,7 @@ export interface ReporteGenerativoPayload {
   tipoGraficoSugerido: TipoGrafico;
   urlDescargaExcel: string;
   urlDescargaPdf: string;
+  filasTruncadas?: boolean | null;
 }
 
 // Optional inputs accept omission or explicit null, as in the SDL.

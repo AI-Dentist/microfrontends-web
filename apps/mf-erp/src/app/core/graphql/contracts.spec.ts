@@ -6,10 +6,11 @@ import * as queries from './queries.graphql';
 import * as mutations from './mutations.graphql';
 import * as catalogs from '../../features/catalogs/catalogs.graphql';
 import * as kpis from '../../features/kpis/kpis.graphql';
+import * as manualReports from '../../features/generative-reports/manual-reports.graphql';
 import { MS1_SCHEMA_SDL } from './ms1-schema';
 
 const schema = buildSchema(MS1_SCHEMA_SDL);
-const modules = { queries, mutations, catalogs, kpis };
+const modules = { queries, mutations, catalogs, kpis, manualReports };
 const isDocument = (value: unknown): value is DocumentNode =>
   typeof value === 'object' && value !== null && 'kind' in value && value.kind === Kind.DOCUMENT;
 
@@ -147,5 +148,49 @@ describe('approved MS1 wire contract', () => {
       ['fechaInicio', 'DateTime!'],
     ]);
     expect(String(kpisField!.type)).toBe('KpisFinancieros!');
+  });
+
+  it('exposes the S2 manual report builder query, mutation and types additively', () => {
+    const listEntitiesField = schema.getQueryType()!.getFields()['listarEntidadesReporte'];
+    expect(listEntitiesField).toBeDefined();
+    expect(listEntitiesField!.args).toEqual([]);
+    expect(String(listEntitiesField!.type)).toBe('[EntidadReporte!]!');
+
+    const generateReportField = schema.getMutationType()!.getFields()['generarReporteManual'];
+    expect(generateReportField).toBeDefined();
+    expect(generateReportField!.args.map((a) => [a.name, String(a.type)])).toEqual([['input', 'ReporteManualInput!']]);
+    expect(String(generateReportField!.type)).toBe('ReporteGenerativoPayload!');
+
+    const payload = schema.getType('ReporteGenerativoPayload') as any;
+    expect(payload.getFields()['filasTruncadas']).toBeDefined();
+    expect(String(payload.getFields()['filasTruncadas'].type)).toBe('Boolean');
+
+    const fieldsOf = (name: string) => Object.entries((schema.getType(name) as any)?.getFields() ?? {})
+      .map(([field, def]: [string, any]) => [field, String(def.type)]).sort();
+
+    expect(fieldsOf('EntidadReporte')).toEqual([
+      ['clave', 'String!'],
+      ['columnas', '[ColumnaReporte!]!'],
+      ['filtroFecha', 'Boolean!'],
+      ['filtrosEstado', '[String!]!'],
+      ['nombre', 'String!'],
+      ['origen', 'String!'],
+    ]);
+
+    expect(fieldsOf('ColumnaReporte')).toEqual([
+      ['clave', 'String!'],
+      ['etiqueta', 'String!'],
+      ['tipo', 'String!'],
+    ]);
+
+    expect(fieldsOf('ReporteManualInput')).toEqual([
+      ['columnas', '[String!]!'],
+      ['entidad', 'String!'],
+      ['estado', 'String'],
+      ['fechaFin', 'DateTime'],
+      ['fechaInicio', 'DateTime'],
+    ]);
+
+    expect(Object.keys(mutations.OFFLINE_REPLAYABLE_MUTATIONS)).not.toContain('GenerarReporteManual');
   });
 });
