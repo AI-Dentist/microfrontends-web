@@ -54,12 +54,55 @@ describe('KpiAgendaService', () => {
     });
   });
 
+  describe('session boundary after the response', () => {
+    function setup(auth: Record<string, unknown>) {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          KpiAgendaService,
+          { provide: ERP_RUNTIME, useValue: new ErpRuntimeContext({ mode: 'hosted', graphqlUrl: 'https://host.example/api/erp/graphql', getAccessToken: () => 'token' }) },
+          { provide: AuthContextService, useValue: auth },
+        ],
+      });
+      globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(FULL_KPIS_AGENDA_ENVELOPE_FIXTURE), { status: 200 })) as typeof fetch;
+      return TestBed.inject(KpiAgendaService);
+    }
+
+    it('discards a response when the host session was revoked while the request was in flight', async () => {
+      const refresh = vi.fn().mockReturnValueOnce('token').mockImplementation(() => { throw new Error('retired'); });
+      const service = setup({ refresh, devUserHeader: () => null, principalKey: () => 'owner' });
+      const error = await service.load({ desde: '2026-11-01', hasta: '2026-11-30' }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(KpiAgendaError);
+      expect((error as KpiAgendaError).code).toBe('SESSION_CHANGED');
+      expect(refresh).toHaveBeenCalledTimes(2);
+    });
+
+    it('discards a response when the principal switched while the request was in flight', async () => {
+      const principalKey = vi.fn().mockReturnValueOnce('owner-a').mockReturnValue('owner-b');
+      const service = setup({ refresh: () => 'token', devUserHeader: () => null, principalKey });
+      const error = await service.load({ desde: '2026-11-01', hasta: '2026-11-30' }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(KpiAgendaError);
+      expect((error as KpiAgendaError).code).toBe('SESSION_CHANGED');
+    });
+
+    it('never puts the token or the response body in an HTTP error', async () => {
+      const service = setup({ refresh: () => 'SECRET.TOKEN.VALUE', devUserHeader: () => null, principalKey: () => 'owner' });
+      globalThis.fetch = vi.fn(async () => new Response('{"secret":"BODY"}', { status: 403 })) as typeof fetch;
+      const error = await service.load({ desde: '2026-11-01', hasta: '2026-11-30' }).catch((e: unknown) => e) as KpiAgendaError;
+      expect(error.message).toBe('Consulta de KPIs de agenda rechazada (HTTP 403).');
+      expect(error.status).toBe(403);
+      expect(error.message).not.toContain('SECRET.TOKEN.VALUE');
+      expect(error.message).not.toContain('BODY');
+    });
+  });
+
   describe('load() execution and fetch contract', () => {
     function setupService(runtimeConfig: any = null, mockToken = 'mock-jwt-token') {
       const runtime = new ErpRuntimeContext(runtimeConfig);
       const mockAuth = {
         refresh: vi.fn().mockReturnValue(mockToken),
         devUserHeader: vi.fn().mockReturnValue(mockToken ? null : 'admin-scz'),
+        principalKey: vi.fn().mockReturnValue('owner-principal'),
       };
 
       TestBed.resetTestingModule();

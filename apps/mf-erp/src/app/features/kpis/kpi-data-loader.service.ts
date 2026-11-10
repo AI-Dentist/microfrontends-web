@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { Apollo } from 'apollo-angular';
 import { firstValueFrom } from 'rxjs';
 import { AuthContextService } from '../../core/auth/auth-context.service';
@@ -45,6 +45,17 @@ export class KpiDataLoaderService {
   private readonly networkStatus = inject(NetworkStatusService);
 
   private requestSequence = 0;
+  /** Period requested while offline; loaded once when the connection returns. */
+  private pendingOfflinePeriod: { desde?: string; hasta?: string } | KpiPeriod | null = null;
+
+  constructor() {
+    const stop = this.networkStatus.onReconnect(() => {
+      const pending = this.pendingOfflinePeriod;
+      this.pendingOfflinePeriod = null;
+      if (pending) this.load(pending);
+    });
+    inject(DestroyRef).onDestroy(stop);
+  }
 
   readonly period = signal<KpiPeriod | null>(null);
   readonly periodError = signal<string | null>(null);
@@ -97,6 +108,7 @@ export class KpiDataLoaderService {
     }
 
     if (this.isOffline()) {
+      this.pendingOfflinePeriod = periodCandidate;
       this.periodError.set(null);
       this.ms1State.set({
         status: 'unavailable',

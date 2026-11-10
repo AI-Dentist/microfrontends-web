@@ -54,11 +54,12 @@ Requests carry the current host token (hosted) or the standalone credential, use
 | Situation | Behavior |
 |-----------|----------|
 | User without `ADMIN` | "Los KPIs ejecutivos requieren el rol ADMIN." No request is sent. Backends also deny it (S3). |
-| Offline | Online-only notice. No request, no offline queue, no Dexie. |
+| Offline | Online-only notice. No request, no offline queue, no Dexie. The blocked period loads automatically when the connection returns. |
 | Invalid period (start after end, more than 366 days) | Visible validation message. No request. |
 | One source fails | Only that source's cards show "Fuente no disponible" (or "Acceso no autorizado" for 401/403); the other source still renders. |
 | Empty period | Zeros and empty lists from the backend; tables show "Sin datos en el período". |
 | Older response arrives after a new period | Discarded. |
+| Host session revoked or principal changed while an MS3 request was in flight | The response is discarded (the request already sent cannot be recalled). |
 
 KPIs 1 and 9 show the QR note: QR (`QR_PAGOFACIL`) amounts are the nominal installment amount, because the PagoFácil demo charges `/1000`. KPI 5 notes that it is the observed rate, not the model prediction.
 

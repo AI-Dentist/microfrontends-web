@@ -74,7 +74,7 @@ export class KpiAgendaError extends Error {
   constructor(
     message: string,
     public readonly status?: number,
-    public readonly code?: 'HTTP_ERROR' | 'NETWORK_ERROR' | 'TIMEOUT' | 'MALFORMED_RESPONSE',
+    public readonly code?: 'HTTP_ERROR' | 'NETWORK_ERROR' | 'TIMEOUT' | 'MALFORMED_RESPONSE' | 'SESSION_CHANGED',
   ) {
     super(message);
     this.name = 'KpiAgendaError';
@@ -263,6 +263,7 @@ export class KpiAgendaService {
     const url = `${base}/kpis?${params.toString()}`;
 
     const token = this.auth.refresh();
+    const owner = this.auth.principalKey();
     const devUser = this.auth.devUserHeader();
     const headers = buildRequestHeaders({ token, devUser });
 
@@ -298,7 +299,20 @@ export class KpiAgendaService {
         );
       }
 
-      return validateKpisAgendaEnvelope(payload, response.status);
+      const data = validateKpisAgendaEnvelope(payload, response.status);
+      // Like Apollo's hosted result guard: a request already sent cannot be recalled, but its
+      // result is discarded when the host revoked the session or the principal changed.
+      let current: string | null;
+      try {
+        this.auth.refresh();
+        current = this.auth.principalKey();
+      } catch {
+        current = null;
+      }
+      if (current === null || current !== owner) {
+        throw new KpiAgendaError('La sesión cambió durante la consulta de KPIs de agenda.', undefined, 'SESSION_CHANGED');
+      }
+      return data;
     } catch (err: unknown) {
       if (err instanceof KpiAgendaError) {
         throw err;

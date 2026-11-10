@@ -19,6 +19,7 @@ describe('KpiDataLoaderService', () => {
 
   let apolloQueryMock: ReturnType<typeof vi.fn>;
   let agendaLoadMock: ReturnType<typeof vi.fn>;
+  let reconnectHandlers: Array<() => void>;
 
   const validPeriod = { desde: '2026-11-01', hasta: '2026-11-30' };
 
@@ -40,18 +41,41 @@ describe('KpiDataLoaderService', () => {
     });
 
     agendaLoadMock = vi.fn(async () => FULL_KPIS_AGENDA_ENVELOPE_FIXTURE.data);
+    reconnectHandlers = [];
 
     TestBed.configureTestingModule({
       providers: [
         KpiDataLoaderService,
         { provide: AuthContextService, useValue: { roles: rolesSignal } },
-        { provide: NetworkStatusService, useValue: { online: onlineSignal } },
+        { provide: NetworkStatusService, useValue: { online: onlineSignal, onReconnect: (handler: () => void) => { reconnectHandlers.push(handler); return () => { reconnectHandlers = reconnectHandlers.filter((h) => h !== handler); }; } } },
         { provide: Apollo, useValue: { query: apolloQueryMock } },
         { provide: KpiAgendaService, useValue: { load: agendaLoadMock } },
       ],
     });
 
     service = TestBed.inject(KpiDataLoaderService);
+  });
+
+  it('loads the period that was blocked offline once the connection returns, without user action', async () => {
+    onlineSignal.set(false);
+    service.load(validPeriod);
+    expect(apolloQueryMock).not.toHaveBeenCalled();
+    expect(agendaLoadMock).not.toHaveBeenCalled();
+    expect(service.ms1State().status).toBe('unavailable');
+
+    onlineSignal.set(true);
+    for (const handler of reconnectHandlers) handler();
+    await Promise.resolve();
+
+    expect(agendaLoadMock).toHaveBeenCalledWith(validPeriod);
+    expect(apolloQueryMock).toHaveBeenCalledWith(expect.objectContaining({ query: OBTENER_KPIS_FINANCIEROS, variables: ms1KpiVariables(validPeriod) }));
+  });
+
+  it('does not reload on reconnect when nothing was blocked offline', () => {
+    service.load(validPeriod);
+    const calls = agendaLoadMock.mock.calls.length;
+    for (const handler of reconnectHandlers) handler();
+    expect(agendaLoadMock.mock.calls.length).toBe(calls);
   });
 
   it('rejects non-ADMIN users with explicit notice and sends ZERO network requests', () => {
