@@ -6,6 +6,7 @@ import { InjectionToken } from '@angular/core';
  */
 export interface ErpGraphqlConfig {
   graphqlUrl?: string;
+  agendaApiUrl?: string;
   mode?: 'hosted';
   /** Current SYNCHRONOUS host capability; null, empty or a throw means no access. */
   getAccessToken?: () => string | null;
@@ -23,6 +24,8 @@ export class ErpRuntimeContext {
   readonly hosted: boolean;
   /** Endpoint bound at creation, used verbatim; undefined when the host did not supply one. */
   readonly endpoint: string | undefined;
+  /** Optional agenda API URL; undefined when not configured. */
+  readonly agendaApiUrl: string | undefined;
   private retiredFlag = false;
   private principal: string | null = null;
   private readonly retirementListeners = new Set<() => void>();
@@ -30,6 +33,7 @@ export class ErpRuntimeContext {
   constructor(private readonly config: ErpGraphqlConfig | null = null) {
     this.hosted = config?.mode === 'hosted';
     this.endpoint = config?.graphqlUrl;
+    this.agendaApiUrl = config?.agendaApiUrl;
     if (this.hosted && (typeof this.endpoint !== 'string' || !this.endpoint.trim() || typeof config?.getAccessToken !== 'function')) {
       this.retiredFlag = true;
     }

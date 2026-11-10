@@ -4,6 +4,7 @@ export const environment: typeof devEnvironment = {
   production: true,
   graphqlUrl: '/api/erp/graphql',
   restApiBaseUrl: '/api/v1',
+  agendaApiUrl: '/api/agendamiento',
   enableDevMockAuth: false,
   devUserHeader: '',
   defaultDevUser: {

@@ -39,6 +39,14 @@ describe('ErpRuntimeContext retirement controls', () => {
     expect(runtime.retired).toBe(false);
   });
 
+  it('stores optional agendaApiUrl when provided and leaves it undefined by default', () => {
+    const standalone = new ErpRuntimeContext();
+    expect(standalone.agendaApiUrl).toBeUndefined();
+    const custom = new ErpRuntimeContext({ agendaApiUrl: 'https://gateway.example/api/agendamiento' });
+    expect(custom.agendaApiUrl).toBe('https://gateway.example/api/agendamiento');
+  });
+
+
   it('notifies each subscription once, allows unsubscribe, and immediately notifies late subscribers', () => {
     const runtime = new ErpRuntimeContext({ mode: 'hosted', graphqlUrl: endpoint, getAccessToken: () => 'synthetic-credential' });
     const listener = vi.fn();

@@ -2,6 +2,7 @@ export const environment = {
   production: false,
   graphqlUrl: '/api/erp/graphql',
   restApiBaseUrl: '/api/v1',
+  agendaApiUrl: '/api/agendamiento',
   enableDevMockAuth: true,
   // Explicit standalone development identity; API calls still traverse the Gateway.
   devUserHeader: 'admin-scz',

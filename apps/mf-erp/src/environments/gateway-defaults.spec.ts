@@ -4,5 +4,6 @@ it('uses only same-origin gateway public routes by default in production and dev
   for (const config of [environment, development]) {
     expect(config.graphqlUrl).toBe('/api/erp/graphql');
     expect(config.restApiBaseUrl).toBe('/api/v1');
+    expect(config.agendaApiUrl).toBe('/api/agendamiento');
   }
 });

@@ -5,10 +5,11 @@ import { buildSchema, Kind, parse, print, validate, visit, type FieldNode, type 
 import * as queries from './queries.graphql';
 import * as mutations from './mutations.graphql';
 import * as catalogs from '../../features/catalogs/catalogs.graphql';
+import * as kpis from '../../features/kpis/kpis.graphql';
 import { MS1_SCHEMA_SDL } from './ms1-schema';
 
 const schema = buildSchema(MS1_SCHEMA_SDL);
-const modules = { queries, mutations, catalogs };
+const modules = { queries, mutations, catalogs, kpis };
 const isDocument = (value: unknown): value is DocumentNode =>
   typeof value === 'object' && value !== null && 'kind' in value && value.kind === Kind.DOCUMENT;
 
@@ -136,5 +137,15 @@ describe('approved MS1 wire contract', () => {
     expect(print((queries as any).OBTENER_MI_USUARIO_ID)).toContain('obtenerMiUsuarioId');
     expect(print((queries as any).OBTENER_MI_USUARIO_ID)).not.toContain('(');
     expect(print((mutations as any).VINCULAR_IDENTIDAD_USUARIO)).toContain('vincularIdentidadUsuario(input: $input)');
+  });
+
+  it('exposes the S5 executive financial KPIs query and types', () => {
+    const kpisField = schema.getQueryType()!.getFields()['obtenerKpisFinancieros'];
+    expect(kpisField).toBeDefined();
+    expect(kpisField!.args.map((a) => [a.name, String(a.type)]).sort()).toEqual([
+      ['fechaFin', 'DateTime!'],
+      ['fechaInicio', 'DateTime!'],
+    ]);
+    expect(String(kpisField!.type)).toBe('KpisFinancieros!');
   });
 });

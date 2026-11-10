@@ -5,6 +5,7 @@
 // All unrelated snapshot definitions remain unchanged; this is not a wholesale SDL refresh.
 // Additive identity operations (obtenerMiUsuarioId, vincularIdentidadUsuario, VincularIdentidadUsuarioInput)
 // mirror platform-infrastructure/contracts/graphql/ms1-erp.graphql; other definitions are unchanged.
+// Additive executive KPIs (obtenerKpisFinancieros and types) mirror platform-infrastructure/odd/tasks/executive-kpis.md S5 pending backend T1.
 // Whitespace/descriptions compacted below; names, types, defaults and nullability preserved.
 // Refresh deliberately from the backend source; never change this to accommodate frontend documents.
 export const MS1_SCHEMA_SDL = `
@@ -43,6 +44,15 @@ type Rol { codigo: String! id: UUID! nombre: String! permisos: [String!]! }
 type ServicioOdontologico { activo: Boolean! codigo: String! descripcion: String especialidad: Especialidad id: UUID! nombre: String! precioBaseBs: BigDecimal! }
 type TransaccionQr { cuotaId: UUID! estado: String! fechaExpiracion: DateTime id: UUID! montoBs: BigDecimal! pagofacilTransactionId: String! qrImagenBase64: String! }
 type Usuario { activo: Boolean! email: String! id: UUID! nombreCompleto: String! rol: Rol! username: String! }
+type KpisFinancieros { fechaInicio: DateTime! fechaFin: DateTime! ingresos: KpiIngresos! morosidad: KpiMorosidad! serviciosMasSolicitados: [KpiServicioRanking!]! flujoCaja: KpiFlujoCaja! cobranzaPorMetodo: [KpiCobranzaMetodo!]! }
+type KpiSerieDia { fecha: Date! montoBs: BigDecimal! }
+type KpiIngresos { totalBs: BigDecimal! cantidadMovimientos: Int! montoNominalQrBs: BigDecimal! seriePorDia: [KpiSerieDia!]! }
+type KpiMorosidad { cuotasVencidas: Int! cuotasExigibles: Int! porcentaje: Float! montoVencidoBs: BigDecimal! detalle: [KpiCuotaVencida!]! }
+type KpiCuotaVencida { cuotaId: UUID! ordenCobroId: UUID! pacienteId: UUID! pacienteNombre: String! numeroCuota: Int! montoBs: BigDecimal! fechaVencimiento: Date! diasAtraso: Int! }
+type KpiServicioRanking { servicioId: UUID! nombre: String! cantidad: Int! montoBs: BigDecimal! }
+type KpiFlujoDia { fecha: Date! ingresosBs: BigDecimal! egresosBs: BigDecimal! saldoBs: BigDecimal! }
+type KpiFlujoCaja { totalIngresosBs: BigDecimal! totalEgresosBs: BigDecimal! saldoNetoBs: BigDecimal! seriePorDia: [KpiFlujoDia!]! }
+type KpiCobranzaMetodo { metodoPago: MetodoPago! cantidad: Int! montoBs: BigDecimal! porcentajeMonto: Float! montoNominal: Boolean! }
 
 type Query {
   listarHistorialAgente(limite: Int = 20): [AgenteInteraccionResponse!]!
@@ -59,6 +69,7 @@ type Query {
   listarUsuarios: [Usuario!]!
   obtenerConfiguracionEmpresa: EmpresaConfig!
   obtenerFlujoCaja(fechaFin: DateTime!, fechaInicio: DateTime!): ResumenFlujoCaja!
+  obtenerKpisFinancieros(fechaFin: DateTime!, fechaInicio: DateTime!): KpisFinancieros!
   obtenerMiUsuarioId: UUID!
   obtenerOrdenCobroDetalle(id: UUID!): OrdenCobro
   obtenerPacientePorId(id: UUID!): Paciente
