@@ -10,6 +10,15 @@ service startup; this does not establish verified hosted AI or a service-wide st
 See [the source-backed capability limits](../../docs/ai-local-hosted.md). This correction
 changes documentation only, not AI, offline, Dexie, idempotency or accounting behavior.
 
+## Executive KPIs
+
+The **KPIs** sidebar item opens `kpis` (ten ADMIN-only executive KPIs with a shared
+`America/La_Paz` period filter) and `kpis/:kpi` (chart and backing table). Financial KPIs
+use the MS1 query `obtenerKpisFinancieros`; agenda and stock KPIs use MS3
+`GET /api/agendamiento/kpis`. `createErpRoutes` accepts an optional `agendaApiUrl`;
+without it, hosted mounts use the same-origin Gateway and standalone uses
+`environment.agendaApiUrl`. See [Executive KPIs](../../docs/executive-kpis.md).
+
 ## Standalone and federation entrypoints
 
 Run the existing standalone application with `pnpm start`; `pnpm build` publishes
