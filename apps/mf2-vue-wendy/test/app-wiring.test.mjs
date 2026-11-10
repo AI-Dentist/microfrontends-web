@@ -267,3 +267,51 @@ test('ML unavailability leaves appointments and stock usable and explicitly mark
   assert.match(s.container.querySelector('tbody').textContent, /RESERVADA/);
   assert.equal(s.container.querySelector('.error'), null);
 });
+
+
+// Published MS3 contract: ai-integrity.md L6 (canonical stock, additive feature provenance).
+const integrityClusters = withFeatures => ({ success: true, data: {
+  pacientes: { distribucion: { 'Frecuente y Puntual': 1 }, asignaciones: [
+    { paciente_id: 'pa-uuid', cluster: 'Frecuente y Puntual', featuresImputadas: withFeatures ? ['dias_promedio_entre_citas'] : [], featuresEstimadas: withFeatures ? ['gasto_total_estimado'] : [] },
+  ] },
+  stock: { distribucion: { 'Alta Rotación Crítica': 1 }, asignaciones: [
+    { insumo_id: 'i-1', cluster: 'Alta Rotación Crítica', featuresImputadas: withFeatures ? ['consumo_mensual', 'costo_unitario', 'dias_reabastecimiento'] : [], featuresEstimadas: withFeatures ? ['rotacion_estimada'] : [] },
+  ] }, datosEntrenamientoSinteticos: true,
+} });
+test('S10 marks only imputed appointment predictions Estimated and lists patient cluster provenance', { skip }, async t => {
+  const base = { paciente_id: 'pa-uuid', odontologo_id: 'od-uuid', consultorio_id: 'co-uuid', estado: 'RESERVADA', fecha_hora: '2030-01-02 09:00:00', nivelRiesgo: 'ALTO', probabilidadNoShow: 0.8, accionRecomendada: 'Confirmar', datosEntrenamientoSinteticos: true };
+  const s = host(t, { clusters: integrityClusters(true), citas: [
+    { ...base, id: 'estimated', featuresImputadas: ['edad', 'anticipacionReserva'] },
+    { ...base, id: 'observed-inputs', featuresImputadas: [] },
+  ] }); t.after(() => s.instance.unmount()); await settle();
+  const risks = s.container.querySelectorAll('[data-risk]'); assert.equal(risks.length, 2);
+  assert.equal(risks[0].querySelector('[data-estimated]').textContent, 'Estimated');
+  assert.match(risks[0].querySelector('[data-prediction-imputed]').textContent, /edad, anticipacionReserva/);
+  assert.equal(risks[1].querySelector('[data-estimated]'), null);
+  assert.equal(risks[1].querySelector('[data-prediction-imputed]'), null);
+  const row = risks[0].closest('tr');
+  assert.match(row.querySelector('[data-cluster-imputed]').textContent, /dias_promedio_entre_citas/);
+  assert.match(row.querySelector('[data-cluster-estimated]').textContent, /gasto_total_estimado/);
+  assert.match(s.container.textContent, /Datos sintéticos/);
+  assert.deepEqual(s.calls.filter(c => c.url.startsWith(MS3)).map(c => c.url).sort(), ['citas', 'horarios', 'stock', 'ml/clusters'].map(path => `${MS3}/${path}`).sort());
+  assert.ok(s.calls.every(c => c.method === 'GET' || c.url === ERP), 'display provenance never performs mutations');
+});
+for (const withFeatures of [true, false]) test(`S10 stock assignments show only returned provenance (features=${withFeatures})`, { skip }, async t => {
+  const s = host(t, { path: '/clinical/stock', clusters: integrityClusters(withFeatures) }); t.after(() => s.instance.unmount()); await settle();
+  const row = s.container.querySelector('tbody tr'); assert.match(row.textContent, /Alta Rotación Crítica/);
+  if (withFeatures) {
+    assert.match(row.querySelector('[data-cluster-imputed]').textContent, /consumo_mensual, costo_unitario, dias_reabastecimiento/);
+    assert.match(row.querySelector('[data-cluster-estimated]').textContent, /rotacion_estimada/);
+  } else {
+    assert.equal(row.querySelector('[data-cluster-imputed]'), null);
+    assert.equal(row.querySelector('[data-cluster-estimated]'), null);
+  }
+  assert.match(s.container.textContent, /Datos sintéticos/);
+  assert.equal(s.calls.filter(c => c.url === `${MS3}/ml/clusters`).length, 1);
+});
+test('S10 empty patient provenance arrays preserve the cluster without inventing estimates', { skip }, async t => {
+  const s = host(t, { clusters: integrityClusters(false), citas: [{ id: 'empty', paciente_id: 'pa-uuid', estado: 'RESERVADA', nivelRiesgo: 'BAJO', probabilidadNoShow: 0.2, featuresImputadas: [], datosEntrenamientoSinteticos: true }] });
+  t.after(() => s.instance.unmount()); await settle();
+  const row = s.container.querySelector('tbody tr'); assert.match(row.textContent, /Frecuente y Puntual/);
+  for (const selector of ['[data-estimated]', '[data-prediction-imputed]', '[data-cluster-imputed]', '[data-cluster-estimated]']) assert.equal(row.querySelector(selector), null);
+});

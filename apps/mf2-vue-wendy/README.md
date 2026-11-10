@@ -170,3 +170,8 @@ compile the shipped Vue SFCs in memory and mount them in jsdom (borrowed from
 The app-wiring test retains its existing skip when jsdom is unavailable.
 Run `npm run build` and `npm run build:remote` too. The host integration owns
 real-browser standalone/Shadow DOM mount-update-unmount verification.
+
+
+## ML feature provenance (S10)
+
+Appointment predictions with non-empty `featuresImputadas` show **Estimated** next to the no-show risk and list the returned feature names. Empty or absent arrays do not invent an estimate marker. Patient and stock cluster assignments separately list `featuresImputadas` and `featuresEstimadas`; these are provenance labels, not measured clinical or financial facts. The published MS3 `stock.asignaciones` contract is supported alongside the legacy `insumos.asignaciones` alias. Existing synthetic-data notes remain visible for legacy `datosSinteticos` and current `datosEntrenamientoSinteticos` payloads (including per-appointment flags). No additional requests, endpoint changes, offline or idempotency changes are involved.

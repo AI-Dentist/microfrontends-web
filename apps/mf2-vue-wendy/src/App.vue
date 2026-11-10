@@ -29,7 +29,7 @@
         <h3 class="section-title">Citas Registradas</h3>
         <p v-if="!mlDisponible" role="status">ML no disponible. Las citas siguen disponibles sin predicción.</p>
         <p v-if="mlError" role="status">{{ mlError }}</p>
-        <p v-if="clusters?.datosSinteticos">Datos sintéticos: apoyo operativo, no certeza clínica.</p>
+        <p v-if="clusters?.datosSinteticos || clusters?.datosEntrenamientoSinteticos || citas.some(c => c.datosEntrenamientoSinteticos)">Datos sintéticos: apoyo operativo, no certeza clínica.</p>
         <div data-cluster-summary aria-label="Segmentación de pacientes">
           <h4>Segmentación K-Means de pacientes</h4>
           <span v-for="(count, label) in clusters?.pacientes?.distribucion" :key="label" class="badge">{{ label }}: {{ count }}</span>
@@ -59,10 +59,14 @@
               <td>
                 <div v-if="mlDisponible && c.nivelRiesgo && c.probabilidadNoShow != null" data-risk :class="['badge', c.nivelRiesgo === 'ALTO' ? 'alerta' : 'ok']">
                   {{ c.nivelRiesgo }} · {{ Math.round(c.probabilidadNoShow * 100) }}%
+                  <span v-if="c.featuresImputadas?.length" data-estimated class="badge">Estimated</span>
                   <p>{{ c.accionRecomendada }}</p>
+                  <p v-if="c.featuresImputadas?.length" data-prediction-imputed>Variables imputadas: {{ c.featuresImputadas.join(', ') }}</p>
                 </div>
                 <span v-else>Sin predicción</span>
                 <p>{{ clusterDe('pacientes', 'paciente_id', c.paciente_id) }}</p>
+                <p v-if="clusterAssignment('pacientes', 'paciente_id', c.paciente_id)?.featuresImputadas?.length" data-cluster-imputed>Variables imputadas: {{ clusterAssignment('pacientes', 'paciente_id', c.paciente_id).featuresImputadas.join(', ') }}</p>
+                <p v-if="clusterAssignment('pacientes', 'paciente_id', c.paciente_id)?.featuresEstimadas?.length" data-cluster-estimated>Variables estimadas: {{ clusterAssignment('pacientes', 'paciente_id', c.paciente_id).featuresEstimadas.join(', ') }}</p>
               </td>
               <td>
                 <CitaAcciones :cita="c" :stock="stock" :busy="enviando || stockBusy"
@@ -123,7 +127,7 @@
       <section v-if="tab === 'stock' && !cargando">
         <h3 class="section-title">Stock de Insumos Odontológicos</h3>
         <p v-if="mlError" role="status">{{ mlError }}</p>
-        <p v-if="clusters?.datosSinteticos">Datos sintéticos: agrupación operativa estimada.</p>
+        <p v-if="clusters?.datosSinteticos || clusters?.datosEntrenamientoSinteticos">Datos sintéticos: agrupación operativa estimada.</p>
         <div class="card form-card">
           <h3>Registrar movimiento de stock</h3>
           <MovimientoForm :key="stockFormVersion" :stock="stock" :busy="enviando || stockBusy"
@@ -149,7 +153,11 @@
               <td><strong>{{ item.stock_actual }}</strong></td>
               <td>{{ item.stock_minimo }}</td>
               <td>{{ item.unidad_medida }}</td>
-              <td><span class="badge">{{ clusterDe('insumos', 'insumo_id', item.id) }}</span></td>
+              <td>
+                <span class="badge">{{ clusterDe('stock', 'insumo_id', item.id) }}</span>
+                <p v-if="clusterAssignment('stock', 'insumo_id', item.id)?.featuresImputadas?.length" data-cluster-imputed>Variables imputadas: {{ clusterAssignment('stock', 'insumo_id', item.id).featuresImputadas.join(', ') }}</p>
+                <p v-if="clusterAssignment('stock', 'insumo_id', item.id)?.featuresEstimadas?.length" data-cluster-estimated>Variables estimadas: {{ clusterAssignment('stock', 'insumo_id', item.id).featuresEstimadas.join(', ') }}</p>
+              </td>
               <td>
                 <span :class="['badge', item.alerta_reposicion ? 'alerta' : 'ok']">
                   {{ item.alerta_reposicion ? '⚠️ Reponer urgente' : 'OK' }}
@@ -206,7 +214,9 @@ const mlDisponible = ref(true);
 const clusters = ref(null);
 const mlError = ref('');
 const citasFiltradas = computed(() => soloAltoRiesgo.value ? citas.value.filter(c => c.nivelRiesgo === 'ALTO') : citas.value);
-const clusterDe = (group, key, id) => clusters.value?.[group]?.asignaciones?.find(item => item[key] === id)?.cluster ?? 'Sin segmento';
+// Current MS3 names stock assignments `stock`; retain the previously published `insumos` alias.
+const clusterAssignment = (group, key, id) => (clusters.value?.[group] ?? (group === 'stock' ? clusters.value?.insumos : null))?.asignaciones?.find(item => item[key] === id);
+const clusterDe = (group, key, id) => clusterAssignment(group, key, id)?.cluster ?? 'Sin segmento';
 async function cargarClusters() {
   const service = ms3Service.value;
   clusters.value = null; mlError.value = '';
