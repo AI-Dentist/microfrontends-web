@@ -65,10 +65,10 @@ export class KpiFilterComponent implements OnInit {
     const qDesde = this.route.snapshot.queryParamMap.get('desde');
     const qHasta = this.route.snapshot.queryParamMap.get('hasta');
 
-    if (qDesde && qHasta) {
-      this.desde.set(qDesde);
-      this.hasta.set(qHasta);
-      const res = validateKpiPeriod({ desde: qDesde, hasta: qHasta });
+    if (qDesde !== null || qHasta !== null) {
+      this.desde.set(qDesde ?? '');
+      this.hasta.set(qHasta ?? '');
+      const res = validateKpiPeriod({ desde: qDesde ?? '', hasta: qHasta ?? '' });
       if (res.valid) {
         this.error.set(null);
         this.loader.load(res.period);

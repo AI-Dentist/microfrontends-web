@@ -18,7 +18,7 @@ Canonical specification: `platform-infrastructure/odd/tasks/executive-kpis.md` (
 | `kpis` | Heading "KPIs ejecutivos", period filter, ten cards in the S1 order |
 | `kpis/:kpi` | KPI title, period filter, ECharts chart, "Datos del período" table, link back to the grid |
 
-The period is kept in the `desde` and `hasta` query parameters (`YYYY-MM-DD`), so the grid, the detail view and the back link share it. An unknown `:kpi` shows "KPI no encontrado" and sends no request.
+The period is kept in the `desde` and `hasta` query parameters (`YYYY-MM-DD`), so the grid, the detail view and the back link share it. The current-month default applies only when both parameters are absent. If either parameter is supplied, both must be nonempty valid calendar dates in an accepted period; missing, empty, malformed, reversed or over-366-day periods show the existing validation error and send no KPI or name-catalog requests. For example, `/erp/kpis?desde=2026-02-31` is rejected rather than silently loading the current month. An unknown `:kpi` shows "KPI no encontrado" and sends no request.
 
 | # | KPI | Route id | Source |
 |---|-----|----------|--------|
